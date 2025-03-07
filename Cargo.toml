@@ -1,0 +1,10 @@
+[package]
+name = "mcat"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+base64 = "0.22.1"
+clap = "4.5.31"
+fast_image_resize = { version = "5.1.2", features = ["image"] }
+image = "0.25.5"
