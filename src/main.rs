@@ -1,11 +1,13 @@
 mod iterm_encoder;
 mod kitty_encoder;
 mod media_encoder;
+mod term_misc;
 
 use clap::{
     builder::{styling::AnsiColor, Styles},
     Arg, ColorChoice, Command,
 };
+use kitty_encoder::is_kitty_capable;
 
 fn main() {
     let opts = Command::new("mcat")
@@ -37,21 +39,19 @@ fn main() {
     let format = opts.get_one::<String>("format").unwrap().to_lowercase();
     let format = format.as_str();
 
+    is_kitty_capable();
+
     match format {
         "iterm" => {
             if let Ok(item) = iterm_encoder::encode(path) {
                 println!("{}", item)
             }
-            println!("did iterm");
         }
         "kitty" => {
             if let Ok(item) = kitty_encoder::encode(path) {
                 println!("{}", item)
             }
-            println!("did kitty");
         }
-        _ => {
-            println!("auto")
-        }
+        _ => {}
     }
 }

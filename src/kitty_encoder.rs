@@ -1,14 +1,38 @@
-use crate::media_encoder::Media;
+use std::cmp::min;
 
+use crate::{media_encoder::Media, term_misc::get_env_identifiers};
+
+fn chunk_base64(base64: String, size: usize) -> String {
+    let total_bytes = base64.len();
+    let mut start = 0;
+    let mut chunked_result = String::with_capacity(total_bytes);
+    let mut first_opts = "f=100,a=T,";
+
+    while start < total_bytes {
+        let end = min(start + size, total_bytes);
+        let chunk_data = &base64[start..end];
+        let more_chunks = !(end == total_bytes) as u8;
+
+        let chunk = format!("\x1b_G{}m={};{}\x1b\\", first_opts, more_chunks, chunk_data);
+        chunked_result.push_str(&chunk);
+
+        if start == 0 {
+            first_opts = "";
+        }
+        start = end;
+    }
+
+    chunked_result
+}
 pub fn encode(image_path: &str) -> Result<String, Box<dyn std::error::Error>> {
     let media = Media::new(image_path, 800, 400)?;
     let base64_encoded = media.encode_base64();
+    let base64_encoded = chunk_base64(base64_encoded, 4096);
 
-    let mut kitty_sequence = String::with_capacity(base64_encoded.len() + media.path.len() + 50);
-
-    kitty_sequence.push_str("\x1b_Gf=100;");
-    kitty_sequence.push_str(&base64_encoded);
-    kitty_sequence.push_str("\x1b\\");
-
-    Ok(kitty_sequence)
+    Ok(base64_encoded)
+}
+pub fn is_kitty_capable() -> bool {
+    let env = get_env_identifiers();
+    print!("{:?}", env);
+    false
 }

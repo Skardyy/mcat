@@ -1,10 +1,30 @@
 ## Roadmap  
- - [ ] Encode Images into kitty / iterm protocols
- - [ ] Encode Videos into kitty / iterm protocols
- - [ ] Recognize the Terminal Capabilities
- - [ ] Add Option to delete Images / Videos by id or all
- - [ ] Add Image / Video manipulations and centering for better looks
- - [ ] Add Tmux Support
- - [ ] Add Document files Support
- - [ ] Add Sixel Support (limited)
- - [ ] Add Simple Ascii fallback
+- [ ] View Images
+    - [x] Iterm
+    - [x] Kitty
+    - [ ] Sixel
+- [ ] View Videos
+    - [ ] Iterm
+    - [ ] Kitty
+    - [ ] Sixel (may be static here)
+- [ ] Recognize Capabilities
+    - [ ] Iterm
+    - [ ] Kitty
+    - [ ] Sixel
+- [ ] Delete Images / Videos
+    - [ ] Iterm
+    - [ ] Kitty
+    - [ ] Sixel
+- [ ] Image / Video manipulation and centering
+    - [ ] Iterm
+    - [ ] Kitty
+    - [ ] Sixel
+- [ ] Tmux Support
+    - [ ] Iterm
+    - [ ] Kitty
+    - [ ] Sixel
+- [ ] View Document files
+    - [ ] Iterm
+    - [ ] Kitty
+    - [ ] Sixel
+- [ ] Add Simple Ascii fallback
