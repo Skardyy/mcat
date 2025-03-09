@@ -1,6 +1,9 @@
 use std::cmp::min;
 
-use crate::{media_encoder::Media, term_misc::EnvIdentifiers};
+use crate::{
+    media_encoder::{Media, MediaTrait},
+    term_misc::EnvIdentifiers,
+};
 
 fn chunk_base64(base64: String, size: usize) -> String {
     let total_bytes = base64.len();
@@ -24,12 +27,13 @@ fn chunk_base64(base64: String, size: usize) -> String {
 
     chunked_result
 }
-pub fn encode(image_path: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let media = Media::new(image_path, 800, 400)?;
+pub fn encode(image_path: &str) -> String {
+    let mut media = Media::new(image_path);
+    media.resize_and_collect(800, 400, crate::media_encoder::ResizeMode::Fit);
     let base64_encoded = media.encode_base64();
     let base64_encoded = chunk_base64(base64_encoded, 4096);
 
-    Ok(base64_encoded)
+    base64_encoded
 }
 
 pub fn is_kitty_capable() -> bool {

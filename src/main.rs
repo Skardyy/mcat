@@ -1,8 +1,10 @@
 mod iterm_encoder;
 mod kitty_encoder;
 mod media_encoder;
+mod photo_media;
 mod sixel_encoder;
 mod term_misc;
+mod video_media;
 
 use clap::{
     builder::{styling::AnsiColor, Styles},
@@ -23,7 +25,7 @@ fn main() {
                 .literal(AnsiColor::Blue.on_default()),
         )
         .arg(
-            Arg::new("path")
+            Arg::new("input")
                 .index(1)
                 .help("Path / Url to the media file")
                 .required(true),
@@ -38,7 +40,7 @@ fn main() {
         )
         .get_matches();
 
-    let path = opts.get_one::<String>("path").unwrap();
+    let path = opts.get_one::<String>("input").unwrap();
     let format = opts.get_one::<String>("format").unwrap().to_lowercase();
     let mut format = format.as_str();
 
@@ -57,19 +59,16 @@ fn main() {
     }
     match format {
         "iterm" => {
-            if let Ok(item) = iterm_encoder::encode(path) {
-                println!("{}", item)
-            }
+            let item = iterm_encoder::encode(path);
+            println!("{}", item)
         }
         "kitty" => {
-            if let Ok(item) = kitty_encoder::encode(path) {
-                println!("{}", item)
-            }
+            let item = kitty_encoder::encode(path);
+            println!("{}", item)
         }
         "sixel" => {
-            if let Ok(item) = sixel_encoder::encode(path) {
-                println!("{}", item)
-            }
+            let item = sixel_encoder::encode(path);
+            println!("{}", item)
         }
         _ => {}
     }

@@ -1,49 +1,50 @@
-use std::io::Cursor;
+use image::{ImageBuffer, Rgb};
 
-use base64::{engine::general_purpose, Engine};
-use fast_image_resize::images::Image;
-use fast_image_resize::{IntoImageView, Resizer};
-use image::codecs::png::PngEncoder;
-use image::{ImageBuffer, ImageEncoder, ImageReader, Rgb};
+use crate::photo_media::PhotoMedia;
+use crate::video_media::VideoMedia;
 
-pub struct Media {
-    pub path: String,
-    img: Vec<u8>,
+pub enum Media {
+    Video(VideoMedia),
+    Photo(PhotoMedia),
+}
+
+pub enum ResizeMode {
+    Fit,
+    Crop,
+    Strech,
+}
+
+pub trait MediaTrait {
+    fn encode_base64(&self) -> String;
+    fn to_rgb8(&self) -> ImageBuffer<Rgb<u8>, Vec<u8>>;
+    fn resize_and_collect(&mut self, width: u32, height: u32, resize_mode: ResizeMode);
 }
 
 impl Media {
-    pub fn new(path: &str, width: u32, height: u32) -> Result<Self, Box<dyn std::error::Error>> {
-        // getting the img
-        let img = ImageReader::open(path)?.decode()?;
+    pub fn new(input: &str) -> Self {
+        Media::Photo(PhotoMedia::new(input))
+    }
+}
 
-        // resizing it
-        let mut dst_image = Image::new(width, height, img.pixel_type().unwrap());
-        let mut resizer = Resizer::new();
-        resizer.resize(&img, &mut dst_image, None).unwrap();
-
-        // converting to vec
-        let mut buffer = Vec::new();
-        let mut cursor = Cursor::new(&mut buffer);
-        let encoder = PngEncoder::new(&mut cursor);
-        encoder.write_image(
-            dst_image.buffer(),
-            dst_image.width(),
-            dst_image.height(),
-            img.color().into(),
-        )?;
-
-        Ok(Media {
-            path: path.to_string(),
-            img: buffer,
-        })
+impl MediaTrait for Media {
+    fn encode_base64(&self) -> String {
+        match self {
+            Media::Photo(pm) => pm.encode_base64(),
+            Media::Video(vm) => vm.encode_base64(),
+        }
     }
 
-    pub fn to_rgb8(&self) -> ImageBuffer<Rgb<u8>, Vec<u8>> {
-        let img = image::load_from_memory(&self.img).unwrap();
-        img.to_rgb8()
+    fn to_rgb8(&self) -> ImageBuffer<Rgb<u8>, Vec<u8>> {
+        match self {
+            Media::Photo(pm) => pm.to_rgb8(),
+            Media::Video(vm) => vm.to_rgb8(),
+        }
     }
 
-    pub fn encode_base64(&self) -> String {
-        general_purpose::STANDARD.encode(&self.img)
+    fn resize_and_collect(&mut self, width: u32, height: u32, resize_mode: ResizeMode) {
+        match self {
+            Media::Photo(pm) => pm.resize_and_collect(width, height, resize_mode),
+            Media::Video(vm) => vm.resize_and_collect(width, height, resize_mode),
+        };
     }
 }

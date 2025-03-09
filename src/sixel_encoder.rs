@@ -1,16 +1,20 @@
-use crate::{media_encoder::Media, term_misc::EnvIdentifiers};
+use crate::{
+    media_encoder::{Media, MediaTrait},
+    term_misc::EnvIdentifiers,
+};
 use color_quant::NeuQuant;
 use image::{ImageBuffer, Rgb};
 use std::io::{self, Write};
 
 const SIXEL_MIN: u8 = 0x3f; // '?'
 
-pub fn encode(image_path: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let media = Media::new(image_path, 800, 400)?;
+pub fn encode(image_path: &str) -> String {
+    let mut media = Media::new(image_path);
+    media.resize_and_collect(800, 400, crate::media_encoder::ResizeMode::Fit);
     let rgb_img = media.to_rgb8();
     let result = encode_sixel(&rgb_img);
 
-    Ok(result)
+    result
 }
 
 pub fn is_sixel_capable() -> bool {
