@@ -14,6 +14,21 @@ pub enum ResizeMode {
     Strech,
 }
 
+pub fn calc_fit(src_width: u32, src_height: u32, dst_width: u32, dst_height: u32) -> (u32, u32) {
+    let src_ar = src_width as f32 / src_height as f32;
+    let dst_ar = dst_width as f32 / dst_height as f32;
+
+    if src_ar > dst_ar {
+        // Image is wider than target: scale by width
+        let scaled_height = (dst_width as f32 / src_ar).round() as u32;
+        (dst_width, scaled_height)
+    } else {
+        // Image is taller than target: scale by height
+        let scaled_width = (dst_height as f32 * src_ar).round() as u32;
+        (scaled_width, dst_height)
+    }
+}
+
 pub trait MediaTrait {
     fn encode_base64(&self) -> String;
     fn to_rgb8(&self) -> ImageBuffer<Rgb<u8>, Vec<u8>>;

@@ -1,11 +1,12 @@
 use crate::{
     media_encoder::{Media, MediaTrait},
-    term_misc::EnvIdentifiers,
+    term_misc::{parse_resize_mode, EnvIdentifiers},
 };
 
-pub fn encode(image_path: &str) -> String {
+pub fn encode(image_path: &str, width: u32, height: u32, resize_mode: &str) -> String {
     let mut media = Media::new(image_path);
-    media.resize_and_collect(800, 400, crate::media_encoder::ResizeMode::Fit);
+    let resize_mode = parse_resize_mode(resize_mode);
+    media.resize_and_collect(width, height, resize_mode);
     let base64_encoded = media.encode_base64();
 
     let mut iterm_sequence = String::with_capacity(base64_encoded.len() + 50);

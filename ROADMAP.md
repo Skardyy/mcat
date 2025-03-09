@@ -15,7 +15,11 @@
     - [ ] Iterm
     - [ ] Kitty
     - [ ] Sixel
-- [ ] Image / Video manipulation and centering
+- [-] Image manipulation and centering
+    - [-] Iterm
+    - [-] Kitty
+    - [-] Sixel
+- [ ] Video manipulation and centering
     - [ ] Iterm
     - [ ] Kitty
     - [ ] Sixel

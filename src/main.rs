@@ -8,11 +8,13 @@ mod video_media;
 
 use clap::{
     builder::{styling::AnsiColor, Styles},
+    error::ErrorKind,
     Arg, ColorChoice, Command,
 };
 use iterm_encoder::is_iterm_capable;
 use kitty_encoder::is_kitty_capable;
 use sixel_encoder::is_sixel_capable;
+use term_misc::dim_to_px;
 
 fn main() {
     let opts = Command::new("mcat")
@@ -38,11 +40,39 @@ fn main() {
                 .value_parser(["sixel", "kitty", "iterm", "auto"])
                 .default_value("auto"),
         )
+        .arg(
+            Arg::new("width")
+                .long("width")
+                .help("the new width")
+                .default_value("800c")
+                .value_parser(|dim_str: &str| {
+                    dim_to_px(dim_str).map_err(|_| clap::Error::new(ErrorKind::InvalidValue))
+                }),
+        )
+        .arg(
+            Arg::new("height")
+                .long("height")
+                .help("the new height")
+                .default_value("400c")
+                .value_parser(|dim_str: &str| {
+                    dim_to_px(dim_str).map_err(|_| clap::Error::new(ErrorKind::InvalidValue))
+                }),
+        )
+        .arg(
+            Arg::new("resizeMode")
+                .short('m')
+                .long("resizeMode")
+                .help("the technique to use for resizing")
+                .value_parser(["fit", "crop", "strech"])
+                .default_value("fit"),
+        )
         .get_matches();
 
     let path = opts.get_one::<String>("input").unwrap();
-    let format = opts.get_one::<String>("format").unwrap().to_lowercase();
-    let mut format = format.as_str();
+    let mut format = opts.get_one::<String>("format").unwrap().as_str();
+    let resize_mode = opts.get_one::<String>("resizeMode").unwrap().as_str();
+    let width = opts.get_one::<u32>("width").unwrap();
+    let height = opts.get_one::<u32>("height").unwrap();
 
     if format == "auto" {
         let kitty_capable = is_kitty_capable();
@@ -59,15 +89,15 @@ fn main() {
     }
     match format {
         "iterm" => {
-            let item = iterm_encoder::encode(path);
+            let item = iterm_encoder::encode(path, *width, *height, resize_mode);
             println!("{}", item)
         }
         "kitty" => {
-            let item = kitty_encoder::encode(path);
+            let item = kitty_encoder::encode(path, *width, *height, resize_mode);
             println!("{}", item)
         }
         "sixel" => {
-            let item = sixel_encoder::encode(path);
+            let item = sixel_encoder::encode(path, *width, *height, resize_mode);
             println!("{}", item)
         }
         _ => {}

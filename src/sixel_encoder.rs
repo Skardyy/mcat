@@ -1,6 +1,6 @@
 use crate::{
     media_encoder::{Media, MediaTrait},
-    term_misc::EnvIdentifiers,
+    term_misc::{parse_resize_mode, EnvIdentifiers},
 };
 use color_quant::NeuQuant;
 use image::{ImageBuffer, Rgb};
@@ -8,9 +8,10 @@ use std::io::{self, Write};
 
 const SIXEL_MIN: u8 = 0x3f; // '?'
 
-pub fn encode(image_path: &str) -> String {
+pub fn encode(image_path: &str, width: u32, height: u32, resize_mode: &str) -> String {
     let mut media = Media::new(image_path);
-    media.resize_and_collect(800, 400, crate::media_encoder::ResizeMode::Fit);
+    let resize_mode = parse_resize_mode(resize_mode);
+    media.resize_and_collect(width, height, resize_mode);
     let rgb_img = media.to_rgb8();
     let result = encode_sixel(&rgb_img);
 

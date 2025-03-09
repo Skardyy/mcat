@@ -1,5 +1,38 @@
 use std::{collections::HashMap, env};
 
+use crate::media_encoder::ResizeMode;
+
+pub fn dim_to_px(dim: &str) -> Result<u32, String> {
+    if let Ok(num) = dim.parse::<u32>() {
+        return Ok(num);
+    }
+
+    if dim.ends_with("px") {
+        if let Ok(num) = dim.trim_end_matches("px").parse::<u32>() {
+            return Ok(num);
+        }
+    } else if dim.ends_with("c") {
+        if let Ok(num) = dim.trim_end_matches("c").parse::<u32>() {
+            return Ok(num);
+        }
+    } else if dim.ends_with("%") {
+        if let Ok(num) = dim.trim_end_matches("%").parse::<u32>() {
+            return Ok(num);
+        }
+    }
+
+    Err(format!("Invalid dimension format: {}", dim))
+}
+
+pub fn parse_resize_mode(resize_mode: &str) -> ResizeMode {
+    match resize_mode {
+        "fit" => ResizeMode::Fit,
+        "crop" => ResizeMode::Crop,
+        "strech" => ResizeMode::Strech,
+        _ => ResizeMode::Fit,
+    }
+}
+
 pub struct EnvIdentifiers {
     pub data: HashMap<String, String>,
 }
