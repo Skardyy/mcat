@@ -1,6 +1,6 @@
 use std::cmp::min;
 
-use crate::{media_encoder::Media, term_misc::get_env_identifiers};
+use crate::{media_encoder::Media, term_misc::EnvIdentifiers};
 
 fn chunk_base64(base64: String, size: usize) -> String {
     let total_bytes = base64.len();
@@ -31,8 +31,13 @@ pub fn encode(image_path: &str) -> Result<String, Box<dyn std::error::Error>> {
 
     Ok(base64_encoded)
 }
+
 pub fn is_kitty_capable() -> bool {
-    let env = get_env_identifiers();
-    print!("{:?}", env);
-    false
+    let env = EnvIdentifiers::new();
+
+    env.has_key("KITTY_WINDOW_ID")
+        || env.term_contains("kitty")
+        || (env.term_contains("wezterm") && !env.contains("OS", "windows"))
+        || env.term_contains("ghostty")
+        || env.has_key("KONSOLE_VERSION")
 }

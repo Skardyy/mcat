@@ -1,16 +1,16 @@
 ## Roadmap  
-- [ ] View Images
+- [x] View Images
     - [x] Iterm
     - [x] Kitty
-    - [ ] Sixel
+    - [x] Sixel
 - [ ] View Videos
     - [ ] Iterm
     - [ ] Kitty
     - [ ] Sixel (may be static here)
-- [ ] Recognize Capabilities
-    - [ ] Iterm
-    - [ ] Kitty
-    - [ ] Sixel
+- [x] Recognize Capabilities
+    - [x] Iterm
+    - [x] Kitty
+    - [x] Sixel
 - [ ] Delete Images / Videos
     - [ ] Iterm
     - [ ] Kitty

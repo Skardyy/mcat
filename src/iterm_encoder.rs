@@ -1,4 +1,4 @@
-use crate::media_encoder::Media;
+use crate::{media_encoder::Media, term_misc::EnvIdentifiers};
 
 pub fn encode(image_path: &str) -> Result<String, Box<dyn std::error::Error>> {
     let media = Media::new(image_path, 800, 400)?;
@@ -13,4 +13,14 @@ pub fn encode(image_path: &str) -> Result<String, Box<dyn std::error::Error>> {
     iterm_sequence.push('\x07');
 
     Ok(iterm_sequence)
+}
+
+pub fn is_iterm_capable() -> bool {
+    let env = EnvIdentifiers::new();
+
+    env.term_contains("mintty")
+        || env.term_contains("wezterm")
+        || env.term_contains("iterm2")
+        || env.term_contains("rio")
+        || env.has_key("KONSOLE_VERSION")
 }

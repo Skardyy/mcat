@@ -1,4 +1,4 @@
-use crate::media_encoder::Media;
+use crate::{media_encoder::Media, term_misc::EnvIdentifiers};
 use color_quant::NeuQuant;
 use image::{ImageBuffer, Rgb};
 use std::io::{self, Write};
@@ -11,6 +11,15 @@ pub fn encode(image_path: &str) -> Result<String, Box<dyn std::error::Error>> {
     let result = encode_sixel(&rgb_img);
 
     Ok(result)
+}
+
+pub fn is_sixel_capable() -> bool {
+    let env = EnvIdentifiers::new();
+
+    // has way more support, i just think sixel is bad
+    env.term_contains("foot") 
+        || env.has_key("WT_PROFILE_ID") // windows-terminal
+        || env.term_contains("sixel-tmux")
 }
 
 pub fn encode_sixel(img: &ImageBuffer<Rgb<u8>, Vec<u8>>) -> String {

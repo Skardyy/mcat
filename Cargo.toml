@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 base64 = "0.22.1"
 clap = "4.5.31"
-color-thief = "0.2.2"
 color_quant = "1.1.0"
 fast_image_resize = { version = "5.1.2", features = ["image"] }
 image = "0.25.5"

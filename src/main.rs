@@ -8,7 +8,9 @@ use clap::{
     builder::{styling::AnsiColor, Styles},
     Arg, ColorChoice, Command,
 };
+use iterm_encoder::is_iterm_capable;
 use kitty_encoder::is_kitty_capable;
+use sixel_encoder::is_sixel_capable;
 
 fn main() {
     let opts = Command::new("mcat")
@@ -31,17 +33,28 @@ fn main() {
                 .short('f')
                 .long("format")
                 .help("the protocol to use for the encoding")
-                .value_parser(["sixel", "kitty", "iterm", "ascii", "auto"])
-                .default_value("iterm"),
+                .value_parser(["sixel", "kitty", "iterm", "auto"])
+                .default_value("auto"),
         )
         .get_matches();
 
     let path = opts.get_one::<String>("path").unwrap();
     let format = opts.get_one::<String>("format").unwrap().to_lowercase();
-    let format = format.as_str();
+    let mut format = format.as_str();
 
-    is_kitty_capable();
+    if format == "auto" {
+        let kitty_capable = is_kitty_capable();
+        let iterm_capable = is_iterm_capable();
+        let sixel_capable = is_sixel_capable();
 
+        if iterm_capable {
+            format = "iterm"
+        } else if kitty_capable {
+            format = "kitty"
+        } else if sixel_capable {
+            format = "sixel"
+        }
+    }
     match format {
         "iterm" => {
             if let Ok(item) = iterm_encoder::encode(path) {
