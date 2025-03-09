@@ -1,4 +1,5 @@
 use std::io::Cursor;
+use std::path::Path;
 
 use base64::{engine::general_purpose, Engine};
 use fast_image_resize::images::Image;
@@ -8,13 +9,29 @@ use image::{DynamicImage, ImageBuffer, ImageEncoder, ImageReader, Rgb};
 
 use crate::media_encoder::{calc_fit, MediaTrait, ResizeMode};
 
+pub fn is_image(input: &str) -> bool {
+    let supported_extensions = [
+        "avif", "bmp", "dds", "farbfeld", "gif", "hdr", "ico", "jpeg", "jpg", "exr", "png", "pnm",
+        "qoi", "tga", "tiff", "webp", "svg",
+    ];
+
+    let path = Path::new(input);
+    match path.extension() {
+        Some(ext) => supported_extensions.contains(&ext.to_string_lossy().to_lowercase().as_str()),
+        None => false,
+    }
+}
+
 pub struct PhotoMedia {
     img: DynamicImage,
     resized_img: Vec<u8>,
 }
 impl PhotoMedia {
     pub fn new(input: &str) -> Self {
-        let img = ImageReader::open(input).unwrap().decode().unwrap();
+        let img = ImageReader::open(input)
+            .expect(&format!("failed to open: {}", input))
+            .decode()
+            .expect("failed to parse the image");
 
         PhotoMedia {
             img,
@@ -34,9 +51,15 @@ impl MediaTrait for PhotoMedia {
             ResizeMode::Strech => (width, height, None),
         };
 
-        let mut dst_image = Image::new(new_width, new_height, self.img.pixel_type().unwrap());
+        let mut dst_image = Image::new(
+            new_width,
+            new_height,
+            self.img.pixel_type().expect("image is invalid"),
+        );
         let mut resizer = Resizer::new();
-        resizer.resize(&self.img, &mut dst_image, opts).unwrap();
+        resizer
+            .resize(&self.img, &mut dst_image, opts)
+            .expect("failed to resize image");
 
         // converting to vec
         let mut buffer = Vec::new();
@@ -49,12 +72,13 @@ impl MediaTrait for PhotoMedia {
                 dst_image.height(),
                 self.img.color().into(),
             )
-            .unwrap();
+            .expect("failed to encode the resized image");
 
         self.resized_img = buffer;
     }
     fn to_rgb8(&self) -> ImageBuffer<Rgb<u8>, Vec<u8>> {
-        let img = image::load_from_memory(&self.resized_img).unwrap();
+        let img =
+            image::load_from_memory(&self.resized_img).expect("failed to read image from memory");
         img.to_rgb8()
     }
 

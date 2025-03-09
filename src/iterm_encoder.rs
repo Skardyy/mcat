@@ -4,7 +4,7 @@ use crate::{
 };
 
 pub fn encode(image_path: &str, width: u32, height: u32, resize_mode: &str) -> String {
-    let mut media = Media::new(image_path);
+    let mut media = Media::new(image_path, true);
     let resize_mode = parse_resize_mode(resize_mode);
     media.resize_and_collect(width, height, resize_mode);
     let base64_encoded = media.encode_base64();
@@ -20,9 +20,7 @@ pub fn encode(image_path: &str, width: u32, height: u32, resize_mode: &str) -> S
     iterm_sequence
 }
 
-pub fn is_iterm_capable() -> bool {
-    let env = EnvIdentifiers::new();
-
+pub fn is_iterm_capable(env: &EnvIdentifiers) -> bool {
     env.term_contains("mintty")
         || env.term_contains("wezterm")
         || env.term_contains("iterm2")

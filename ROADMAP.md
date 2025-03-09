@@ -31,6 +31,7 @@
     - [ ] Iterm
     - [ ] Kitty
     - [ ] Sixel
+- [ ] Query Spx and Sc
 - [ ] Add Simple Ascii fallback
 - [ ] Add Url Reading
 - [ ] Add Raw Reading

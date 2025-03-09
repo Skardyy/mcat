@@ -28,7 +28,7 @@ fn chunk_base64(base64: String, size: usize) -> String {
     chunked_result
 }
 pub fn encode(image_path: &str, width: u32, height: u32, resize_mode: &str) -> String {
-    let mut media = Media::new(image_path);
+    let mut media = Media::new(image_path, true);
     let resize_mode = parse_resize_mode(resize_mode);
     media.resize_and_collect(width, height, resize_mode);
     let base64_encoded = media.encode_base64();
@@ -37,9 +37,7 @@ pub fn encode(image_path: &str, width: u32, height: u32, resize_mode: &str) -> S
     base64_encoded
 }
 
-pub fn is_kitty_capable() -> bool {
-    let env = EnvIdentifiers::new();
-
+pub fn is_kitty_capable(env: &EnvIdentifiers) -> bool {
     env.has_key("KITTY_WINDOW_ID")
         || env.term_contains("kitty")
         || (env.term_contains("wezterm") && !env.contains("OS", "windows"))

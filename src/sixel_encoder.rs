@@ -9,7 +9,7 @@ use std::io::{self, Write};
 const SIXEL_MIN: u8 = 0x3f; // '?'
 
 pub fn encode(image_path: &str, width: u32, height: u32, resize_mode: &str) -> String {
-    let mut media = Media::new(image_path);
+    let mut media = Media::new(image_path, false);
     let resize_mode = parse_resize_mode(resize_mode);
     media.resize_and_collect(width, height, resize_mode);
     let rgb_img = media.to_rgb8();
@@ -18,9 +18,7 @@ pub fn encode(image_path: &str, width: u32, height: u32, resize_mode: &str) -> S
     result
 }
 
-pub fn is_sixel_capable() -> bool {
-    let env = EnvIdentifiers::new();
-
+pub fn is_sixel_capable(env: &EnvIdentifiers) -> bool {
     // has way more support, i just think sixel is bad
     env.term_contains("foot") 
         || env.has_key("WT_PROFILE_ID") // windows-terminal
@@ -36,7 +34,7 @@ pub fn encode_sixel(img: &ImageBuffer<Rgb<u8>, Vec<u8>>) -> String {
     }
 
     let mut output = Vec::new();
-    write_sixel(&mut output, img).unwrap();
+    write_sixel(&mut output, img).expect("failed to write sixel");
     String::from_utf8_lossy(&output).to_string()
 }
 

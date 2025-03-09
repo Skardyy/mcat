@@ -14,7 +14,7 @@ use clap::{
 use iterm_encoder::is_iterm_capable;
 use kitty_encoder::is_kitty_capable;
 use sixel_encoder::is_sixel_capable;
-use term_misc::dim_to_px;
+use term_misc::{dim_to_px, EnvIdentifiers};
 
 fn main() {
     let opts = Command::new("mcat")
@@ -43,8 +43,8 @@ fn main() {
         .arg(
             Arg::new("width")
                 .long("width")
-                .help("the new width")
-                .default_value("800c")
+                .help("the new width: [<usize> / <usize>px / <usize>c / <usize>%]")
+                .default_value("800")
                 .value_parser(|dim_str: &str| {
                     dim_to_px(dim_str).map_err(|_| clap::Error::new(ErrorKind::InvalidValue))
                 }),
@@ -52,8 +52,8 @@ fn main() {
         .arg(
             Arg::new("height")
                 .long("height")
-                .help("the new height")
-                .default_value("400c")
+                .help("the new height: [<usize> / <usize>px / <usize>c / <usize>%]")
+                .default_value("400")
                 .value_parser(|dim_str: &str| {
                     dim_to_px(dim_str).map_err(|_| clap::Error::new(ErrorKind::InvalidValue))
                 }),
@@ -75,9 +75,10 @@ fn main() {
     let height = opts.get_one::<u32>("height").unwrap();
 
     if format == "auto" {
-        let kitty_capable = is_kitty_capable();
-        let iterm_capable = is_iterm_capable();
-        let sixel_capable = is_sixel_capable();
+        let env = &EnvIdentifiers::new();
+        let kitty_capable = is_kitty_capable(env);
+        let iterm_capable = is_iterm_capable(env);
+        let sixel_capable = is_sixel_capable(env);
 
         if iterm_capable {
             format = "iterm"

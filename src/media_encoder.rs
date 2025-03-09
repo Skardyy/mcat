@@ -1,7 +1,7 @@
 use image::{ImageBuffer, Rgb};
 
-use crate::photo_media::PhotoMedia;
-use crate::video_media::VideoMedia;
+use crate::photo_media::{is_image, PhotoMedia};
+use crate::video_media::{is_video, VideoMedia};
 
 pub enum Media {
     Video(VideoMedia),
@@ -36,8 +36,18 @@ pub trait MediaTrait {
 }
 
 impl Media {
-    pub fn new(input: &str) -> Self {
-        Media::Photo(PhotoMedia::new(input))
+    pub fn new(input: &str, video_capable: bool) -> Self {
+        let is_photo = is_image(input);
+        let is_vid = is_video(input);
+
+        if !is_vid && !is_photo {
+            panic!("{} either doesn't exists, or not supported", input)
+        }
+        if is_vid && video_capable {
+            return Media::Video(VideoMedia::new(input));
+        } else {
+            return Media::Photo(PhotoMedia::new(input));
+        }
     }
 }
 
