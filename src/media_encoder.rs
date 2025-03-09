@@ -4,7 +4,7 @@ use base64::{engine::general_purpose, Engine};
 use fast_image_resize::images::Image;
 use fast_image_resize::{IntoImageView, Resizer};
 use image::codecs::png::PngEncoder;
-use image::{ImageEncoder, ImageReader};
+use image::{ImageBuffer, ImageEncoder, ImageReader, Rgb};
 
 pub struct Media {
     pub path: String,
@@ -36,6 +36,11 @@ impl Media {
             path: path.to_string(),
             img: buffer,
         })
+    }
+
+    pub fn to_rgb8(&self) -> ImageBuffer<Rgb<u8>, Vec<u8>> {
+        let img = image::load_from_memory(&self.img).unwrap();
+        img.to_rgb8()
     }
 
     pub fn encode_base64(&self) -> String {

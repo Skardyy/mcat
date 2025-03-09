@@ -28,3 +28,6 @@
     - [ ] Kitty
     - [ ] Sixel
 - [ ] Add Simple Ascii fallback
+- [ ] Add Url Reading
+- [ ] Add Raw Reading
+- [ ] Add SSH Reading?

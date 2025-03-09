@@ -1,6 +1,7 @@
 mod iterm_encoder;
 mod kitty_encoder;
 mod media_encoder;
+mod sixel_encoder;
 mod term_misc;
 
 use clap::{
@@ -49,6 +50,11 @@ fn main() {
         }
         "kitty" => {
             if let Ok(item) = kitty_encoder::encode(path) {
+                println!("{}", item)
+            }
+        }
+        "sixel" => {
+            if let Ok(item) = sixel_encoder::encode(path) {
                 println!("{}", item)
             }
         }
