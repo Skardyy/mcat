@@ -1,11 +1,23 @@
 <div align="center">
   
-![mcat](https://github.com/user-attachments/assets/e76390b2-e121-4384-b052-21bbfd108e1b)
+<img src="https://github.com/user-attachments/assets/e76390b2-e121-4384-b052-21bbfd108e1b" width="240"/>
 
-<h1>Media Cat</h1>
+<p>Media Cat</p>
 </div>
 
-### Image Support:  
+
+## Capabilities ✨
+<details>
+<summary>Input types ✍🏻</summary>
+
+- [x] Local File
+- [ ] Url
+- [ ] Raw PNG data
+</details>
+
+<details>
+<summary>Image Support 🖼️</summary>
+
 - [x] AVIF
 - [x] AVIF
 - [x] BMP
@@ -24,7 +36,47 @@
 - [x] WebP
 - [ ] SVG
 - [ ] MP4
+- [ ] Html
+</details>
 
-### Video Support:  
+<details>
+<summary>Video Support 🎬</summary>
+
 - [ ] GIF
 - [ ] MP4
+</details>
+
+<details>
+<summary>Document Support 📚</summary>
+
+> Requires libreoffice
+- [ ] DOCX
+- [ ] XLSX
+- [ ] PDF
+- [ ] PPTX
+- [ ] ODG
+- [ ] ODP
+- [ ] ODS
+- [ ] ODT
+</details>
+
+<details>
+<summary>Terminal auto detection 💻</summary>
+
+### Iterm2:  
+* mintty
+* wezterm
+* iterm2
+* rio
+* warp-terminal
+* konsole  
+### Kitty:  
+* kitty
+* wezterm (not windows)
+* ghostty
+* konsole  
+### Sixel:  
+* foot
+* windows-terminal
+* sixel-tmux
+</details>

@@ -6,6 +6,9 @@ mod sixel_encoder;
 mod term_misc;
 mod video_media;
 
+#[macro_use]
+extern crate lazy_static;
+
 use clap::{
     builder::{styling::AnsiColor, Styles},
     error::ErrorKind,
@@ -44,18 +47,20 @@ fn main() {
             Arg::new("width")
                 .long("width")
                 .help("the new width: [<usize> / <usize>px / <usize>c / <usize>%]")
-                .default_value("800")
+                .default_value("80%")
                 .value_parser(|dim_str: &str| {
-                    dim_to_px(dim_str).map_err(|_| clap::Error::new(ErrorKind::InvalidValue))
+                    dim_to_px(dim_str, term_misc::SizeDirection::WIDTH)
+                        .map_err(|_| clap::Error::new(ErrorKind::InvalidValue))
                 }),
         )
         .arg(
             Arg::new("height")
                 .long("height")
                 .help("the new height: [<usize> / <usize>px / <usize>c / <usize>%]")
-                .default_value("400")
+                .default_value("60%")
                 .value_parser(|dim_str: &str| {
-                    dim_to_px(dim_str).map_err(|_| clap::Error::new(ErrorKind::InvalidValue))
+                    dim_to_px(dim_str, term_misc::SizeDirection::HEIGHT)
+                        .map_err(|_| clap::Error::new(ErrorKind::InvalidValue))
                 }),
         )
         .arg(
@@ -66,6 +71,14 @@ fn main() {
                 .value_parser(["fit", "crop", "strech"])
                 .default_value("fit"),
         )
+        .arg(
+            Arg::new("center")
+                .short('c')
+                .long("center")
+                .help("rather or not to center the image with the remaining space")
+                .action(clap::ArgAction::SetTrue)
+                .default_value("true"),
+        )
         .get_matches();
 
     let path = opts.get_one::<String>("input").unwrap();
@@ -73,6 +86,7 @@ fn main() {
     let resize_mode = opts.get_one::<String>("resizeMode").unwrap().as_str();
     let width = opts.get_one::<u32>("width").unwrap();
     let height = opts.get_one::<u32>("height").unwrap();
+    let center = opts.get_one::<bool>("center").unwrap();
 
     if format == "auto" {
         let env = &EnvIdentifiers::new();
@@ -90,15 +104,15 @@ fn main() {
     }
     match format {
         "iterm" => {
-            let item = iterm_encoder::encode(path, *width, *height, resize_mode);
+            let item = iterm_encoder::encode(path, *width, *height, resize_mode, *center);
             println!("{}", item)
         }
         "kitty" => {
-            let item = kitty_encoder::encode(path, *width, *height, resize_mode);
+            let item = kitty_encoder::encode(path, *width, *height, resize_mode, *center);
             println!("{}", item)
         }
         "sixel" => {
-            let item = sixel_encoder::encode(path, *width, *height, resize_mode);
+            let item = sixel_encoder::encode(path, *width, *height, resize_mode, *center);
             println!("{}", item)
         }
         _ => {}

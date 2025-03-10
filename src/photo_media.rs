@@ -8,6 +8,7 @@ use image::codecs::png::PngEncoder;
 use image::{DynamicImage, ImageBuffer, ImageEncoder, ImageReader, Rgb};
 
 use crate::media_encoder::{calc_fit, MediaTrait, ResizeMode};
+use crate::term_misc::center_image;
 
 pub fn is_image(input: &str) -> bool {
     let supported_extensions = [
@@ -40,7 +41,13 @@ impl PhotoMedia {
     }
 }
 impl MediaTrait for PhotoMedia {
-    fn resize_and_collect(&mut self, width: u32, height: u32, resize_mode: ResizeMode) {
+    fn resize_and_collect(
+        &mut self,
+        width: u32,
+        height: u32,
+        resize_mode: ResizeMode,
+        center: bool,
+    ) -> u32 {
         let crop_opts = &ResizeOptions::new().fit_into_destination(Some((1.0 as f64, 1.0 as f64)));
         let (new_width, new_height, opts) = match resize_mode {
             ResizeMode::Fit => {
@@ -49,6 +56,11 @@ impl MediaTrait for PhotoMedia {
             }
             ResizeMode::Crop => (width, height, Some(crop_opts)),
             ResizeMode::Strech => (width, height, None),
+        };
+
+        let offset = match center {
+            true => center_image(new_width),
+            false => 0,
         };
 
         let mut dst_image = Image::new(
@@ -75,6 +87,8 @@ impl MediaTrait for PhotoMedia {
             .expect("failed to encode the resized image");
 
         self.resized_img = buffer;
+
+        offset
     }
     fn to_rgb8(&self) -> ImageBuffer<Rgb<u8>, Vec<u8>> {
         let img =

@@ -27,12 +27,23 @@ fn chunk_base64(base64: String, size: usize) -> String {
 
     chunked_result
 }
-pub fn encode(image_path: &str, width: u32, height: u32, resize_mode: &str) -> String {
+pub fn encode(
+    image_path: &str,
+    width: u32,
+    height: u32,
+    resize_mode: &str,
+    center: bool,
+) -> String {
     let mut media = Media::new(image_path, true);
     let resize_mode = parse_resize_mode(resize_mode);
-    media.resize_and_collect(width, height, resize_mode);
+    let offset = media.resize_and_collect(width, height, resize_mode, center);
     let base64_encoded = media.encode_base64();
-    let base64_encoded = chunk_base64(base64_encoded, 4096);
+
+    let offset = match offset != 0 {
+        true => format!("\x1b[{}C", offset),
+        false => "".to_string(),
+    };
+    let base64_encoded = offset + &chunk_base64(base64_encoded, 4096);
 
     base64_encoded
 }

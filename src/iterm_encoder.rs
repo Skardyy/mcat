@@ -3,14 +3,23 @@ use crate::{
     term_misc::{parse_resize_mode, EnvIdentifiers},
 };
 
-pub fn encode(image_path: &str, width: u32, height: u32, resize_mode: &str) -> String {
+pub fn encode(
+    image_path: &str,
+    width: u32,
+    height: u32,
+    resize_mode: &str,
+    center: bool,
+) -> String {
     let mut media = Media::new(image_path, true);
     let resize_mode = parse_resize_mode(resize_mode);
-    media.resize_and_collect(width, height, resize_mode);
+    let offset = media.resize_and_collect(width, height, resize_mode, center);
     let base64_encoded = media.encode_base64();
 
     let mut iterm_sequence = String::with_capacity(base64_encoded.len() + 50);
 
+    if offset != 0 {
+        iterm_sequence.push_str(&format!("\x1b[{}C", offset));
+    }
     iterm_sequence.push_str("\x1b]1337;File=inline=1;size=");
     iterm_sequence.push_str(&base64_encoded.len().to_string());
     iterm_sequence.push(':');
@@ -25,5 +34,6 @@ pub fn is_iterm_capable(env: &EnvIdentifiers) -> bool {
         || env.term_contains("wezterm")
         || env.term_contains("iterm2")
         || env.term_contains("rio")
+        || env.term_contains("Warp")
         || env.has_key("KONSOLE_VERSION")
 }

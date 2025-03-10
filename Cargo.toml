@@ -7,5 +7,8 @@ edition = "2021"
 base64 = "0.22.1"
 clap = "4.5.31"
 color_quant = "1.1.0"
+crossterm = "0.28.1"
 fast_image_resize = { version = "5.1.2", features = ["image"] }
 image = "0.25.5"
+lazy_static = "1.5.0"
+windows = { version = "0.60.0", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }

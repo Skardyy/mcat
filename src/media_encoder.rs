@@ -32,7 +32,13 @@ pub fn calc_fit(src_width: u32, src_height: u32, dst_width: u32, dst_height: u32
 pub trait MediaTrait {
     fn encode_base64(&self) -> String;
     fn to_rgb8(&self) -> ImageBuffer<Rgb<u8>, Vec<u8>>;
-    fn resize_and_collect(&mut self, width: u32, height: u32, resize_mode: ResizeMode);
+    fn resize_and_collect(
+        &mut self,
+        width: u32,
+        height: u32,
+        resize_mode: ResizeMode,
+        center: bool,
+    ) -> u32;
 }
 
 impl Media {
@@ -66,10 +72,16 @@ impl MediaTrait for Media {
         }
     }
 
-    fn resize_and_collect(&mut self, width: u32, height: u32, resize_mode: ResizeMode) {
+    fn resize_and_collect(
+        &mut self,
+        width: u32,
+        height: u32,
+        resize_mode: ResizeMode,
+        center: bool,
+    ) -> u32 {
         match self {
-            Media::Photo(pm) => pm.resize_and_collect(width, height, resize_mode),
-            Media::Video(vm) => vm.resize_and_collect(width, height, resize_mode),
+            Media::Photo(pm) => return pm.resize_and_collect(width, height, resize_mode, center),
+            Media::Video(vm) => return vm.resize_and_collect(width, height, resize_mode, center),
         };
     }
 }

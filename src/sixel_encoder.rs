@@ -8,12 +8,23 @@ use std::io::{self, Write};
 
 const SIXEL_MIN: u8 = 0x3f; // '?'
 
-pub fn encode(image_path: &str, width: u32, height: u32, resize_mode: &str) -> String {
+pub fn encode(
+    image_path: &str,
+    width: u32,
+    height: u32,
+    resize_mode: &str,
+    center: bool,
+) -> String {
     let mut media = Media::new(image_path, false);
     let resize_mode = parse_resize_mode(resize_mode);
-    media.resize_and_collect(width, height, resize_mode);
+    let offset = media.resize_and_collect(width, height, resize_mode, center);
     let rgb_img = media.to_rgb8();
-    let result = encode_sixel(&rgb_img);
+
+    let offset = match offset != 0 {
+        true => format!("\x1b[{}C", offset),
+        false => "".to_string(),
+    };
+    let result = offset + &encode_sixel(&rgb_img);
 
     result
 }

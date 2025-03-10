@@ -29,7 +29,13 @@ impl MediaTrait for VideoMedia {
         todo!()
     }
 
-    fn resize_and_collect(&mut self, _width: u32, _height: u32, _resize_mode: ResizeMode) {
+    fn resize_and_collect(
+        &mut self,
+        _width: u32,
+        _height: u32,
+        _resize_mode: ResizeMode,
+        _center: bool,
+    ) -> u32 {
         todo!()
     }
 }
