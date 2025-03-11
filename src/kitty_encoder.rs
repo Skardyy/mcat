@@ -1,8 +1,10 @@
 use std::cmp::min;
 
+use image::DynamicImage;
+
 use crate::{
-    media_encoder::{Media, MediaTrait},
-    term_misc::{parse_resize_mode, EnvIdentifiers},
+    image_extended::{InlineImage, ResizeMode},
+    term_misc::EnvIdentifiers,
 };
 
 fn chunk_base64(base64: String, size: usize) -> String {
@@ -27,18 +29,16 @@ fn chunk_base64(base64: String, size: usize) -> String {
 
     chunked_result
 }
-pub fn encode(
-    image_path: &str,
-    width: u32,
-    height: u32,
-    resize_mode: &str,
+pub fn encode_image(
+    img: &DynamicImage,
+    width: u16,
+    height: u16,
+    resize_mode: &ResizeMode,
     center: bool,
-    cache: bool,
 ) -> String {
-    let mut media = Media::new(image_path, true, cache);
-    let resize_mode = parse_resize_mode(resize_mode);
-    let offset = media.resize_and_collect(width, height, resize_mode, center);
-    let base64_encoded = media.encode_base64();
+    let (img, offset) = img.resize_into_png(width, height, resize_mode, center);
+
+    let base64_encoded = img.encode_base64();
 
     let offset = match offset != 0 {
         true => format!("\x1b[{}C", offset),

@@ -9,8 +9,6 @@ use std::{
 
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, size, window_size};
 
-use crate::media_encoder::ResizeMode;
-
 lazy_static! {
     static ref WINSIZE: Winsize = Winsize::new();
 }
@@ -20,11 +18,11 @@ pub enum SizeDirection {
     HEIGHT,
 }
 
-pub fn center_image(image_width: u32) -> u32 {
+pub fn center_image(image_width: u16) -> u16 {
     let offset_x = (WINSIZE.spx_width as f32 - image_width as f32) / 2.0;
     let offset_x = offset_x / (WINSIZE.spx_width as f32 / WINSIZE.sc_width as f32);
 
-    offset_x.round() as u32
+    offset_x.round() as u16
 }
 
 pub fn dim_to_px(dim: &str, direction: SizeDirection) -> Result<u32, String> {
@@ -61,15 +59,6 @@ pub fn dim_to_px(dim: &str, direction: SizeDirection) -> Result<u32, String> {
     }
 
     Err(format!("Invalid dimension format: {}", dim))
-}
-
-pub fn parse_resize_mode(resize_mode: &str) -> ResizeMode {
-    match resize_mode {
-        "fit" => ResizeMode::Fit,
-        "crop" => ResizeMode::Crop,
-        "strech" => ResizeMode::Strech,
-        _ => ResizeMode::Fit,
-    }
 }
 
 pub struct Winsize {

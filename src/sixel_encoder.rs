@@ -1,25 +1,24 @@
 use crate::{
-    media_encoder::{Media, MediaTrait},
-    term_misc::{parse_resize_mode, EnvIdentifiers},
+    image_extended::{DocumentReader, InlineImage, ResizeMode},
+    term_misc::EnvIdentifiers,
 };
 use color_quant::NeuQuant;
-use image::{ImageBuffer, Rgb};
+use image::{DynamicImage, ImageBuffer, ImageReader, Rgb};
 use std::io::{self, Write};
 
 const SIXEL_MIN: u8 = 0x3f; // '?'
 
-pub fn encode(
-    image_path: &str,
-    width: u32,
-    height: u32,
-    resize_mode: &str,
+pub fn encode_image(
+    img: &DynamicImage,
+    width: u16,
+    height: u16,
+    resize_mode: &ResizeMode,
     center: bool,
-    cache: bool,
 ) -> String {
-    let mut media = Media::new(image_path, false, cache);
-    let resize_mode = parse_resize_mode(resize_mode);
-    let offset = media.resize_and_collect(width, height, resize_mode, center);
-    let rgb_img = media.to_rgb8();
+    let (img, offset) = img.resize_into_png(width, height, resize_mode, center);
+    let img = ImageReader::from_png(img).expect("failed to load image");
+
+    let rgb_img = img.to_rgb8();
 
     let offset = match offset != 0 {
         true => format!("\x1b[{}C", offset),

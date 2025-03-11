@@ -1,19 +1,21 @@
+mod image_extended;
 mod iterm_encoder;
 mod kitty_encoder;
-mod media_encoder;
-mod photo_media;
 mod sixel_encoder;
 mod term_misc;
-mod video_media;
 
 #[macro_use]
 extern crate lazy_static;
+
+use std::path::Path;
 
 use clap::{
     builder::{styling::AnsiColor, Styles},
     error::ErrorKind,
     Arg, ColorChoice, Command,
 };
+use image::ImageReader;
+use image_extended::{parse_resize_mode, DocumentReader, ResizeMode};
 use iterm_encoder::is_iterm_capable;
 use kitty_encoder::is_kitty_capable;
 use sixel_encoder::is_sixel_capable;
@@ -68,7 +70,9 @@ fn main() {
                 .short('m')
                 .long("resizeMode")
                 .help("the technique to use for resizing")
-                .value_parser(["fit", "crop", "strech"])
+                .value_parser(|mode: &str| {
+                    parse_resize_mode(mode).ok_or(clap::Error::new(ErrorKind::InvalidValue))
+                })
                 .default_value("fit"),
         )
         .arg(
@@ -87,9 +91,9 @@ fn main() {
 
     let path = opts.get_one::<String>("input").unwrap();
     let mut format = opts.get_one::<String>("format").unwrap().as_str();
-    let resize_mode = opts.get_one::<String>("resizeMode").unwrap().as_str();
-    let width = opts.get_one::<u32>("width").unwrap();
-    let height = opts.get_one::<u32>("height").unwrap();
+    let resize_mode = opts.get_one::<ResizeMode>("resizeMode").unwrap();
+    let width = *opts.get_one::<u32>("width").unwrap() as u16;
+    let height = *opts.get_one::<u32>("height").unwrap() as u16;
     let center = !opts.get_flag("no-center");
     let cache = !opts.get_flag("no-cache");
 
@@ -107,17 +111,22 @@ fn main() {
             format = "sixel"
         }
     }
+
+    let img_path = Path::new(path).to_path_buf();
+    let img = ImageReader::open_inline_image(&img_path, cache)
+        .expect("either image is invalid or not supported");
+
     match format {
         "iterm" => {
-            let item = iterm_encoder::encode(path, *width, *height, resize_mode, center, cache);
+            let item = iterm_encoder::encode_image(&img, width, height, resize_mode, center);
             println!("{}", item)
         }
         "kitty" => {
-            let item = kitty_encoder::encode(path, *width, *height, resize_mode, center, cache);
+            let item = kitty_encoder::encode_image(&img, width, height, resize_mode, center);
             println!("{}", item)
         }
         "sixel" => {
-            let item = sixel_encoder::encode(path, *width, *height, resize_mode, center, cache);
+            let item = sixel_encoder::encode_image(&img, width, height, resize_mode, center);
             println!("{}", item)
         }
         _ => {}
