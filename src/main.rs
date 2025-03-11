@@ -113,22 +113,39 @@ fn main() {
     }
 
     let img_path = Path::new(path).to_path_buf();
-    let img = ImageReader::open_inline_image(&img_path, cache)
-        .expect("either image is invalid or not supported");
+    let img = match ImageReader::open_inline_image(&img_path, cache) {
+        Ok(img) => img,
+        Err(e) => {
+            eprintln!("{}", e);
+            std::process::exit(1)
+        }
+    };
 
     match format {
         "iterm" => match iterm_encoder::encode_image(&img, width, height, resize_mode, center) {
             Ok(item) => println!("{}", item),
-            Err(e) => panic!("{}", e),
+            Err(e) => {
+                eprintln!("{}", e);
+                std::process::exit(1)
+            }
         },
         "kitty" => match kitty_encoder::encode_image(&img, width, height, resize_mode, center) {
             Ok(item) => println!("{}", item),
-            Err(e) => panic!("{}", e),
+            Err(e) => {
+                eprintln!("{}", e);
+                std::process::exit(1)
+            }
         },
         "sixel" => match sixel_encoder::encode_image(&img, width, height, resize_mode, center) {
             Ok(item) => println!("{}", item),
-            Err(e) => panic!("{}", e),
+            Err(e) => {
+                eprintln!("{}", e);
+                std::process::exit(1)
+            }
         },
-        _ => {}
+        _ => {
+            eprintln!("how did you reach here?");
+            std::process::exit(1)
+        }
     }
 }

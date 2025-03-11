@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     env, f32,
-    io::{stderr, stdin, IsTerminal, Read, Write},
+    io::{stderr, stdin, ErrorKind, IsTerminal, Read, Write},
     sync::mpsc,
     thread,
     time::Duration,
@@ -162,25 +162,30 @@ fn query_terminal(esc: &str) -> Option<String> {
                         break;
                     }
                 }
-                Err(e) => tx.send(Err(e)).unwrap(),
+                Err(e) => {
+                    let _ = tx.send(Err(e));
+                }
             }
         }
 
         if !response.is_empty() {
             let result = String::from_utf8_lossy(&response).to_string();
-            tx.send(Ok(result)).unwrap();
+            let _ = tx.send(Ok(result));
         } else {
-            tx.send(Ok("".to_string())).unwrap();
+            let _ = tx.send(Err(std::io::Error::new(
+                ErrorKind::Other,
+                "doesn't matter lol",
+            )));
         }
     });
 
     let res: Option<String>;
     match rx.recv_timeout(Duration::from_millis(20)) {
-        Ok(result) => res = Some(result.unwrap()),
+        Ok(result) => res = result.ok(),
         Err(_) => res = None,
     }
 
-    let _ = disable_raw_mode().ok()?;
+    let _ = disable_raw_mode();
     res
 }
 
