@@ -9,8 +9,9 @@ pub fn encode(
     height: u32,
     resize_mode: &str,
     center: bool,
+    cache: bool,
 ) -> String {
-    let mut media = Media::new(image_path, true);
+    let mut media = Media::new(image_path, true, cache);
     let resize_mode = parse_resize_mode(resize_mode);
     let offset = media.resize_and_collect(width, height, resize_mode, center);
     let base64_encoded = media.encode_base64();

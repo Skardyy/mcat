@@ -36,7 +36,6 @@
 - [x] WebP
 - [ ] SVG
 - [ ] MP4
-- [ ] Html
 </details>
 
 <details>
@@ -50,14 +49,15 @@
 <summary>Document Support 📚</summary>
 
 > Requires libreoffice
-- [ ] DOCX
-- [ ] XLSX
-- [ ] PDF
-- [ ] PPTX
-- [ ] ODG
-- [ ] ODP
-- [ ] ODS
-- [ ] ODT
+- [x] DOCX
+- [x] XLSX
+- [x] PDF
+- [x] PPTX
+- [x] ODG
+- [x] ODP
+- [x] ODS
+- [x] ODT
+- [x] Html
 </details>
 
 <details>

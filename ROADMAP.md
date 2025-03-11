@@ -15,10 +15,10 @@
     - [ ] Iterm
     - [ ] Kitty
     - [ ] Sixel
-- [-] Image manipulation and centering
-    - [-] Iterm
-    - [-] Kitty
-    - [-] Sixel
+- [x] Image manipulation and centering
+    - [x] Iterm
+    - [x] Kitty
+    - [x] Sixel
 - [ ] Video manipulation and centering
     - [ ] Iterm
     - [ ] Kitty
@@ -27,11 +27,12 @@
     - [ ] Iterm
     - [ ] Kitty
     - [ ] Sixel
-- [ ] View Document files
-    - [ ] Iterm
-    - [ ] Kitty
-    - [ ] Sixel
-- [ ] Query Spx and Sc
+- [x] View Document files
+    - [x] Iterm
+    - [x] Kitty
+    - [x] Sixel
+- [x] Query Spx and Sc
+- [x] Caching documents convertion
 - [ ] Add Simple Ascii fallback
 - [ ] Add Url Reading
 - [ ] Add Raw Reading

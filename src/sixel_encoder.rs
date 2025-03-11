@@ -14,8 +14,9 @@ pub fn encode(
     height: u32,
     resize_mode: &str,
     center: bool,
+    cache: bool,
 ) -> String {
-    let mut media = Media::new(image_path, false);
+    let mut media = Media::new(image_path, false, cache);
     let resize_mode = parse_resize_mode(resize_mode);
     let offset = media.resize_and_collect(width, height, resize_mode, center);
     let rgb_img = media.to_rgb8();

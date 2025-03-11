@@ -72,12 +72,16 @@ fn main() {
                 .default_value("fit"),
         )
         .arg(
-            Arg::new("center")
-                .short('c')
-                .long("center")
-                .help("rather or not to center the image with the remaining space")
-                .action(clap::ArgAction::SetTrue)
-                .default_value("true"),
+            Arg::new("no-center")
+                .long("no-center")
+                .help("disable centering for the image with the remaining space")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("no-cache")
+                .long("no-cache")
+                .help("disable for cache libreoffice convertions")
+                .action(clap::ArgAction::SetTrue),
         )
         .get_matches();
 
@@ -86,7 +90,8 @@ fn main() {
     let resize_mode = opts.get_one::<String>("resizeMode").unwrap().as_str();
     let width = opts.get_one::<u32>("width").unwrap();
     let height = opts.get_one::<u32>("height").unwrap();
-    let center = opts.get_one::<bool>("center").unwrap();
+    let center = !opts.get_flag("no-center");
+    let cache = !opts.get_flag("no-cache");
 
     if format == "auto" {
         let env = &EnvIdentifiers::new();
@@ -104,15 +109,15 @@ fn main() {
     }
     match format {
         "iterm" => {
-            let item = iterm_encoder::encode(path, *width, *height, resize_mode, *center);
+            let item = iterm_encoder::encode(path, *width, *height, resize_mode, center, cache);
             println!("{}", item)
         }
         "kitty" => {
-            let item = kitty_encoder::encode(path, *width, *height, resize_mode, *center);
+            let item = kitty_encoder::encode(path, *width, *height, resize_mode, center, cache);
             println!("{}", item)
         }
         "sixel" => {
-            let item = sixel_encoder::encode(path, *width, *height, resize_mode, *center);
+            let item = sixel_encoder::encode(path, *width, *height, resize_mode, center, cache);
             println!("{}", item)
         }
         _ => {}
