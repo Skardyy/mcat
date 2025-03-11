@@ -117,18 +117,18 @@ fn main() {
         .expect("either image is invalid or not supported");
 
     match format {
-        "iterm" => {
-            let item = iterm_encoder::encode_image(&img, width, height, resize_mode, center);
-            println!("{}", item)
-        }
-        "kitty" => {
-            let item = kitty_encoder::encode_image(&img, width, height, resize_mode, center);
-            println!("{}", item)
-        }
-        "sixel" => {
-            let item = sixel_encoder::encode_image(&img, width, height, resize_mode, center);
-            println!("{}", item)
-        }
+        "iterm" => match iterm_encoder::encode_image(&img, width, height, resize_mode, center) {
+            Ok(item) => println!("{}", item),
+            Err(e) => panic!("{}", e),
+        },
+        "kitty" => match kitty_encoder::encode_image(&img, width, height, resize_mode, center) {
+            Ok(item) => println!("{}", item),
+            Err(e) => panic!("{}", e),
+        },
+        "sixel" => match sixel_encoder::encode_image(&img, width, height, resize_mode, center) {
+            Ok(item) => println!("{}", item),
+            Err(e) => panic!("{}", e),
+        },
         _ => {}
     }
 }

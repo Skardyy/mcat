@@ -35,8 +35,8 @@ pub fn encode_image(
     height: u16,
     resize_mode: &ResizeMode,
     center: bool,
-) -> String {
-    let (img, offset) = img.resize_into_png(width, height, resize_mode, center);
+) -> Result<String, Box<dyn std::error::Error>> {
+    let (img, offset) = img.resize_into_png(width, height, resize_mode, center)?;
 
     let base64_encoded = img.encode_base64();
 
@@ -46,7 +46,7 @@ pub fn encode_image(
     };
     let base64_encoded = offset + &chunk_base64(base64_encoded, 4096);
 
-    base64_encoded
+    Ok(base64_encoded)
 }
 
 pub fn is_kitty_capable(env: &EnvIdentifiers) -> bool {

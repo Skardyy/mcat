@@ -11,8 +11,8 @@ pub fn encode_image(
     height: u16,
     resize_mode: &ResizeMode,
     center: bool,
-) -> String {
-    let (img, offset) = img.resize_into_png(width, height, resize_mode, center);
+) -> Result<String, Box<dyn std::error::Error>> {
+    let (img, offset) = img.resize_into_png(width, height, resize_mode, center)?;
 
     let base64_encoded = img.encode_base64();
 
@@ -27,7 +27,7 @@ pub fn encode_image(
     iterm_sequence.push_str(&base64_encoded);
     iterm_sequence.push('\x07');
 
-    iterm_sequence
+    Ok(iterm_sequence)
 }
 
 pub fn is_iterm_capable(env: &EnvIdentifiers) -> bool {

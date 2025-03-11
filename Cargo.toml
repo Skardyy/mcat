@@ -11,5 +11,6 @@ crossterm = "0.28.1"
 fast_image_resize = { version = "5.1.2", features = ["image"] }
 image = "0.25.5"
 lazy_static = "1.5.0"
+resvg = "0.45.0"
 which = "7.0.2"
 windows = { version = "0.60.0", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }

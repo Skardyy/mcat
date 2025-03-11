@@ -1,4 +1,5 @@
-use std::io::Cursor;
+use std::fs::File;
+use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 use std::{env, fs};
 
@@ -6,7 +7,9 @@ use base64::{engine::general_purpose, Engine};
 use fast_image_resize::images::Image;
 use fast_image_resize::{IntoImageView, ResizeOptions, Resizer};
 use image::codecs::png::PngEncoder;
-use image::{DynamicImage, ImageEncoder, ImageReader, ImageResult};
+use image::{DynamicImage, ImageBuffer, ImageEncoder, ImageReader, ImageResult, Rgba};
+use resvg::tiny_skia;
+use resvg::usvg::{Options, Tree};
 use std::process::Command;
 use which::which;
 
@@ -53,6 +56,19 @@ pub fn is_document(input: &PathBuf) -> bool {
     }
 }
 
+pub fn is_image(input: &PathBuf) -> bool {
+    let supported_extensions = [
+        "avif", "bmp", "dds", "farbfeld", "gif", "hdr", "ico", "jpeg", "jpg", "exr", "png", "pnm",
+        "qoi", "tga", "tiff", "webp",
+    ];
+
+    let path = Path::new(input);
+    match path.extension() {
+        Some(ext) => supported_extensions.contains(&ext.to_string_lossy().to_lowercase().as_str()),
+        None => false,
+    }
+}
+
 fn find_libreoffice_path() -> Option<PathBuf> {
     let paths = [
         "C:\\Program Files\\LibreOffice\\program\\soffice.com",
@@ -76,29 +92,35 @@ fn find_libreoffice_path() -> Option<PathBuf> {
 }
 
 pub trait DocumentReader {
-    fn open_document(input: &PathBuf, cache: bool) -> Option<DynamicImage>;
-    fn open_inline_image(input: &PathBuf, cache: bool) -> Option<DynamicImage>;
+    fn open_document(
+        input: &PathBuf,
+        cache: bool,
+    ) -> Result<DynamicImage, Box<dyn std::error::Error>>;
+    fn open_inline_image(
+        input: &PathBuf,
+        cache: bool,
+    ) -> Result<DynamicImage, Box<dyn std::error::Error>>;
     fn from_png(img: PNGImage) -> ImageResult<DynamicImage>;
 }
 impl DocumentReader for ImageReader<std::fs::File> {
-    fn open_document(input: &PathBuf, cache: bool) -> Option<DynamicImage> {
-        if !is_document(input) {
-            return None;
-        }
-        let office_path = find_libreoffice_path()?;
+    fn open_document(
+        input: &PathBuf,
+        cache: bool,
+    ) -> Result<DynamicImage, Box<dyn std::error::Error>> {
+        let office_path = find_libreoffice_path().ok_or("libreoffice isn't installed")?;
 
         // for caching we'll rename and check if still exists in the tmp dir.
-        let mut cache_name = env::temp_dir().join(input.file_name().unwrap());
+        let mut cache_name =
+            env::temp_dir().join(input.file_name().ok_or("failed to get tmp dir")?);
         let digested_stem =
             general_purpose::URL_SAFE.encode(cache_name.to_string_lossy().as_bytes()) + ".png";
         cache_name.set_file_name(digested_stem.clone());
         if cache && cache_name.exists() {
-            return Some(
-                ImageReader::open(cache_name)
-                    .expect(&format!("failed to open: {}", input.display()))
-                    .decode()
-                    .expect("failed to parse the image"),
-            );
+            if let Ok(img) = ImageReader::open(&cache_name) {
+                if let Ok(img) = img.decode() {
+                    return Ok(img);
+                }
+            }
         }
 
         // where the file will be located
@@ -106,13 +128,13 @@ impl DocumentReader for ImageReader<std::fs::File> {
         let base_name = input
             .with_extension("png")
             .file_name()
-            .unwrap()
+            .ok_or("failed to get filename")?
             .to_string_lossy()
             .to_string();
         let path = tmp_dir.join(base_name);
 
         // html sadly requires extra step to pdf before png
-        let extra_step = input.extension()? == "html";
+        let extra_step = input.extension().ok_or("file doesn't contain ext")? == "html";
         if extra_step {
             Command::new(office_path.clone())
                 .arg("--headless")
@@ -121,8 +143,7 @@ impl DocumentReader for ImageReader<std::fs::File> {
                 .arg(input.clone())
                 .arg("--outdir")
                 .arg(tmp_dir.clone())
-                .output()
-                .unwrap();
+                .output()?;
         }
         let input = match extra_step {
             true => &path.with_extension("pdf"),
@@ -136,38 +157,78 @@ impl DocumentReader for ImageReader<std::fs::File> {
             .arg(input)
             .arg("--outdir")
             .arg(tmp_dir)
-            .output()
-            .unwrap();
+            .output()?;
         // stderr contains something, means failed
         if output.stderr.len() > 0 {
             let msg = String::from_utf8(output.stderr)
                 .unwrap_or("failed to convert using libreoffice".to_string());
-            panic!("{}", msg);
+            return Err(From::from(msg));
         }
 
         //renaming for the caching
         fs::rename(path, cache_name.clone()).expect("failed caching libreoffice convert");
-        let img = ImageReader::open(cache_name)
-            .expect(&format!("failed to open: {}", input.display()))
-            .decode()
-            .expect("failed to parse the image");
+        let img = ImageReader::open(cache_name)?.decode()?;
 
-        Some(img)
+        Ok(img)
     }
 
-    fn open_inline_image(input: &PathBuf, cache: bool) -> Option<DynamicImage> {
-        if let Ok(img) = ImageReader::open(input) {
-            if let Ok(img) = img.decode() {
-                return Some(img);
-            }
+    fn open_inline_image(
+        input: &PathBuf,
+        cache: bool,
+    ) -> Result<DynamicImage, Box<dyn std::error::Error>> {
+        if is_image(input) {
+            let img = ImageReader::open(input)?.decode()?;
+            return Ok(img);
         }
 
-        ImageReader::open_document(input, cache)
+        if is_document(input) {
+            let img = ImageReader::open_document(input, cache)?;
+            return Ok(img);
+        }
+
+        if input.extension().ok_or("file doesn't contain ext")? == "svg" {
+            let img = open_svg(input)?;
+            return Ok(img);
+        }
+
+        Err(From::from("file type isn't supported"))
     }
 
     fn from_png(img: PNGImage) -> ImageResult<DynamicImage> {
         image::load_from_memory(&img.buffer)
     }
+}
+
+fn open_svg(path: &PathBuf) -> Result<DynamicImage, Box<dyn std::error::Error>> {
+    let mut svg_file = File::open(path)?;
+    let mut svg_data = Vec::new();
+    svg_file.read_to_end(&mut svg_data)?;
+
+    // Create options for parsing SVG
+    let opt = Options::default();
+
+    // Parse SVG
+    let tree = Tree::from_data(&svg_data, &opt)?;
+
+    // Get size of the SVG
+    let pixmap_size = tree.size();
+    let width = pixmap_size.width();
+    let height = pixmap_size.height();
+
+    // Create a Pixmap to render to
+    let mut pixmap = tiny_skia::Pixmap::new(width as u32, height as u32)
+        .ok_or("Failed to create pixmap for svg")?;
+
+    // Render SVG to Pixmap
+    resvg::render(&tree, tiny_skia::Transform::default(), &mut pixmap.as_mut());
+
+    // Convert Pixmap to ImageBuffer
+    let image_buffer =
+        ImageBuffer::<Rgba<u8>, _>::from_raw(width as u32, height as u32, pixmap.data().to_vec())
+            .ok_or("Failed to create image buffer for svg")?;
+
+    // Convert ImageBuffer to DynamicImage
+    Ok(DynamicImage::ImageRgba8(image_buffer))
 }
 
 pub trait InlineImage {
@@ -177,7 +238,7 @@ pub trait InlineImage {
         height: u16,
         resize_mode: &ResizeMode,
         center: bool,
-    ) -> (PNGImage, u16);
+    ) -> Result<(PNGImage, u16), Box<dyn std::error::Error>>;
 }
 
 impl InlineImage for DynamicImage {
@@ -187,7 +248,7 @@ impl InlineImage for DynamicImage {
         height: u16,
         resize_mode: &ResizeMode,
         center: bool,
-    ) -> (PNGImage, u16) {
+    ) -> Result<(PNGImage, u16), Box<dyn std::error::Error>> {
         let crop_opts = &ResizeOptions::new().fit_into_destination(Some((1.0 as f64, 1.0 as f64)));
         let (new_width, new_height, opts) = match resize_mode {
             ResizeMode::Fit => {
@@ -206,27 +267,23 @@ impl InlineImage for DynamicImage {
         let mut dst_image = Image::new(
             new_width.into(),
             new_height.into(),
-            self.pixel_type().expect("image is invalid"),
+            self.pixel_type().ok_or("image is invalid")?,
         );
         let mut resizer = Resizer::new();
-        resizer
-            .resize(self, &mut dst_image, opts)
-            .expect("failed to resize image");
+        resizer.resize(self, &mut dst_image, opts)?;
 
         let mut buffer = Vec::new();
         let mut cursor = Cursor::new(&mut buffer);
         let encoder = PngEncoder::new(&mut cursor);
-        encoder
-            .write_image(
-                dst_image.buffer(),
-                dst_image.width(),
-                dst_image.height(),
-                self.color().into(),
-            )
-            .expect("failed to encode image into png");
+        encoder.write_image(
+            dst_image.buffer(),
+            dst_image.width(),
+            dst_image.height(),
+            self.color().into(),
+        )?;
 
         let img = PNGImage { buffer };
-        (img, offset)
+        Ok((img, offset))
     }
 }
 

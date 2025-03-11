@@ -14,8 +14,8 @@ pub fn encode_image(
     height: u16,
     resize_mode: &ResizeMode,
     center: bool,
-) -> String {
-    let (img, offset) = img.resize_into_png(width, height, resize_mode, center);
+) -> Result<String, Box<dyn std::error::Error>> {
+    let (img, offset) = img.resize_into_png(width, height, resize_mode, center)?;
     let img = ImageReader::from_png(img).expect("failed to load image");
 
     let rgb_img = img.to_rgb8();
@@ -26,7 +26,7 @@ pub fn encode_image(
     };
     let result = offset + &encode_sixel(&rgb_img);
 
-    result
+    Ok(result)
 }
 
 pub fn is_sixel_capable(env: &EnvIdentifiers) -> bool {
