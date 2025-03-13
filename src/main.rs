@@ -82,9 +82,10 @@ fn main() {
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
-            Arg::new("no-cache")
-                .long("no-cache")
-                .help("disable for cache libreoffice convertions")
+            Arg::new("cache")
+                .short('c')
+                .long("cache")
+                .help("enable caching for document files / urls")
                 .action(clap::ArgAction::SetTrue),
         )
         .get_matches();
@@ -95,7 +96,7 @@ fn main() {
     let width = *opts.get_one::<u32>("width").unwrap() as u16;
     let height = *opts.get_one::<u32>("height").unwrap() as u16;
     let center = !opts.get_flag("no-center");
-    let cache = !opts.get_flag("no-cache");
+    let cache = opts.get_flag("cache");
 
     if format == "auto" {
         let env = &EnvIdentifiers::new();

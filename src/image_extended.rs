@@ -1,3 +1,4 @@
+use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
@@ -6,6 +7,7 @@ use std::{env, fs};
 use base64::{engine::general_purpose, Engine};
 use fast_image_resize::images::Image;
 use fast_image_resize::{IntoImageView, ResizeOptions, Resizer};
+use headless_chrome::{Browser, LaunchOptions};
 use image::codecs::png::PngEncoder;
 use image::{DynamicImage, ImageBuffer, ImageEncoder, ImageFormat, ImageReader, ImageResult, Rgba};
 use resvg::tiny_skia;
@@ -46,9 +48,7 @@ fn calc_fit(src_width: u16, src_height: u16, dst_width: u16, dst_height: u16) ->
 }
 
 pub fn is_document(input: &PathBuf) -> bool {
-    let supported_extensions = [
-        "docx", "xlsx", "pdf", "pptx", "odf", "odp", "ods", "odt", "html",
-    ];
+    let supported_extensions = ["docx", "xlsx", "pdf", "pptx", "odf", "odp", "ods", "odt"];
 
     match input.extension() {
         Some(ext) => supported_extensions.contains(&ext.to_string_lossy().to_lowercase().as_str()),
@@ -61,6 +61,112 @@ pub fn is_image(input: &PathBuf) -> bool {
         return ImageFormat::from_extension(ext).is_some();
     }
     false
+}
+
+struct ImgCache {
+    pub id: String,
+}
+impl ImgCache {
+    pub fn new(id: String) -> Self {
+        ImgCache { id }
+    }
+    pub fn put_cache(&self, img: &DynamicImage) -> Result<(), Box<dyn std::error::Error>> {
+        let path = self.get_cache_path();
+        img.save(path)?;
+        Ok(())
+    }
+    fn get_cache(&self) -> Result<DynamicImage, Box<dyn std::error::Error>> {
+        let path = self.get_cache_path();
+        if !path.exists() {
+            return Err(From::from("cache doesn't exists"));
+        }
+
+        let img = ImageReader::open(path)?.decode()?;
+        Ok(img)
+    }
+    pub fn get_cache_path(&self) -> PathBuf {
+        let tmp_dir = env::temp_dir();
+        let digested_name = general_purpose::URL_SAFE.encode(&self.id) + ".png";
+        let path = tmp_dir.join(&digested_name);
+
+        path
+    }
+}
+fn img_from_url(url: &str, cache: bool) -> Result<DynamicImage, Box<dyn std::error::Error>> {
+    let url = url.to_string();
+    let img_cache = ImgCache::new(url);
+    if cache {
+        if let Ok(img) = img_cache.get_cache() {
+            return Ok(img);
+        }
+    }
+
+    let opts = LaunchOptions {
+        args: vec![OsStr::new("--hide-scrollbars")],
+        ..LaunchOptions::default()
+    };
+    let browser = Browser::new(opts)?;
+    #[allow(deprecated)]
+    let tab = browser.wait_for_initial_tab()?; // makes the function twice as fast
+    tab.navigate_to(&img_cache.id)?;
+    tab.wait_until_navigated()?;
+
+    let screenshot = tab.capture_screenshot(
+        headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png,
+        None,
+        None,
+        true,
+    )?;
+    let dynamic_image = image::load_from_memory(&screenshot)?;
+    if cache {
+        let _ = img_cache.put_cache(&dynamic_image);
+    }
+
+    Ok(dynamic_image)
+}
+fn libreoffice_convert(
+    input: &PathBuf,
+    cache: bool,
+) -> Result<DynamicImage, Box<dyn std::error::Error>> {
+    let office_path = find_libreoffice_path().ok_or("libreoffice isn't installed or visible")?;
+
+    let img_cache = ImgCache::new(input.to_string_lossy().to_string());
+    if cache {
+        if let Ok(img) = img_cache.get_cache() {
+            return Ok(img);
+        }
+    }
+
+    // where the file will be located
+    let tmp_dir = env::temp_dir();
+    let base_name = input
+        .with_extension("png")
+        .file_name()
+        .ok_or("failed to get filename")?
+        .to_string_lossy()
+        .to_string();
+    let path = tmp_dir.join(base_name);
+
+    let output = Command::new(office_path)
+        .arg("--headless")
+        .arg("--convert-to")
+        .arg("png")
+        .arg(input)
+        .arg("--outdir")
+        .arg(tmp_dir)
+        .output()?;
+    // stderr contains something, means failed
+    if output.stderr.len() > 0 {
+        let msg = String::from_utf8(output.stderr)
+            .unwrap_or("failed to convert using libreoffice".to_string());
+        return Err(From::from(msg));
+    }
+
+    //renaming for the caching
+    fs::rename(path, img_cache.get_cache_path())?;
+    let img = img_cache.get_cache()?;
+
+    Ok(img)
 }
 
 fn find_libreoffice_path() -> Option<PathBuf> {
@@ -101,69 +207,7 @@ impl DocumentReader for ImageReader<std::fs::File> {
         input: &PathBuf,
         cache: bool,
     ) -> Result<DynamicImage, Box<dyn std::error::Error>> {
-        let office_path = find_libreoffice_path().ok_or("libreoffice isn't installed")?;
-
-        // for caching we'll rename and check if still exists in the tmp dir.
-        let mut cache_name =
-            env::temp_dir().join(input.file_name().ok_or("failed to get tmp dir")?);
-        let digested_stem =
-            general_purpose::URL_SAFE.encode(cache_name.to_string_lossy().as_bytes()) + ".png";
-        cache_name.set_file_name(digested_stem.clone());
-        if cache && cache_name.exists() {
-            if let Ok(img) = ImageReader::open(&cache_name) {
-                if let Ok(img) = img.decode() {
-                    return Ok(img);
-                }
-            }
-        }
-
-        // where the file will be located
-        let tmp_dir = env::temp_dir();
-        let base_name = input
-            .with_extension("png")
-            .file_name()
-            .ok_or("failed to get filename")?
-            .to_string_lossy()
-            .to_string();
-        let path = tmp_dir.join(base_name);
-
-        // html sadly requires extra step to pdf before png
-        let extra_step = input.extension().ok_or("file doesn't contain ext")? == "html";
-        if extra_step {
-            Command::new(office_path.clone())
-                .arg("--headless")
-                .arg("--convert-to")
-                .arg("pdf")
-                .arg(input.clone())
-                .arg("--outdir")
-                .arg(tmp_dir.clone())
-                .output()?;
-        }
-        let input = match extra_step {
-            true => &path.with_extension("pdf"),
-            false => &input.clone(),
-        };
-
-        let output = Command::new(office_path)
-            .arg("--headless")
-            .arg("--convert-to")
-            .arg("png")
-            .arg(input)
-            .arg("--outdir")
-            .arg(tmp_dir)
-            .output()?;
-        // stderr contains something, means failed
-        if output.stderr.len() > 0 {
-            let msg = String::from_utf8(output.stderr)
-                .unwrap_or("failed to convert using libreoffice".to_string());
-            return Err(From::from(msg));
-        }
-
-        //renaming for the caching
-        fs::rename(path, cache_name.clone())?;
-        let img = ImageReader::open(cache_name)?.decode()?;
-
-        Ok(img)
+        libreoffice_convert(input, cache)
     }
 
     fn open_inline_image(
