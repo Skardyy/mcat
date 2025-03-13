@@ -1,4 +1,3 @@
-use std::ffi::OsStr;
 use std::fs::File;
 use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
@@ -7,7 +6,6 @@ use std::{env, fs};
 use base64::{engine::general_purpose, Engine};
 use fast_image_resize::images::Image;
 use fast_image_resize::{IntoImageView, ResizeOptions, Resizer};
-use headless_chrome::{Browser, LaunchOptions};
 use image::codecs::png::PngEncoder;
 use image::{DynamicImage, ImageBuffer, ImageEncoder, ImageFormat, ImageReader, ImageResult, Rgba};
 use resvg::tiny_skia;
@@ -92,38 +90,7 @@ impl ImgCache {
         path
     }
 }
-fn img_from_url(url: &str, cache: bool) -> Result<DynamicImage, Box<dyn std::error::Error>> {
-    let url = url.to_string();
-    let img_cache = ImgCache::new(url);
-    if cache {
-        if let Ok(img) = img_cache.get_cache() {
-            return Ok(img);
-        }
-    }
 
-    let opts = LaunchOptions {
-        args: vec![OsStr::new("--hide-scrollbars")],
-        ..LaunchOptions::default()
-    };
-    let browser = Browser::new(opts)?;
-    #[allow(deprecated)]
-    let tab = browser.wait_for_initial_tab()?; // makes the function twice as fast
-    tab.navigate_to(&img_cache.id)?;
-    tab.wait_until_navigated()?;
-
-    let screenshot = tab.capture_screenshot(
-        headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png,
-        None,
-        None,
-        true,
-    )?;
-    let dynamic_image = image::load_from_memory(&screenshot)?;
-    if cache {
-        let _ = img_cache.put_cache(&dynamic_image);
-    }
-
-    Ok(dynamic_image)
-}
 fn libreoffice_convert(
     input: &PathBuf,
     cache: bool,
