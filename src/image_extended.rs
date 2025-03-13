@@ -147,7 +147,7 @@ fn libreoffice_convert(
         .to_string();
     let path = tmp_dir.join(base_name);
 
-    let output = Command::new(office_path)
+    Command::new(office_path)
         .arg("--headless")
         .arg("--convert-to")
         .arg("png")
@@ -155,11 +155,9 @@ fn libreoffice_convert(
         .arg("--outdir")
         .arg(tmp_dir)
         .output()?;
-    // stderr contains something, means failed
-    if output.stderr.len() > 0 {
-        let msg = String::from_utf8(output.stderr)
-            .unwrap_or("failed to convert using libreoffice".to_string());
-        return Err(From::from(msg));
+
+    if !path.exists() {
+        return Err(From::from("failed to convert using libreoffice"));
     }
 
     //renaming for the caching
