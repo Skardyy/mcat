@@ -1,11 +1,6 @@
 use std::cmp::min;
 
-use image::DynamicImage;
-
-use crate::{
-    image_extended::{InlineImage, ResizeMode},
-    term_misc::EnvIdentifiers,
-};
+use crate::{image_extended::PNGImage, term_misc::EnvIdentifiers};
 
 fn chunk_base64(base64: String, size: usize) -> String {
     let total_bytes = base64.len();
@@ -29,15 +24,7 @@ fn chunk_base64(base64: String, size: usize) -> String {
 
     chunked_result
 }
-pub fn encode_image(
-    img: &DynamicImage,
-    width: u16,
-    height: u16,
-    resize_mode: &ResizeMode,
-    center: bool,
-) -> Result<String, Box<dyn std::error::Error>> {
-    let (img, offset) = img.resize_into_png(width, height, resize_mode, center)?;
-
+pub fn encode_image(img: &PNGImage, offset: u16) -> Result<String, Box<dyn std::error::Error>> {
     let base64_encoded = img.encode_base64();
 
     let offset = match offset != 0 {

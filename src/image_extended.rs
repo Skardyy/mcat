@@ -7,7 +7,7 @@ use base64::{engine::general_purpose, Engine};
 use fast_image_resize::images::Image;
 use fast_image_resize::{IntoImageView, ResizeOptions, Resizer};
 use image::codecs::png::PngEncoder;
-use image::{DynamicImage, ImageBuffer, ImageEncoder, ImageReader, ImageResult, Rgba};
+use image::{DynamicImage, ImageBuffer, ImageEncoder, ImageFormat, ImageReader, ImageResult, Rgba};
 use resvg::tiny_skia;
 use resvg::usvg::{Options, Tree};
 use std::process::Command;
@@ -57,16 +57,10 @@ pub fn is_document(input: &PathBuf) -> bool {
 }
 
 pub fn is_image(input: &PathBuf) -> bool {
-    let supported_extensions = [
-        "avif", "bmp", "dds", "farbfeld", "gif", "hdr", "ico", "jpeg", "jpg", "exr", "png", "pnm",
-        "qoi", "tga", "tiff", "webp",
-    ];
-
-    let path = Path::new(input);
-    match path.extension() {
-        Some(ext) => supported_extensions.contains(&ext.to_string_lossy().to_lowercase().as_str()),
-        None => false,
+    if let Some(ext) = input.extension() {
+        return ImageFormat::from_extension(ext).is_some();
     }
+    false
 }
 
 fn find_libreoffice_path() -> Option<PathBuf> {
@@ -100,7 +94,7 @@ pub trait DocumentReader {
         input: &PathBuf,
         cache: bool,
     ) -> Result<DynamicImage, Box<dyn std::error::Error>>;
-    fn from_png(img: PNGImage) -> ImageResult<DynamicImage>;
+    fn from_png(img: &PNGImage) -> ImageResult<DynamicImage>;
 }
 impl DocumentReader for ImageReader<std::fs::File> {
     fn open_document(
@@ -166,7 +160,7 @@ impl DocumentReader for ImageReader<std::fs::File> {
         }
 
         //renaming for the caching
-        fs::rename(path, cache_name.clone()).expect("failed caching libreoffice convert");
+        fs::rename(path, cache_name.clone())?;
         let img = ImageReader::open(cache_name)?.decode()?;
 
         Ok(img)
@@ -194,7 +188,7 @@ impl DocumentReader for ImageReader<std::fs::File> {
         Err(From::from("file type isn't supported"))
     }
 
-    fn from_png(img: PNGImage) -> ImageResult<DynamicImage> {
+    fn from_png(img: &PNGImage) -> ImageResult<DynamicImage> {
         image::load_from_memory(&img.buffer)
     }
 }

@@ -15,7 +15,7 @@ use clap::{
     Arg, ColorChoice, Command,
 };
 use image::ImageReader;
-use image_extended::{parse_resize_mode, DocumentReader, ResizeMode};
+use image_extended::{parse_resize_mode, DocumentReader, InlineImage, ResizeMode};
 use iterm_encoder::is_iterm_capable;
 use kitty_encoder::is_kitty_capable;
 use sixel_encoder::is_sixel_capable;
@@ -120,23 +120,30 @@ fn main() {
             std::process::exit(1)
         }
     };
+    let (img, offset) = match img.resize_into_png(width, height, resize_mode, center) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("{}", e);
+            std::process::exit(1)
+        }
+    };
 
     match format {
-        "iterm" => match iterm_encoder::encode_image(&img, width, height, resize_mode, center) {
+        "iterm" => match iterm_encoder::encode_image(&img, offset) {
             Ok(item) => println!("{}", item),
             Err(e) => {
                 eprintln!("{}", e);
                 std::process::exit(1)
             }
         },
-        "kitty" => match kitty_encoder::encode_image(&img, width, height, resize_mode, center) {
+        "kitty" => match kitty_encoder::encode_image(&img, offset) {
             Ok(item) => println!("{}", item),
             Err(e) => {
                 eprintln!("{}", e);
                 std::process::exit(1)
             }
         },
-        "sixel" => match sixel_encoder::encode_image(&img, width, height, resize_mode, center) {
+        "sixel" => match sixel_encoder::encode_image(&img, offset) {
             Ok(item) => println!("{}", item),
             Err(e) => {
                 eprintln!("{}", e);

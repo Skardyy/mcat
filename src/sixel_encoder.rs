@@ -1,22 +1,15 @@
 use crate::{
-    image_extended::{DocumentReader, InlineImage, ResizeMode},
+    image_extended::{DocumentReader, PNGImage},
     term_misc::EnvIdentifiers,
 };
 use color_quant::NeuQuant;
-use image::{DynamicImage, ImageBuffer, ImageReader, Rgb};
+use image::{ImageBuffer, ImageReader, Rgb};
 use std::io::{self, Write};
 
 const SIXEL_MIN: u8 = 0x3f; // '?'
 
-pub fn encode_image(
-    img: &DynamicImage,
-    width: u16,
-    height: u16,
-    resize_mode: &ResizeMode,
-    center: bool,
-) -> Result<String, Box<dyn std::error::Error>> {
-    let (img, offset) = img.resize_into_png(width, height, resize_mode, center)?;
-    let img = ImageReader::from_png(img).expect("failed to load image");
+pub fn encode_image(img: &PNGImage, offset: u16) -> Result<String, Box<dyn std::error::Error>> {
+    let img = ImageReader::from_png(img)?;
 
     let rgb_img = img.to_rgb8();
 
@@ -45,8 +38,12 @@ pub fn encode_sixel(img: &ImageBuffer<Rgb<u8>, Vec<u8>>) -> String {
     }
 
     let mut output = Vec::new();
-    write_sixel(&mut output, img).expect("failed to write sixel");
-    String::from_utf8_lossy(&output).to_string()
+    if write_sixel(&mut output, img).is_ok() {
+        String::from_utf8_lossy(&output).to_string()
+    } else {
+        eprintln!("failed to write sixel");
+        std::process::exit(1)
+    }
 }
 
 fn write_sixel<W: Write>(out: &mut W, img: &ImageBuffer<Rgb<u8>, Vec<u8>>) -> io::Result<()> {
