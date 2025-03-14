@@ -1,8 +1,8 @@
-use std::cmp::min;
+use std::{borrow::Cow, cmp::min};
 
-use crate::{image_extended::InlineImage, term_misc::EnvIdentifiers};
+use crate::{inline_image::InlineImage, term_misc::EnvIdentifiers};
 
-fn chunk_base64(base64: String, size: usize) -> String {
+fn chunk_base64(base64: &str, size: usize) -> Cow<'_, str> {
     let total_bytes = base64.len();
     let mut start = 0;
     let mut chunked_result = String::with_capacity(total_bytes);
@@ -22,18 +22,21 @@ fn chunk_base64(base64: String, size: usize) -> String {
         start = end;
     }
 
-    chunked_result
+    Cow::Owned(chunked_result)
 }
-pub fn encode_image(img: &InlineImage, offset: u16) -> Result<String, Box<dyn std::error::Error>> {
+pub fn encode_image(img: &InlineImage) -> Result<String, Box<dyn std::error::Error>> {
     let base64_encoded = img.encode_base64();
 
-    let offset = match offset != 0 {
-        true => format!("\x1b[{}C", offset),
-        false => "".to_string(),
-    };
-    let base64_encoded = offset + &chunk_base64(base64_encoded, 4096);
+    let mut kitty_sequence = String::with_capacity(base64_encoded.len());
 
-    Ok(base64_encoded)
+    if let Some(center) = img.center() {
+        kitty_sequence.push_str(&center);
+    }
+
+    let chunked_base64 = chunk_base64(&base64_encoded, 4096);
+    kitty_sequence.push_str(&chunked_base64);
+
+    Ok(kitty_sequence)
 }
 
 pub fn is_kitty_capable(env: &EnvIdentifiers) -> bool {

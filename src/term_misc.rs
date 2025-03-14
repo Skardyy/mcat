@@ -1,13 +1,6 @@
-use std::{
-    collections::HashMap,
-    env, f32,
-    io::{stderr, stdin, ErrorKind, IsTerminal, Read, Write},
-    sync::mpsc,
-    thread,
-    time::Duration,
-};
+use std::{collections::HashMap, env, f32};
 
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, size, window_size};
+use crossterm::terminal::{size, window_size};
 
 lazy_static! {
     static ref WINSIZE: Winsize = Winsize::new();
@@ -110,13 +103,7 @@ impl Winsize {
     pub fn new() -> Self {
         let mut spx_width = 0;
         let mut spx_height = 0;
-        if let Some(res) = query_terminal("\x1b[14t") {
-            // directly asking the terminal
-            let res = res.replace('t', "");
-            let mut items = res.split(';');
-            spx_height = items.nth(1).unwrap_or("0").parse::<u16>().unwrap_or(0);
-            spx_width = items.nth(0).unwrap_or("0").parse::<u16>().unwrap_or(0);
-        } else if let Ok(res) = window_size() {
+        if let Ok(res) = window_size() {
             // ioctl for unix
             spx_width = res.width;
             spx_height = res.height;
@@ -136,57 +123,6 @@ impl Winsize {
             spx_width,
         }
     }
-}
-
-fn query_terminal(esc: &str) -> Option<String> {
-    let mut stderr = stderr();
-    if !stdin().is_terminal() || !stderr.is_terminal() {
-        return None;
-    }
-
-    enable_raw_mode().ok()?;
-    stderr.write_all(esc.as_bytes()).ok()?;
-
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let mut buffer = [0; 1024];
-        let mut response = Vec::new();
-        let mut stdin = stdin();
-
-        loop {
-            match stdin.read(&mut buffer) {
-                Ok(0) => break,
-                Ok(n) => {
-                    response.extend_from_slice(&buffer[..n]);
-                    if buffer[..n].contains(&b't') {
-                        break;
-                    }
-                }
-                Err(e) => {
-                    let _ = tx.send(Err(e));
-                }
-            }
-        }
-
-        if !response.is_empty() {
-            let result = String::from_utf8_lossy(&response).to_string();
-            let _ = tx.send(Ok(result));
-        } else {
-            let _ = tx.send(Err(std::io::Error::new(
-                ErrorKind::Other,
-                "doesn't matter lol",
-            )));
-        }
-    });
-
-    let res: Option<String>;
-    match rx.recv_timeout(Duration::from_millis(20)) {
-        Ok(result) => res = result.ok(),
-        Err(_) => res = None,
-    }
-
-    let _ = disable_raw_mode();
-    res
 }
 
 pub struct EnvIdentifiers {

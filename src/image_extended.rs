@@ -1,11 +1,11 @@
 use std::io::Cursor;
 
-use base64::{engine::general_purpose, Engine};
 use fast_image_resize::images::Image;
 use fast_image_resize::{IntoImageView, ResizeOptions, Resizer};
 use image::codecs::png::PngEncoder;
 use image::{DynamicImage, ImageEncoder};
 
+use crate::inline_image::{InlineImage, InlineImgOpts};
 use crate::term_misc::center_image;
 
 #[derive(Clone)]
@@ -39,34 +39,33 @@ fn calc_fit(src_width: u16, src_height: u16, dst_width: u16, dst_height: u16) ->
 }
 
 pub trait PNGImage {
-    fn resize_into_png(
+    fn into_inline_img(
         &self,
-        width: u16,
-        height: u16,
-        resize_mode: &ResizeMode,
-        center: bool,
-    ) -> Result<(InlineImage, u16), Box<dyn std::error::Error>>;
+        opts: InlineImgOpts,
+    ) -> Result<InlineImage, Box<dyn std::error::Error>>;
 }
 
 impl PNGImage for DynamicImage {
-    fn resize_into_png(
+    fn into_inline_img(
         &self,
-        width: u16,
-        height: u16,
-        resize_mode: &ResizeMode,
-        center: bool,
-    ) -> Result<(InlineImage, u16), Box<dyn std::error::Error>> {
+        opts: InlineImgOpts,
+    ) -> Result<InlineImage, Box<dyn std::error::Error>> {
         let crop_opts = &ResizeOptions::new().fit_into_destination(Some((1.0 as f64, 1.0 as f64)));
-        let (new_width, new_height, opts) = match resize_mode {
+        let (new_width, new_height, resize_opts) = match opts.resize_mode {
             ResizeMode::Fit => {
-                let size = calc_fit(self.width() as u16, self.height() as u16, width, height);
+                let size = calc_fit(
+                    self.width() as u16,
+                    self.height() as u16,
+                    opts.width,
+                    opts.height,
+                );
                 (size.0, size.1, None::<&ResizeOptions>)
             }
-            ResizeMode::Crop => (width, height, Some(crop_opts)),
-            ResizeMode::Strech => (width, height, None),
+            ResizeMode::Crop => (opts.width, opts.height, Some(crop_opts)),
+            ResizeMode::Strech => (opts.width, opts.height, None),
         };
 
-        let offset = match center {
+        let offset = match opts.center {
             true => center_image(new_width),
             false => 0,
         };
@@ -77,7 +76,7 @@ impl PNGImage for DynamicImage {
             self.pixel_type().ok_or("image is invalid")?,
         );
         let mut resizer = Resizer::new();
-        resizer.resize(self, &mut dst_image, opts)?;
+        resizer.resize(self, &mut dst_image, resize_opts)?;
 
         let mut buffer = Vec::new();
         let mut cursor = Cursor::new(&mut buffer);
@@ -89,16 +88,7 @@ impl PNGImage for DynamicImage {
             self.color().into(),
         )?;
 
-        let img = InlineImage { buffer };
-        Ok((img, offset))
-    }
-}
-
-pub struct InlineImage {
-    pub buffer: Vec<u8>,
-}
-impl InlineImage {
-    pub fn encode_base64(&self) -> String {
-        general_purpose::STANDARD.encode(&self.buffer)
+        let img = InlineImage::from_raw(buffer, offset);
+        Ok(img)
     }
 }

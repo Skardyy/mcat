@@ -1,9 +1,11 @@
 mod image_extended;
-mod image_reader_extended;
+mod inline_image;
+mod inline_image_reader;
 mod iterm_encoder;
 mod kitty_encoder;
 mod sixel_encoder;
 mod term_misc;
+mod video;
 
 #[macro_use]
 extern crate lazy_static;
@@ -15,9 +17,9 @@ use clap::{
     error::ErrorKind,
     Arg, ColorChoice, Command,
 };
-use image::ImageReader;
-use image_extended::{parse_resize_mode, PNGImage, ResizeMode};
-use image_reader_extended::DocumentReader;
+use image_extended::{parse_resize_mode, ResizeMode};
+use inline_image::InlineImgOpts;
+use inline_image_reader::InlineImgReader;
 use iterm_encoder::is_iterm_capable;
 use kitty_encoder::is_kitty_capable;
 use sixel_encoder::is_sixel_capable;
@@ -68,9 +70,9 @@ fn main() {
                 }),
         )
         .arg(
-            Arg::new("resizeMode")
+            Arg::new("resize-mode")
                 .short('m')
-                .long("resizeMode")
+                .long("resize-mode")
                 .help("the technique to use for resizing")
                 .value_parser(|mode: &str| {
                     parse_resize_mode(mode).ok_or(clap::Error::new(ErrorKind::InvalidValue))
@@ -94,7 +96,7 @@ fn main() {
 
     let path = opts.get_one::<String>("input").unwrap();
     let mut format = opts.get_one::<String>("format").unwrap().as_str();
-    let resize_mode = opts.get_one::<ResizeMode>("resizeMode").unwrap();
+    let resize_mode = opts.get_one::<ResizeMode>("resize-mode").unwrap();
     let width = *opts.get_one::<u32>("width").unwrap() as u16;
     let height = *opts.get_one::<u32>("height").unwrap() as u16;
     let center = !opts.get_flag("no-center");
@@ -116,15 +118,18 @@ fn main() {
     }
 
     let img_path = Path::new(path).to_path_buf();
-    let img = match ImageReader::open_inline_image(&img_path, cache) {
+    let img = match InlineImgReader::open(
+        &img_path,
+        cache,
+        format != "sixel",
+        InlineImgOpts {
+            width,
+            height,
+            resize_mode: resize_mode.clone(),
+            center,
+        },
+    ) {
         Ok(img) => img,
-        Err(e) => {
-            eprintln!("{}", e);
-            std::process::exit(1)
-        }
-    };
-    let (img, offset) = match img.resize_into_png(width, height, resize_mode, center) {
-        Ok(r) => r,
         Err(e) => {
             eprintln!("{}", e);
             std::process::exit(1)
@@ -132,21 +137,21 @@ fn main() {
     };
 
     match format {
-        "iterm" => match iterm_encoder::encode_image(&img, offset) {
+        "iterm" => match iterm_encoder::encode_image(&img) {
             Ok(item) => println!("{}", item),
             Err(e) => {
                 eprintln!("{}", e);
                 std::process::exit(1)
             }
         },
-        "kitty" => match kitty_encoder::encode_image(&img, offset) {
+        "kitty" => match kitty_encoder::encode_image(&img) {
             Ok(item) => println!("{}", item),
             Err(e) => {
                 eprintln!("{}", e);
                 std::process::exit(1)
             }
         },
-        "sixel" => match sixel_encoder::encode_image(&img, offset) {
+        "sixel" => match sixel_encoder::encode_image(&img) {
             Ok(item) => println!("{}", item),
             Err(e) => {
                 eprintln!("{}", e);

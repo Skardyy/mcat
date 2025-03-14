@@ -35,14 +35,13 @@
 - [x] TIFF
 - [x] WebP
 - [x] SVG
-- [ ] MP4
 </details>
 
 <details>
 <summary>Video Support 🎬</summary>
 
 - [ ] GIF
-- [ ] MP4
+... 
 </details>
 
 <details>

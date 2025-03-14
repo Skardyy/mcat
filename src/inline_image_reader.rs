@@ -1,16 +1,19 @@
+use std::error::Error;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::{env, fs};
 
 use base64::{engine::general_purpose, Engine};
-use image::{DynamicImage, ImageBuffer, ImageFormat, ImageReader, ImageResult, Rgba};
+use image::{DynamicImage, ImageBuffer, ImageFormat, ImageReader, Rgba};
 use resvg::tiny_skia;
 use resvg::usvg::{Options, Tree};
 use std::process::Command;
 use which::which;
 
-use crate::image_extended::InlineImage;
+use crate::image_extended::PNGImage;
+use crate::inline_image::{InlineImage, InlineImgOpts};
+use crate::video::{is_video, InlineVideo};
 
 struct ImgCache {
     pub id: String,
@@ -123,10 +126,12 @@ fn find_libreoffice_path() -> Option<PathBuf> {
     None
 }
 
-fn open_svg(path: &PathBuf) -> Result<DynamicImage, Box<dyn std::error::Error>> {
-    let mut svg_file = File::open(path)?;
+fn load_svg<R>(mut reader: R) -> Result<DynamicImage, Box<dyn std::error::Error>>
+where
+    R: Read,
+{
     let mut svg_data = Vec::new();
-    svg_file.read_to_end(&mut svg_data)?;
+    reader.read_to_end(&mut svg_data)?;
 
     // Create options for parsing SVG
     let opt = Options::default();
@@ -155,38 +160,44 @@ fn open_svg(path: &PathBuf) -> Result<DynamicImage, Box<dyn std::error::Error>> 
     Ok(DynamicImage::ImageRgba8(image_buffer))
 }
 
-pub trait DocumentReader {
-    fn open_inline_image(
-        input: &PathBuf,
+pub struct InlineImgReader {}
+
+impl InlineImgReader {
+    pub fn open(
+        path: &PathBuf,
         cache: bool,
-    ) -> Result<DynamicImage, Box<dyn std::error::Error>>;
-    fn from_png(img: &InlineImage) -> ImageResult<DynamicImage>;
-}
-
-impl DocumentReader for ImageReader<std::fs::File> {
-    fn open_inline_image(
-        input: &PathBuf,
-        cache: bool,
-    ) -> Result<DynamicImage, Box<dyn std::error::Error>> {
-        if is_image(input) {
-            let img = ImageReader::open(input)?.decode()?;
-            return Ok(img);
+        try_video: bool,
+        opts: InlineImgOpts,
+    ) -> Result<InlineImage, Box<dyn Error>> {
+        if !path.exists() {
+            return Err(From::from("file doesn't exists"));
         }
 
-        if is_document(input) {
-            let img = libreoffice_convert(input, cache)?;
-            return Ok(img);
+        let mut img_opt: Option<DynamicImage> = None;
+
+        // ffmpeg supported videos
+        if try_video && is_video(path) {
+            let base64 = InlineVideo::test(path)?;
+            let inline_img = InlineImage::from_base64(base64, 0);
+            return Ok(inline_img);
+        }
+        // image crate supported files
+        if is_image(path) {
+            img_opt = Some(ImageReader::open(path)?.decode()?);
+        }
+        // svg
+        if path.extension().ok_or("file doesn't contain ext")? == "svg" {
+            let file = File::open(path)?;
+            img_opt = Some(load_svg(file)?);
+        }
+        // libreoffice documents
+        if is_document(path) {
+            img_opt = Some(libreoffice_convert(path, cache)?);
         }
 
-        if input.extension().ok_or("file doesn't contain ext")? == "svg" {
-            let img = open_svg(input)?;
-            return Ok(img);
-        }
+        let img = img_opt.ok_or("file type isn't supported")?;
 
-        Err(From::from("file type isn't supported"))
-    }
-
-    fn from_png(img: &InlineImage) -> ImageResult<DynamicImage> {
-        image::load_from_memory(&img.buffer)
+        let img = img.into_inline_img(opts)?;
+        Ok(img)
     }
 }

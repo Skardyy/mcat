@@ -31,7 +31,6 @@
     - [x] Iterm
     - [x] Kitty
     - [x] Sixel
-- [x] Query Spx and Sc
 - [x] Caching documents convertion
 - [ ] Add Simple Ascii fallback
 - [ ] Add Url Reading

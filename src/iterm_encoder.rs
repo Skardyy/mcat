@@ -1,12 +1,12 @@
-use crate::{image_extended::InlineImage, term_misc::EnvIdentifiers};
+use crate::{inline_image::InlineImage, term_misc::EnvIdentifiers};
 
-pub fn encode_image(img: &InlineImage, offset: u16) -> Result<String, Box<dyn std::error::Error>> {
+pub fn encode_image(img: &InlineImage) -> Result<String, Box<dyn std::error::Error>> {
     let base64_encoded = img.encode_base64();
 
     let mut iterm_sequence = String::with_capacity(base64_encoded.len() + 50);
 
-    if offset != 0 {
-        iterm_sequence.push_str(&format!("\x1b[{}C", offset));
+    if let Some(center) = img.center() {
+        iterm_sequence.push_str(&center);
     }
     iterm_sequence.push_str("\x1b]1337;File=inline=1;size=");
     iterm_sequence.push_str(&base64_encoded.len().to_string());

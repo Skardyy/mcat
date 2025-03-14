@@ -1,24 +1,24 @@
-use crate::{
-    image_extended::InlineImage, image_reader_extended::DocumentReader, term_misc::EnvIdentifiers,
-};
+use crate::{inline_image::InlineImage, term_misc::EnvIdentifiers};
 use color_quant::NeuQuant;
-use image::{ImageBuffer, ImageReader, Rgb};
+use image::{ImageBuffer, Rgb};
 use std::io::{self, Write};
 
 const SIXEL_MIN: u8 = 0x3f; // '?'
 
-pub fn encode_image(img: &InlineImage, offset: u16) -> Result<String, Box<dyn std::error::Error>> {
-    let img = ImageReader::from_png(img)?;
+pub fn encode_image(img: &InlineImage) -> Result<String, Box<dyn std::error::Error>> {
+    let dyn_img = img.into_dyn_img()?;
+    let rgb_img = dyn_img.to_rgb8();
 
-    let rgb_img = img.to_rgb8();
+    let mut sixel_sequence = String::with_capacity(rgb_img.len());
 
-    let offset = match offset != 0 {
-        true => format!("\x1b[{}C", offset),
-        false => "".to_string(),
-    };
-    let result = offset + &encode_sixel(&rgb_img);
+    if let Some(center) = img.center() {
+        sixel_sequence.push_str(&center);
+    }
 
-    Ok(result)
+    let encoded_sixel = encode_sixel(&rgb_img);
+    sixel_sequence.push_str(&encoded_sixel);
+
+    Ok(sixel_sequence)
 }
 
 pub fn is_sixel_capable(env: &EnvIdentifiers) -> bool {
