@@ -1,6 +1,5 @@
 use crate::{
-    image_extended::{DocumentReader, PNGImage},
-    term_misc::EnvIdentifiers,
+    image_extended::InlineImage, image_reader_extended::DocumentReader, term_misc::EnvIdentifiers,
 };
 use color_quant::NeuQuant;
 use image::{ImageBuffer, ImageReader, Rgb};
@@ -8,7 +7,7 @@ use std::io::{self, Write};
 
 const SIXEL_MIN: u8 = 0x3f; // '?'
 
-pub fn encode_image(img: &PNGImage, offset: u16) -> Result<String, Box<dyn std::error::Error>> {
+pub fn encode_image(img: &InlineImage, offset: u16) -> Result<String, Box<dyn std::error::Error>> {
     let img = ImageReader::from_png(img)?;
 
     let rgb_img = img.to_rgb8();

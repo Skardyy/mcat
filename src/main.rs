@@ -1,4 +1,5 @@
 mod image_extended;
+mod image_reader_extended;
 mod iterm_encoder;
 mod kitty_encoder;
 mod sixel_encoder;
@@ -15,7 +16,8 @@ use clap::{
     Arg, ColorChoice, Command,
 };
 use image::ImageReader;
-use image_extended::{parse_resize_mode, DocumentReader, InlineImage, ResizeMode};
+use image_extended::{parse_resize_mode, PNGImage, ResizeMode};
+use image_reader_extended::DocumentReader;
 use iterm_encoder::is_iterm_capable;
 use kitty_encoder::is_kitty_capable;
 use sixel_encoder::is_sixel_capable;

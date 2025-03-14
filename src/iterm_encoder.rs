@@ -1,6 +1,6 @@
-use crate::{image_extended::PNGImage, term_misc::EnvIdentifiers};
+use crate::{image_extended::InlineImage, term_misc::EnvIdentifiers};
 
-pub fn encode_image(img: &PNGImage, offset: u16) -> Result<String, Box<dyn std::error::Error>> {
+pub fn encode_image(img: &InlineImage, offset: u16) -> Result<String, Box<dyn std::error::Error>> {
     let base64_encoded = img.encode_base64();
 
     let mut iterm_sequence = String::with_capacity(base64_encoded.len() + 50);

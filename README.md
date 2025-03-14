@@ -1,6 +1,6 @@
 <div align="center">
   
-<img src="https://github.com/user-attachments/assets/e76390b2-e121-4384-b052-21bbfd108e1b" width="240"/>
+<img src="https://github.com/user-attachments/assets/e76390b2-e121-4384-b052-21bbfd108e1b" width="128"/>
 
 <p>Media Cat</p>
 </div>
@@ -34,7 +34,7 @@
 - [x] TGA
 - [x] TIFF
 - [x] WebP
-- [ ] SVG
+- [x] SVG
 - [ ] MP4
 </details>
 
@@ -57,7 +57,7 @@
 - [x] ODP
 - [x] ODS
 - [x] ODT
-- [x] Html
+- [ ] Html
 </details>
 
 <details>
