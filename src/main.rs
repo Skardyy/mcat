@@ -80,7 +80,15 @@ fn main() {
                 .default_value("fit"),
         )
         .arg(
+            Arg::new("resize-video")
+                .short('v')
+                .long("resize-video")
+                .help("tries to resize video as well (doesn't respect crop)")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
             Arg::new("no-center")
+                .short('C')
                 .long("no-center")
                 .help("disable centering for the image with the remaining space")
                 .action(clap::ArgAction::SetTrue),
@@ -100,6 +108,7 @@ fn main() {
     let width = *opts.get_one::<u32>("width").unwrap() as u16;
     let height = *opts.get_one::<u32>("height").unwrap() as u16;
     let center = !opts.get_flag("no-center");
+    let resize_video = opts.get_flag("resize-video");
     let cache = opts.get_flag("cache");
 
     if format == "auto" {
@@ -127,6 +136,7 @@ fn main() {
             height,
             resize_mode: resize_mode.clone(),
             center,
+            resize_video,
         },
     ) {
         Ok(img) => img,

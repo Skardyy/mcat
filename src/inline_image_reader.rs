@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::error::Error;
 use std::fs::File;
 use std::io::Read;
@@ -12,22 +13,27 @@ use std::process::Command;
 use which::which;
 
 use crate::image_extended::PNGImage;
-use crate::inline_image::{InlineImage, InlineImgOpts};
+use crate::inline_image::{self, InlineImage, InlineImgOpts};
 use crate::video::{is_video, InlineVideo};
 
-struct ImgCache {
+pub struct ImgCache {
     pub id: String,
 }
 impl ImgCache {
-    pub fn new(id: String) -> Self {
+    pub fn new(id: Cow<'_, str>, is_path: bool) -> Self {
+        let id = match is_path {
+            false => id.into_owned(),
+            true => {
+                let path = Path::new(&id as &str);
+                match path.canonicalize() {
+                    Ok(path) => path.to_string_lossy().into_owned(),
+                    Err(_) => id.into_owned(),
+                }
+            }
+        };
         ImgCache { id }
     }
-    //pub fn put_cache(&self, img: &DynamicImage) -> Result<(), Box<dyn std::error::Error>> {
-    //    let path = self.get_cache_path();
-    //    img.save(path)?;
-    //    Ok(())
-    //}
-    fn get_cache(&self) -> Result<DynamicImage, Box<dyn std::error::Error>> {
+    pub fn get_png(&self) -> Result<DynamicImage, Box<dyn std::error::Error>> {
         let path = self.get_cache_path();
         if !path.exists() {
             return Err(From::from("cache doesn't exists"));
@@ -67,9 +73,9 @@ fn libreoffice_convert(
 ) -> Result<DynamicImage, Box<dyn std::error::Error>> {
     let office_path = find_libreoffice_path().ok_or("libreoffice isn't installed or visible")?;
 
-    let img_cache = ImgCache::new(input.to_string_lossy().to_string());
+    let img_cache = ImgCache::new(input.to_string_lossy(), true);
     if cache {
-        if let Ok(img) = img_cache.get_cache() {
+        if let Ok(img) = img_cache.get_png() {
             return Ok(img);
         }
     }
@@ -99,7 +105,7 @@ fn libreoffice_convert(
 
     //renaming for the caching
     fs::rename(path, img_cache.get_cache_path())?;
-    let img = img_cache.get_cache()?;
+    let img = img_cache.get_png()?;
 
     Ok(img)
 }
@@ -177,8 +183,12 @@ impl InlineImgReader {
 
         // ffmpeg supported videos
         if try_video && is_video(path) {
-            let base64 = InlineVideo::test(path)?;
-            let inline_img = InlineImage::from_base64(base64, 0);
+            let vid = InlineVideo::open(path, &opts)?;
+            let offset = match opts.center {
+                true => vid.get_offset_for_center().unwrap_or(0),
+                false => 0,
+            };
+            let inline_img = InlineImage::from_raw(vid.data, offset);
             return Ok(inline_img);
         }
         // image crate supported files

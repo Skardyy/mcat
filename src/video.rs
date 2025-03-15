@@ -1,15 +1,9 @@
-use crate::image_extended::ResizeMode;
-use base64::{engine::general_purpose, Engine};
+use crate::{image_extended::ResizeMode, inline_image::InlineImgOpts, term_misc};
 use ffmpeg_sidecar::command::FfmpegCommand;
-use image::{codecs::gif::GifDecoder, AnimationDecoder, DynamicImage, Frame, ImageBuffer, Rgb};
-use std::{
-    fs::File,
-    io::{BufReader, Read},
-    path::PathBuf,
-};
+use std::{error::Error, fs::File, io::Read, path::PathBuf};
 
 pub struct InlineVideo {
-    frames: Vec<Frame>,
+    pub data: Vec<u8>,
 }
 
 pub fn is_video(input: &PathBuf) -> bool {
@@ -23,68 +17,68 @@ pub fn is_video(input: &PathBuf) -> bool {
 }
 
 impl InlineVideo {
-    pub fn open(input: &PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
-        let file = File::open(input)?;
-        let reader = BufReader::new(file);
-
-        let decoder = image::codecs::gif::GifDecoder::new(reader)?;
-        let frames: Vec<Frame> = decoder.into_frames().collect_frames()?;
-        Ok(InlineVideo { frames })
-    }
-
-    pub fn test(input: &PathBuf) -> Result<String, Box<dyn std::error::Error>> {
+    fn raw_gif_no_resizing(input: &PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
         let mut file = File::open(input)?;
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)?;
 
-        let base64_encoded = general_purpose::STANDARD.encode(&buffer);
-        Ok(base64_encoded)
+        Ok(InlineVideo { data: buffer })
     }
 
-    pub fn encode_base64(self) -> Result<String, Box<dyn std::error::Error>> {
-        let mut gif_bytes = Vec::new();
-        {
-            let mut encoder = image::codecs::gif::GifEncoder::new(&mut gif_bytes);
-            encoder.encode_frames(self.frames)?;
+    pub fn get_offset_for_center(&self) -> Result<u16, Box<dyn Error>> {
+        let img = image::load_from_memory_with_format(&self.data, image::ImageFormat::Gif)?;
+        let offset = term_misc::center_image(img.width() as u16);
+        Ok(offset)
+    }
+
+    pub fn open(path: &PathBuf, opts: &InlineImgOpts) -> Result<Self, Box<dyn std::error::Error>> {
+        // no resizing and is gif already
+        if !opts.resize_video && path.extension().is_some_and(|f| f == "gif") {
+            return InlineVideo::raw_gif_no_resizing(path);
         }
 
-        let base64_encoded = general_purpose::STANDARD.encode(&gif_bytes);
+        let scale = &format!("scale={}:{}", opts.width, opts.height);
+        let filter = match (opts.resize_mode.clone(), opts.resize_video) {
+            // ignoring crop for videos
+            (ResizeMode::Fit | ResizeMode::Crop, true) => {
+                &format!("{}:force_original_aspect_ratio=decrease,", scale)
+            }
+            (ResizeMode::Strech, true) => &format!("{},", scale),
+            (_, false) => "",
+        };
 
-        Ok(base64_encoded)
+        let mut command = FfmpegCommand::new();
+        command
+            .hwaccel("auto")
+            .input(path.to_string_lossy())
+            .filter(format!("{}fps=24", filter))
+            .format("gif")
+            .output("-");
+
+        let mut child = command.spawn()?;
+
+        let mut stdout = child
+            .take_stdout()
+            .ok_or("failed to capture ffmpeg stdout")?;
+        let stderr = child.take_stderr();
+
+        let mut output_bytes = Vec::new();
+        stdout.read_to_end(&mut output_bytes)?;
+
+        let status = child.wait()?;
+
+        if status.success() {
+            return Ok(InlineVideo { data: output_bytes });
+        } else {
+            let mut err_buffer = Vec::new();
+            stderr
+                .ok_or("failed to capture error from ffmpeg")?
+                .read_to_end(&mut err_buffer)?;
+            Err(From::from(format!(
+                "failed ffmpeg with: <{}>\n{}",
+                status,
+                String::from_utf8(err_buffer)?
+            )))
+        }
     }
-
-    //fn convert_video_to_frames(&self) -> Result<Vec<InlineImage>, Box<dyn std::error::Error>> {
-    //    if ffmpeg_sidecar::download::auto_download().is_err() {
-    //        return Err(From::from(
-    //            "ffmpeg isn't installed, and the platform isn't supported for auto download",
-    //        ));
-    //    }
-    //
-    //    let iter = FfmpegCommand::new()
-    //        .input(self.input.to_string_lossy().to_string())
-    //        .args(&["-ignore_loop", "0"])
-    //        .args(&["-vf", "fps=24"])
-    //        .rawvideo()
-    //        .spawn()?
-    //        .iter()?;
-    //
-    //    let mut images = Vec::new();
-    //    for frame in iter.filter_frames() {
-    //        println!("processing video frame");
-    //        // Create an ImageBuffer from the raw pixel data
-    //        let width = frame.width as u32;
-    //        let height = frame.height as u32;
-    //        // Create RGB image from frame data
-    //        let img_buffer = ImageBuffer::<Rgb<u8>, _>::from_raw(width, height, frame.data)
-    //            .ok_or("Failed to create image buffer")?;
-    //        // Convert to DynamicImage
-    //        let dynamic_img = DynamicImage::ImageRgb8(img_buffer);
-    //        let (inline_img, _) =
-    //            dynamic_img.resize_into_inline_img(800, 400, &ResizeMode::Fit, false)?;
-    //        // Add to our collection
-    //        images.push(inline_img);
-    //    }
-    //
-    //    Ok(images)
-    //}
 }
