@@ -127,7 +127,7 @@ fn main() {
     }
 
     let img_path = Path::new(path).to_path_buf();
-    let img = match InlineImgReader::open(
+    let mut img = match InlineImgReader::open(
         &img_path,
         cache,
         format != "sixel",
@@ -145,6 +145,10 @@ fn main() {
             std::process::exit(1)
         }
     };
+    if img.try_offset().is_err() {
+        eprintln!("try offset failed, video may be invalid");
+        std::process::exit(1)
+    }
 
     match format {
         "iterm" => match iterm_encoder::encode_image(&img) {

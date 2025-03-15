@@ -5,7 +5,7 @@ use fast_image_resize::{IntoImageView, ResizeOptions, Resizer};
 use image::codecs::png::PngEncoder;
 use image::{DynamicImage, ImageEncoder};
 
-use crate::inline_image::{InlineImage, InlineImgOpts};
+use crate::inline_image::{InlineImage, InlineImageFormat, InlineImgOpts};
 use crate::term_misc::center_image;
 
 #[derive(Clone)]
@@ -88,7 +88,7 @@ impl PNGImage for DynamicImage {
             self.color().into(),
         )?;
 
-        let img = InlineImage::from_raw(buffer, offset);
+        let img = InlineImage::from_raw(buffer, InlineImageFormat::PNG, Some(offset));
         Ok(img)
     }
 }

@@ -1,6 +1,6 @@
-use crate::{image_extended::ResizeMode, inline_image::InlineImgOpts, term_misc};
+use crate::{image_extended::ResizeMode, inline_image::InlineImgOpts};
 use ffmpeg_sidecar::command::FfmpegCommand;
-use std::{error::Error, fs::File, io::Read, path::PathBuf};
+use std::{fs::File, io::Read, path::PathBuf};
 
 pub struct InlineVideo {
     pub data: Vec<u8>,
@@ -25,10 +25,8 @@ impl InlineVideo {
         Ok(InlineVideo { data: buffer })
     }
 
-    pub fn get_offset_for_center(&self) -> Result<u16, Box<dyn Error>> {
-        let img = image::load_from_memory_with_format(&self.data, image::ImageFormat::Gif)?;
-        let offset = term_misc::center_image(img.width() as u16);
-        Ok(offset)
+    pub fn from_raw(data: Vec<u8>) -> Self {
+        InlineVideo { data }
     }
 
     pub fn open(path: &PathBuf, opts: &InlineImgOpts) -> Result<Self, Box<dyn std::error::Error>> {
@@ -36,6 +34,7 @@ impl InlineVideo {
         if !opts.resize_video && path.extension().is_some_and(|f| f == "gif") {
             return InlineVideo::raw_gif_no_resizing(path);
         }
+        ffmpeg_sidecar::download::auto_download()?;
 
         let scale = &format!("scale={}:{}", opts.width, opts.height);
         let filter = match (opts.resize_mode.clone(), opts.resize_video) {
