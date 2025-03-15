@@ -81,7 +81,7 @@ fn main() {
         )
         .arg(
             Arg::new("resize-video")
-                .short('v')
+                .short('r')
                 .long("resize-video")
                 .help("tries to resize video as well (doesn't respect crop)")
                 .action(clap::ArgAction::SetTrue),
@@ -127,7 +127,7 @@ fn main() {
     }
 
     let img_path = Path::new(path).to_path_buf();
-    let mut img = match InlineImgReader::open(
+    let img = match InlineImgReader::open(
         &img_path,
         cache,
         format != "sixel",
@@ -145,10 +145,6 @@ fn main() {
             std::process::exit(1)
         }
     };
-    if img.try_offset().is_err() {
-        eprintln!("try offset failed, video may be invalid");
-        std::process::exit(1)
-    }
 
     match format {
         "iterm" => match iterm_encoder::encode_image(&img) {

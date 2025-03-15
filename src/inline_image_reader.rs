@@ -184,8 +184,9 @@ impl InlineImgReader {
         // ffmpeg supported videos
         if try_video && is_video(path) {
             let vid = InlineVideo::open(path, &opts)?;
+            let offset = vid.get_offset_for_center(opts.center)?;
             let inline_img =
-                InlineImage::from_raw(vid.data, inline_image::InlineImageFormat::GIF, None);
+                InlineImage::from_raw(vid.data, inline_image::InlineImageFormat::GIF, Some(offset));
             return Ok(inline_img);
         }
         // image crate supported files

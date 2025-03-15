@@ -1,5 +1,6 @@
-use crate::{image_extended::ResizeMode, inline_image::InlineImgOpts};
+use crate::{image_extended::ResizeMode, inline_image::InlineImgOpts, term_misc};
 use ffmpeg_sidecar::command::FfmpegCommand;
+use image::{codecs::gif::GifDecoder, AnimationDecoder, Frames, ImageResult};
 use std::{fs::File, io::Read, path::PathBuf};
 
 pub struct InlineVideo {
@@ -25,14 +26,29 @@ impl InlineVideo {
         Ok(InlineVideo { data: buffer })
     }
 
-    pub fn from_raw(data: Vec<u8>) -> Self {
-        InlineVideo { data }
+    pub fn into_frames(data: &Vec<u8>) -> ImageResult<Frames> {
+        let cursor = std::io::Cursor::new(data);
+        let decoder = GifDecoder::new(cursor)?;
+        let frames = decoder.into_frames();
+
+        Ok(frames)
+    }
+
+    pub fn get_offset_for_center(&self, center: bool) -> ImageResult<u16> {
+        let img = image::load_from_memory_with_format(&self.data, image::ImageFormat::Gif)?;
+        let offset = match center {
+            true => term_misc::center_image(img.width() as u16),
+            false => 0,
+        };
+
+        Ok(offset)
     }
 
     pub fn open(path: &PathBuf, opts: &InlineImgOpts) -> Result<Self, Box<dyn std::error::Error>> {
         // no resizing and is gif already
         if !opts.resize_video && path.extension().is_some_and(|f| f == "gif") {
-            return InlineVideo::raw_gif_no_resizing(path);
+            let vid = InlineVideo::raw_gif_no_resizing(path)?;
+            return Ok(vid);
         }
         ffmpeg_sidecar::download::auto_download()?;
 
