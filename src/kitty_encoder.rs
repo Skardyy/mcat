@@ -1,8 +1,13 @@
-use std::{borrow::Cow, cmp::min, collections::HashMap, io::Write};
+use std::{
+    borrow::Cow,
+    cmp::min,
+    collections::HashMap,
+    io::{Error, Write},
+};
 
 use base64::{engine::general_purpose, Engine};
 use flate2::{write::ZlibEncoder, Compression};
-use image::{Frame, Frames, RgbaImage};
+use image::{Frames, RgbaImage};
 
 use crate::{
     inline_image::{InlineImage, InlineImageFormat},
@@ -13,30 +18,51 @@ use crate::{
 fn chunk_base64<'a>(
     base64: Cow<'a, str>,
     size: usize,
-    opts: HashMap<String, String>,
+    first_opts: HashMap<String, String>,
+    sub_opts: HashMap<String, String>,
 ) -> Cow<'a, str> {
-    // identifying attributes
-    let mut opts_string = String::new();
-    for (key, value) in opts {
-        opts_string.push_str(&format!(",{}={}", key, value));
+    // first block
+    let mut first_opts_string = String::new();
+    for (key, value) in first_opts {
+        if first_opts_string != "" {
+            first_opts_string.push_str(",");
+        }
+        first_opts_string.push_str(&format!("{}={}", key, value));
+    }
+    if first_opts_string != "" {
+        first_opts_string.push_str(",");
+    }
+
+    // all other blocks
+    let mut sub_opts_string = String::new();
+    for (key, value) in sub_opts {
+        if sub_opts_string != "" {
+            sub_opts_string.push_str(",");
+        }
+        sub_opts_string.push_str(&format!("{}={}", key, value));
+    }
+    if sub_opts_string != "" {
+        sub_opts_string.push_str(",");
     }
 
     let total_bytes = base64.len();
     let mut start = 0;
     let mut chunked_result = String::with_capacity(total_bytes);
-    let mut first_opts = format!("q=2{},", opts_string);
 
     while start < total_bytes {
         let end = min(start + size, total_bytes);
         let chunk_data = &base64[start..end];
         let more_chunks = !(end == total_bytes) as u8;
 
-        let chunk = format!("\x1b_G{}m={};{}\x1b\\", first_opts, more_chunks, chunk_data);
+        let opts = if start == 0 {
+            &first_opts_string
+        } else {
+            &sub_opts_string
+        };
+
+        let chunk = format!("\x1b_G{}m={};{}\x1b\\", opts, more_chunks, chunk_data);
         chunked_result.push_str(&chunk);
 
-        if start == 0 {
-            first_opts = "".to_string();
-        }
         start = end;
     }
 
@@ -45,79 +71,106 @@ fn chunk_base64<'a>(
 
 fn process_frame(
     frame: &RgbaImage,
-    opts: HashMap<String, String>,
-) -> Result<Cow<'_, str>, std::io::Error> {
-    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+    first_opts: HashMap<String, String>,
+    sub_opts: HashMap<String, String>,
+) -> Result<Cow<'_, str>, Error> {
+    let width = frame.width() as usize;
+    let height = frame.height() as usize;
+    let rgb_size = width * height * 3;
+    let mut rgb_data = Vec::with_capacity(rgb_size);
 
-    let mut rgb_data = Vec::new();
     for pixel in frame.pixels() {
         rgb_data.push(pixel[0]);
         rgb_data.push(pixel[1]);
         rgb_data.push(pixel[2]);
     }
 
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
     encoder.write_all(&rgb_data)?;
-    let data = encoder.finish()?;
+    let compressed = encoder.finish()?;
 
-    let base64 = Cow::Owned(general_purpose::STANDARD.encode(data));
-    let encoded_data = chunk_base64(base64, 4096, opts);
+    let base64 = Cow::Owned(general_purpose::STANDARD.encode(compressed));
+    let encoded_data = chunk_base64(base64, 4096, first_opts, sub_opts);
 
     Ok(encoded_data)
 }
 
-// doesn't work currently
-//first frame: like a normal image with sizes added.
-//second frame: control animation a=a, i=id, r=1
-//till the end frame: a=f (transmit frame), s, v (maybe), c={frame number}, z={delay}
-//final frame: a=a, s=3 (idk why), r=1
 pub fn encode_frames(frames: Frames<'_>, id: u32) -> Cow<'_, str> {
+    let mut frames = frames.into_iter();
+
+    // getting the first frame
+    let first = frames.next().unwrap_or_else(|| {
+        eprintln!("video is empty");
+        std::process::exit(1);
+    });
+    let first = first.unwrap_or_else(|_| {
+        eprintln!("video is invalid");
+        std::process::exit(1);
+    });
+    let img = first.buffer();
+
+    // preparing the full animation
     let mut full_data = String::new();
 
-    for (c, frame) in frames.into_iter().enumerate() {
+    // adding the root image
+    let i = id.to_string();
+    let s = img.width().to_string();
+    let v = img.height().to_string();
+    let f = "24".to_string();
+    let o = "z".to_string();
+    let q = "2".to_string();
+    let root_img = process_frame(
+        img,
+        HashMap::from([
+            ("a".to_string(), "T".to_string()),
+            ("f".to_string(), f),
+            ("o".to_string(), o),
+            ("I".to_string(), i),
+            ("s".to_string(), s),
+            ("v".to_string(), v),
+            ("q".to_string(), q),
+        ]),
+        HashMap::new(),
+    )
+    .unwrap_or_else(|_| {
+        eprintln!("video is invalid");
+        std::process::exit(1);
+    });
+    full_data.push_str(&root_img);
+
+    // starting the animation
+    let (z, _) = first.delay().numer_denom_ms();
+    full_data.push_str(&format!("\x1b_Ga=a,s=2,v=1,r=1,I={},z={}\x1b\\", id, z));
+
+    for (c, frame) in frames.enumerate() {
         if let Ok(frame) = frame {
             let buffer = frame.buffer();
             let s = buffer.width().to_string();
             let v = buffer.height().to_string();
             let i = id.to_string();
-
-            if c == 0 {
-                if let Ok(f) = process_frame(
-                    buffer,
-                    HashMap::from([
-                        ("s".to_string(), s),
-                        ("v".to_string(), v),
-                        ("f".to_string(), "24".to_string()),
-                        ("o".to_string(), "z".to_string()),
-                        ("I".to_string(), i),
-                        ("a".to_string(), "T".to_string()),
-                    ]),
-                ) {
-                    full_data.push_str(&f);
-                    full_data.push_str(&format!("\x1b_Ga=a,r=1,I={}\x1b\\", id));
-                }
-                continue;
-            }
-
+            let f = "24".to_string();
+            let o = "z".to_string();
             let (z, _) = frame.delay().numer_denom_ms();
-            let opts = HashMap::from([
+
+            let first_opts = HashMap::from([
+                ("a".to_string(), "f".to_string()),
+                ("f".to_string(), f),
+                ("o".to_string(), o),
+                ("I".to_string(), i),
+                ("c".to_string(), c.to_string()),
                 ("s".to_string(), s),
                 ("v".to_string(), v),
                 ("z".to_string(), z.to_string()),
-                ("o".to_string(), "z".to_string()),
-                ("a".to_string(), "f".to_string()),
-                ("c".to_string(), c.to_string()),
-                ("X".to_string(), c.to_string()),
-                ("c".to_string(), c.to_string()),
             ]);
+            let sub_opts = HashMap::from([("a".to_string(), "f".to_string())]);
 
-            if let Ok(f) = process_frame(buffer, opts) {
+            if let Ok(f) = process_frame(buffer, first_opts, sub_opts) {
                 full_data.push_str(&f);
             }
-        } else {
-            full_data.push_str(&format!("\x1b_Ga=a,s=3,r=1,I={}\x1b\\", id));
         }
     }
 
+    full_data.push_str(&format!("\x1b_Ga=a,s=3,v=1,r=1,I={},z={}\x1b\\", id, z));
     Cow::Owned(full_data)
 }
 
@@ -128,7 +181,11 @@ pub fn encode_image(img: &InlineImage) -> Result<String, Box<dyn std::error::Err
         InlineImageFormat::PNG => chunk_base64(
             img.encode_base64(),
             4096,
-            HashMap::from([("f".to_string(), "100".to_string())]),
+            HashMap::from([
+                ("f".to_string(), "100".to_string()),
+                ("a".to_string(), "T".to_string()),
+            ]),
+            HashMap::new(),
         ),
     };
     let mut kitty_sequence = String::with_capacity(encoded_data.len());
