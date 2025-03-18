@@ -1,4 +1,3 @@
-use anyhow::Result;
 use std::{collections::HashMap, env, f32, sync::OnceLock};
 
 use crossterm::terminal::{size, window_size};
@@ -14,25 +13,30 @@ lazy_static! {
     static ref WINSIZE: OnceLock<Winsize> = OnceLock::new();
 }
 
-fn break_size_string(s: &str) -> (u16, u16, bool) {
-    let mut parts = s.split("x");
-    let width = parts
-        .next()
-        .unwrap_or("1920")
-        .parse::<u16>()
-        .unwrap_or(1920);
-    let height = parts
-        .next()
-        .unwrap_or("1080")
-        .parse::<u16>()
-        .unwrap_or(1080);
-    let force = parts.next().unwrap_or("");
-    let force = if force == "force" { true } else { false };
+#[derive(Clone)]
+pub struct Size {
+    pub width: u16,
+    pub height: u16,
+    force: bool,
+    scale: f32,
+}
 
-    (width, height, force)
+pub fn break_size_string(s: &str) -> Result<Size, Box<dyn std::error::Error>> {
+    let mut parts = s.split("x");
+    let width = parts.next().ok_or("missing width")?.parse::<u16>()?;
+    let height = parts.next().ok_or("missing height")?.parse::<u16>()?;
+    let scale = parts.next().unwrap_or("1").parse::<f32>().unwrap_or(1.0);
+    let force = s.contains("force");
+
+    Ok(Size {
+        width,
+        height,
+        force,
+        scale,
+    })
 }
 impl Winsize {
-    fn new(spx: &str, sc: &str) -> Self {
+    fn new(spx_fallback: &Size, sc_fallback: &Size) -> Self {
         let mut spx_width = 0;
         let mut spx_height = 0;
         if let Ok(res) = window_size() {
@@ -50,15 +54,13 @@ impl Winsize {
         let (mut sc_width, mut sc_height) = size().unwrap_or((0, 0));
 
         // fallback or forcing
-        let spx_fallback = break_size_string(spx);
-        if spx_fallback.2 || spx_width == 0 || spx_height == 0 {
-            spx_width = spx_fallback.0;
-            spx_height = spx_fallback.1;
+        if spx_fallback.force || spx_width == 0 || spx_height == 0 {
+            spx_width = spx_fallback.width;
+            spx_height = spx_fallback.height;
         }
-        let sc_fallback = break_size_string(sc);
-        if sc_fallback.2 || sc_width == 0 || sc_height == 0 {
-            sc_width = sc_fallback.0;
-            sc_height = sc_fallback.1;
+        if sc_fallback.force || sc_width == 0 || sc_height == 0 {
+            sc_width = sc_fallback.width;
+            sc_height = sc_fallback.height;
         }
 
         Winsize {
@@ -70,7 +72,7 @@ impl Winsize {
     }
 }
 
-pub fn init_winsize(spx: &str, sc: &str) -> Result<(), &'static str> {
+pub fn init_winsize(spx: &Size, sc: &Size) -> Result<(), &'static str> {
     WINSIZE
         .set(Winsize::new(spx, sc))
         .map_err(|_| "Winsize already initialized")?;
@@ -85,7 +87,21 @@ pub enum SizeDirection {
 /// call init_winsize before it if you need to
 /// if not going to use 1920x1080, 100x20 fallback for when failing to query sizes
 pub fn get_winsize() -> &'static Winsize {
-    WINSIZE.get_or_init(|| Winsize::new("1920x1080", "100x20"))
+    WINSIZE.get_or_init(|| {
+        let spx = Size {
+            width: 1920,
+            height: 1080,
+            force: false,
+            scale: 1.0,
+        };
+        let sc = Size {
+            width: 100,
+            height: 20,
+            force: false,
+            scale: 1.0,
+        };
+        Winsize::new(&spx, &sc)
+    })
 }
 
 /// returns a the offset needed to center the image

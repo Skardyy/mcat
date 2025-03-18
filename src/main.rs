@@ -23,7 +23,9 @@ use inline_image_reader::InlineImgReader;
 use iterm_encoder::is_iterm_capable;
 use kitty_encoder::is_kitty_capable;
 use sixel_encoder::is_sixel_capable;
-use term_misc::{dim_to_px, init_winsize, EnvIdentifiers};
+use term_misc::{
+    break_scale_string, break_size_string, dim_to_px, init_winsize, EnvIdentifiers, Size,
+};
 
 fn main() {
     let opts = Command::new("mcat")
@@ -96,12 +98,18 @@ fn main() {
             Arg::new("spx")
                 .long("spx")
                 .help("the size of the screen in px (fallback) <width>x<height>x<force> for instance 1920x1080xfalse")
+                .value_parser(|spx: &str| {
+                    break_size_string(spx).map_err(|_|clap::Error::new(ErrorKind::InvalidValue))
+                })
                 .default_value("1920x1080"),
         )
         .arg(
             Arg::new("sc")
                 .long("sc")
                 .help("the size of the screen in cells (fallback) <width>x<height>x<force> for instance 100x20xtrue")
+                .value_parser(|spx: &str| {
+                    break_size_string(spx).map_err(|_|clap::Error::new(ErrorKind::InvalidValue))
+                })
                 .default_value("100x20"),
         )
         .get_matches();
@@ -114,8 +122,8 @@ fn main() {
     let center = !opts.get_flag("no-center");
     let resize_video = opts.get_flag("resize-video");
     let cache = opts.get_flag("cache");
-    let spx = opts.get_one::<String>("spx").unwrap();
-    let sc = opts.get_one::<String>("sc").unwrap();
+    let spx = opts.get_one::<Size>("spx").unwrap();
+    let sc = opts.get_one::<Size>("sc").unwrap();
 
     let _ = init_winsize(&spx, &sc);
     let width = dim_to_px(&width, term_misc::SizeDirection::WIDTH).unwrap_or_else(|_| {

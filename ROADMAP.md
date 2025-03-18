@@ -23,10 +23,10 @@
     - [x] Iterm
     - [x] Kitty
     - [-] Sixel
-- [ ] Tmux Support
-    - [ ] Iterm
-    - [ ] Kitty
-    - [ ] Sixel
+- [-] Tmux Support
+    - [-] Iterm
+    - [-] Kitty
+    - [-] Sixel
 - [x] View Document files
     - [x] Iterm
     - [x] Kitty
