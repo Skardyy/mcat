@@ -1,9 +1,80 @@
-use std::{collections::HashMap, env, f32};
+use anyhow::Result;
+use std::{collections::HashMap, env, f32, sync::OnceLock};
 
 use crossterm::terminal::{size, window_size};
 
+pub struct Winsize {
+    pub sc_width: u16,
+    pub sc_height: u16,
+    pub spx_width: u16,
+    pub spx_height: u16,
+}
+
 lazy_static! {
-    static ref WINSIZE: Winsize = Winsize::new();
+    static ref WINSIZE: OnceLock<Winsize> = OnceLock::new();
+}
+
+fn break_size_string(s: &str) -> (u16, u16, bool) {
+    let mut parts = s.split("x");
+    let width = parts
+        .next()
+        .unwrap_or("1920")
+        .parse::<u16>()
+        .unwrap_or(1920);
+    let height = parts
+        .next()
+        .unwrap_or("1080")
+        .parse::<u16>()
+        .unwrap_or(1080);
+    let force = parts.next().unwrap_or("");
+    let force = if force == "force" { true } else { false };
+
+    (width, height, force)
+}
+impl Winsize {
+    fn new(spx: &str, sc: &str) -> Self {
+        let mut spx_width = 0;
+        let mut spx_height = 0;
+        if let Ok(res) = window_size() {
+            // ioctl for unix
+            spx_width = res.width;
+            spx_height = res.height;
+        } else {
+            // do windows api here
+            #[cfg(windows)]
+            if let Some(size) = get_size_windows() {
+                spx_width = size.0;
+                spx_height = size.1;
+            }
+        }
+        let (mut sc_width, mut sc_height) = size().unwrap_or((0, 0));
+
+        // fallback or forcing
+        let spx_fallback = break_size_string(spx);
+        if spx_fallback.2 || spx_width == 0 || spx_height == 0 {
+            spx_width = spx_fallback.0;
+            spx_height = spx_fallback.1;
+        }
+        let sc_fallback = break_size_string(sc);
+        if sc_fallback.2 || sc_width == 0 || sc_height == 0 {
+            sc_width = sc_fallback.0;
+            sc_height = sc_fallback.1;
+        }
+
+        Winsize {
+            sc_height,
+            sc_width,
+            spx_height,
+            spx_width,
+        }
+    }
+}
+
+pub fn init_winsize(spx: &str, sc: &str) -> Result<(), &'static str> {
+    WINSIZE
+        .set(Winsize::new(spx, sc))
+        .map_err(|_| "Winsize already initialized")?;
+    Ok(())
 }
 
 pub enum SizeDirection {
@@ -11,13 +82,24 @@ pub enum SizeDirection {
     HEIGHT,
 }
 
+/// call init_winsize before it if you need to
+/// if not going to use 1920x1080, 100x20 fallback for when failing to query sizes
+pub fn get_winsize() -> &'static Winsize {
+    WINSIZE.get_or_init(|| Winsize::new("1920x1080", "100x20"))
+}
+
+/// returns a the offset needed to center the image
 pub fn center_image(image_width: u16) -> u16 {
-    let offset_x = (WINSIZE.spx_width as f32 - image_width as f32) / 2.0;
-    let offset_x = offset_x / (WINSIZE.spx_width as f32 / WINSIZE.sc_width as f32);
+    let winsize = get_winsize();
+    let offset_x = (winsize.spx_width as f32 - image_width as f32) / 2.0;
+    let offset_x = offset_x / (winsize.spx_width as f32 / winsize.sc_width as f32);
 
     offset_x.round() as u16
 }
 
+/// convert any format of width / height into pixels.
+/// for instance 80% would be converted to the size of screen in the direction specified * 0.8.
+/// accepted formats are % (percent) / c (cells) / px (pixels) / or just number
 pub fn dim_to_px(dim: &str, direction: SizeDirection) -> Result<u32, String> {
     if let Ok(num) = dim.parse::<u32>() {
         return Ok(num);
@@ -26,9 +108,10 @@ pub fn dim_to_px(dim: &str, direction: SizeDirection) -> Result<u32, String> {
     // only call it if needed
     let not_px = dim.ends_with("c") || dim.ends_with("%");
     let (width, height) = if not_px {
+        let winsize = get_winsize();
         match direction {
-            SizeDirection::WIDTH => (WINSIZE.spx_width, WINSIZE.sc_width),
-            SizeDirection::HEIGHT => (WINSIZE.spx_height, WINSIZE.sc_height),
+            SizeDirection::WIDTH => (winsize.spx_width, winsize.sc_width),
+            SizeDirection::HEIGHT => (winsize.spx_height, winsize.sc_height),
         }
     } else {
         (1, 1)
@@ -52,13 +135,6 @@ pub fn dim_to_px(dim: &str, direction: SizeDirection) -> Result<u32, String> {
     }
 
     Err(format!("Invalid dimension format: {}", dim))
-}
-
-pub struct Winsize {
-    pub sc_width: u16,
-    pub sc_height: u16,
-    pub spx_width: u16,
-    pub spx_height: u16,
 }
 
 // gross estimation winsize for windows..
@@ -97,32 +173,6 @@ fn get_size_windows() -> Option<(u16, u16)> {
     let height = (client_rect.bottom - client_rect.top - frame_height) as u16;
 
     Some((width, height))
-}
-
-impl Winsize {
-    pub fn new() -> Self {
-        let mut spx_width = 0;
-        let mut spx_height = 0;
-        if let Ok(res) = window_size() {
-            // ioctl for unix
-            spx_width = res.width;
-            spx_height = res.height;
-        } else {
-            // do windows api here
-            #[cfg(windows)]
-            if let Some(size) = get_size_windows() {
-                spx_width = size.0;
-                spx_height = size.1;
-            }
-        }
-        let cells = size().unwrap_or((0, 0));
-        Winsize {
-            sc_height: cells.1,
-            sc_width: cells.0,
-            spx_height,
-            spx_width,
-        }
-    }
 }
 
 pub struct EnvIdentifiers {

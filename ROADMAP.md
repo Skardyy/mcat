@@ -3,26 +3,26 @@
     - [x] Iterm
     - [x] Kitty
     - [x] Sixel
-- [ ] View Videos
-    - [ ] Iterm
-    - [ ] Kitty
-    - [ ] Sixel (may be static here)
+- [x] View Videos
+    - [x] Iterm
+    - [x] Kitty
+    - [-] Sixel (may be static here)
 - [x] Recognize Capabilities
     - [x] Iterm
     - [x] Kitty
     - [x] Sixel
-- [ ] Delete Images / Videos
-    - [ ] Iterm
-    - [ ] Kitty
-    - [ ] Sixel
+- [-] Delete Images / Videos
+    - [-] Iterm
+    - [-] Kitty
+    - [-] Sixel
 - [x] Image manipulation and centering
     - [x] Iterm
     - [x] Kitty
     - [x] Sixel
-- [ ] Video manipulation and centering
-    - [ ] Iterm
-    - [ ] Kitty
-    - [ ] Sixel
+- [x] Video manipulation and centering
+    - [x] Iterm
+    - [x] Kitty
+    - [-] Sixel
 - [ ] Tmux Support
     - [ ] Iterm
     - [ ] Kitty

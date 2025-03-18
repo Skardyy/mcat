@@ -202,9 +202,5 @@ pub fn encode_image(img: &InlineImage) -> Result<String, Box<dyn std::error::Err
 }
 
 pub fn is_kitty_capable(env: &EnvIdentifiers) -> bool {
-    env.has_key("KITTY_WINDOW_ID")
-        || env.term_contains("kitty")
-        || (env.term_contains("wezterm") && !env.contains("OS", "windows"))
-        || env.term_contains("ghostty")
-        || env.has_key("KONSOLE_VERSION")
+    env.has_key("KITTY_WINDOW_ID") || env.term_contains("kitty") || env.term_contains("ghostty")
 }

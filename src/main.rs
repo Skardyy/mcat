@@ -23,7 +23,7 @@ use inline_image_reader::InlineImgReader;
 use iterm_encoder::is_iterm_capable;
 use kitty_encoder::is_kitty_capable;
 use sixel_encoder::is_sixel_capable;
-use term_misc::{dim_to_px, EnvIdentifiers};
+use term_misc::{dim_to_px, init_winsize, EnvIdentifiers};
 
 fn main() {
     let opts = Command::new("mcat")
@@ -53,21 +53,13 @@ fn main() {
             Arg::new("width")
                 .long("width")
                 .help("the new width: [<usize> / <usize>px / <usize>c / <usize>%]")
-                .default_value("80%")
-                .value_parser(|dim_str: &str| {
-                    dim_to_px(dim_str, term_misc::SizeDirection::WIDTH)
-                        .map_err(|_| clap::Error::new(ErrorKind::InvalidValue))
-                }),
+                .default_value("80%"),
         )
         .arg(
             Arg::new("height")
                 .long("height")
                 .help("the new height: [<usize> / <usize>px / <usize>c / <usize>%]")
-                .default_value("60%")
-                .value_parser(|dim_str: &str| {
-                    dim_to_px(dim_str, term_misc::SizeDirection::HEIGHT)
-                        .map_err(|_| clap::Error::new(ErrorKind::InvalidValue))
-                }),
+                .default_value("60%"),
         )
         .arg(
             Arg::new("resize-mode")
@@ -100,16 +92,40 @@ fn main() {
                 .help("enable caching for document files / urls")
                 .action(clap::ArgAction::SetTrue),
         )
+        .arg(
+            Arg::new("spx")
+                .long("spx")
+                .help("the size of the screen in px (fallback) <width>x<height>x<force> for instance 1920x1080xfalse")
+                .default_value("1920x1080"),
+        )
+        .arg(
+            Arg::new("sc")
+                .long("sc")
+                .help("the size of the screen in cells (fallback) <width>x<height>x<force> for instance 100x20xtrue")
+                .default_value("100x20"),
+        )
         .get_matches();
 
     let path = opts.get_one::<String>("input").unwrap();
     let mut format = opts.get_one::<String>("format").unwrap().as_str();
     let resize_mode = opts.get_one::<ResizeMode>("resize-mode").unwrap();
-    let width = *opts.get_one::<u32>("width").unwrap() as u16;
-    let height = *opts.get_one::<u32>("height").unwrap() as u16;
+    let width = opts.get_one::<String>("width").unwrap();
+    let height = opts.get_one::<String>("height").unwrap();
     let center = !opts.get_flag("no-center");
     let resize_video = opts.get_flag("resize-video");
     let cache = opts.get_flag("cache");
+    let spx = opts.get_one::<String>("spx").unwrap();
+    let sc = opts.get_one::<String>("sc").unwrap();
+
+    let _ = init_winsize(&spx, &sc);
+    let width = dim_to_px(&width, term_misc::SizeDirection::WIDTH).unwrap_or_else(|_| {
+        eprintln!("invalid width format, please see mcat --help");
+        std::process::exit(1);
+    }) as u16;
+    let height = dim_to_px(&height, term_misc::SizeDirection::HEIGHT).unwrap_or_else(|_| {
+        eprintln!("invalid height format, please see mcat --help");
+        std::process::exit(1);
+    }) as u16;
 
     if format == "auto" {
         let env = &EnvIdentifiers::new();
