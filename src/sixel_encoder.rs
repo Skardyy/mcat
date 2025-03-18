@@ -9,7 +9,7 @@ pub fn encode_image(img: &InlineImage) -> Result<String, Box<dyn std::error::Err
     let dyn_img = img.into_dyn_img()?;
     let rgb_img = dyn_img.to_rgb8();
 
-    let mut sixel_sequence = String::with_capacity(rgb_img.len());
+    let mut sixel_sequence = String::with_capacity(rgb_img.len() * 3);
 
     if let Some(center) = img.center() {
         sixel_sequence.push_str(&center);

@@ -7,7 +7,7 @@ use std::{
 
 use base64::{engine::general_purpose, Engine};
 use flate2::{write::ZlibEncoder, Compression};
-use image::{Frames, RgbaImage};
+use image::{Frames, Pixel, RgbaImage};
 
 use crate::{
     inline_image::{InlineImage, InlineImageFormat},
@@ -22,7 +22,7 @@ fn chunk_base64<'a>(
     sub_opts: HashMap<String, String>,
 ) -> Cow<'a, str> {
     // first block
-    let mut first_opts_string = String::new();
+    let mut first_opts_string = String::with_capacity(first_opts.len() * 8);
     for (key, value) in first_opts {
         if first_opts_string != "" {
             first_opts_string.push_str(",");
@@ -34,7 +34,7 @@ fn chunk_base64<'a>(
     }
 
     // all other blocks
-    let mut sub_opts_string = String::new();
+    let mut sub_opts_string = String::with_capacity(sub_opts.len() * 8);
     for (key, value) in sub_opts {
         if sub_opts_string != "" {
             sub_opts_string.push_str(",");
@@ -47,7 +47,7 @@ fn chunk_base64<'a>(
 
     let total_bytes = base64.len();
     let mut start = 0;
-    let mut chunked_result = String::with_capacity(total_bytes);
+    let mut chunked_result = String::with_capacity(total_bytes + (total_bytes / size) * 30);
 
     while start < total_bytes {
         let end = min(start + size, total_bytes);
@@ -80,9 +80,10 @@ fn process_frame(
     let mut rgb_data = Vec::with_capacity(rgb_size);
 
     for pixel in frame.pixels() {
-        rgb_data.push(pixel[0]);
-        rgb_data.push(pixel[1]);
-        rgb_data.push(pixel[2]);
+        let channels = pixel.channels();
+        rgb_data.push(channels[0]);
+        rgb_data.push(channels[1]);
+        rgb_data.push(channels[2]);
     }
 
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
@@ -109,8 +110,10 @@ pub fn encode_frames(frames: Frames<'_>, id: u32) -> Cow<'_, str> {
     });
     let img = first.buffer();
 
-    // preparing the full animation
-    let mut full_data = String::new();
+    // not accurate cuz there is deflating and base64 encoding (can't allocate something close)
+    let frame_count = frames.size_hint().0 + 1;
+    let mut full_data =
+        String::with_capacity(frame_count * img.width() as usize * img.height() as usize * 3);
 
     // adding the root image
     let i = id.to_string();
@@ -188,7 +191,7 @@ pub fn encode_image(img: &InlineImage) -> Result<String, Box<dyn std::error::Err
             HashMap::new(),
         ),
     };
-    let mut kitty_sequence = String::with_capacity(encoded_data.len());
+    let mut kitty_sequence = String::with_capacity(encoded_data.len() + 10);
 
     if let Some(center) = img.center() {
         kitty_sequence.push_str(&center);
