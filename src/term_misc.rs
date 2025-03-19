@@ -1,3 +1,4 @@
+use anyhow::Result;
 use std::{collections::HashMap, env, f32, sync::OnceLock};
 
 use crossterm::terminal::{size, window_size};
@@ -18,25 +19,22 @@ pub struct Size {
     pub width: u16,
     pub height: u16,
     force: bool,
-    scale: f32,
 }
 
 pub fn break_size_string(s: &str) -> Result<Size, Box<dyn std::error::Error>> {
     let mut parts = s.split("x");
     let width = parts.next().ok_or("missing width")?.parse::<u16>()?;
     let height = parts.next().ok_or("missing height")?.parse::<u16>()?;
-    let scale = parts.next().unwrap_or("1").parse::<f32>().unwrap_or(1.0);
     let force = s.contains("force");
 
     Ok(Size {
         width,
         height,
         force,
-        scale,
     })
 }
 impl Winsize {
-    fn new(spx_fallback: &Size, sc_fallback: &Size) -> Self {
+    fn new(spx_fallback: &Size, sc_fallback: &Size, scale: Option<f32>) -> Self {
         let mut spx_width = 0;
         let mut spx_height = 0;
         if let Ok(res) = window_size() {
@@ -63,18 +61,20 @@ impl Winsize {
             sc_height = sc_fallback.height;
         }
 
+        let scale = scale.unwrap_or(1.0);
+
         Winsize {
             sc_height,
-            sc_width,
+            sc_width: (sc_width as f32 * scale) as u16,
             spx_height,
-            spx_width,
+            spx_width: (spx_width as f32 * scale) as u16,
         }
     }
 }
 
-pub fn init_winsize(spx: &Size, sc: &Size) -> Result<(), &'static str> {
+pub fn init_winsize(spx: &Size, sc: &Size, scale: Option<f32>) -> Result<(), &'static str> {
     WINSIZE
-        .set(Winsize::new(spx, sc))
+        .set(Winsize::new(spx, sc, scale))
         .map_err(|_| "Winsize already initialized")?;
     Ok(())
 }
@@ -92,15 +92,13 @@ pub fn get_winsize() -> &'static Winsize {
             width: 1920,
             height: 1080,
             force: false,
-            scale: 1.0,
         };
         let sc = Size {
             width: 100,
             height: 20,
             force: false,
-            scale: 1.0,
         };
-        Winsize::new(&spx, &sc)
+        Winsize::new(&spx, &sc, None)
     })
 }
 
@@ -237,4 +235,141 @@ impl EnvIdentifiers {
             || self.contains("TERM", term)
             || self.contains("LC_TERMINAL", term)
     }
+}
+
+#[derive(Clone)]
+pub enum RotateFilter {
+    Rotate90,
+    Rotate180,
+    Rotate270,
+}
+
+#[derive(Clone)]
+pub struct Filters {
+    pub scale: Option<f32>,
+    pub contrast: Option<f32>,
+    pub hue_rotate: Option<i32>,
+    pub unsharpen: Option<(f32, i32)>,
+    pub brighten: Option<i32>,
+    pub grayscale: bool,
+    pub rotate: Option<RotateFilter>,
+    pub invert_colors: bool,
+    pub blur: Option<f32>,
+}
+
+pub fn break_filter_string(s: &str) -> Result<Filters> {
+    let parts = s.split(",");
+    let mut filter = Filters {
+        scale: None,
+        contrast: None,
+        hue_rotate: None,
+        unsharpen: None,
+        brighten: None,
+        grayscale: false,
+        rotate: None,
+        invert_colors: false,
+        blur: None,
+    };
+    if s == "" {
+        return Ok(filter);
+    }
+    for part in parts {
+        let mut f = part.split("=");
+        let key = f.next();
+        let value = f.next();
+
+        match key {
+            Some("scale") => {
+                if let Some(value) = value {
+                    let value = value.parse::<f32>().map_err(|_| {
+                        anyhow::anyhow!("Failed to parse '{}' as f32 for scale", value)
+                    })?;
+                    filter.scale = Some(value);
+                }
+            }
+            Some("contrast") => {
+                if let Some(value) = value {
+                    let value = value.parse::<f32>().map_err(|_| {
+                        anyhow::anyhow!("Failed to parse '{}' as f32 for contrast", value)
+                    })?;
+                    filter.contrast = Some(value);
+                }
+            }
+            Some("hue_rotate") => {
+                if let Some(value) = value {
+                    let value = value.parse::<i32>().map_err(|_| {
+                        anyhow::anyhow!("Failed to parse '{}' as i32 for hue_rotate", value)
+                    })?;
+                    filter.hue_rotate = Some(value);
+                }
+            }
+            Some("unsharpen") => {
+                if let Some(value) = value {
+                    let parts: Vec<&str> = value.split(":").collect();
+                    if parts.len() != 2 {
+                        return Err(anyhow::anyhow!(
+                            "Unsharpen requires two values separated by ':' (sigma:threshold) but got '{}'",
+                            value
+                        ));
+                    }
+
+                    let sigma = parts[0].parse::<f32>().map_err(|_| {
+                        anyhow::anyhow!("Failed to parse '{}' as f32 for unsharpen sigma", parts[0])
+                    })?;
+                    let threshold = parts[1].parse::<i32>().map_err(|_| {
+                        anyhow::anyhow!(
+                            "Failed to parse '{}' as i32 for unsharpen threshold",
+                            parts[1]
+                        )
+                    })?;
+
+                    filter.unsharpen = Some((sigma, threshold));
+                }
+            }
+            Some("brighten") => {
+                if let Some(value) = value {
+                    let value = value.parse::<i32>().map_err(|_| {
+                        anyhow::anyhow!("Failed to parse '{}' as i32 for brighten", value)
+                    })?;
+                    filter.brighten = Some(value);
+                }
+            }
+            Some("grayscale") => {
+                filter.grayscale = true;
+            }
+            Some("rotate") => {
+                if let Some(value) = value {
+                    let rotate_filter = match value {
+                        "90" => RotateFilter::Rotate90,
+                        "180" => RotateFilter::Rotate180,
+                        "270" => RotateFilter::Rotate270,
+                        _ => {
+                            return Err(anyhow::anyhow!(
+                                "Invalid rotate value: '{}'. Expected 90, 180, or 270",
+                                value
+                            ))
+                        }
+                    };
+                    filter.rotate = Some(rotate_filter);
+                }
+            }
+            Some("invert") => {
+                filter.invert_colors = true;
+            }
+            Some("blur") => {
+                if let Some(value) = value {
+                    let value = value.parse::<f32>().map_err(|_| {
+                        anyhow::anyhow!("Failed to parse '{}' as f32 for blur", value)
+                    })?;
+                    filter.blur = Some(value);
+                }
+            }
+            None => continue,
+            Some(key) => {
+                return Err(anyhow::anyhow!("Unknown filter key: {}", key));
+            }
+        }
+    }
+
+    Ok(filter)
 }

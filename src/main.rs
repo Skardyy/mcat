@@ -24,7 +24,7 @@ use iterm_encoder::is_iterm_capable;
 use kitty_encoder::is_kitty_capable;
 use sixel_encoder::is_sixel_capable;
 use term_misc::{
-    break_scale_string, break_size_string, dim_to_px, init_winsize, EnvIdentifiers, Size,
+    break_filter_string, break_size_string, dim_to_px, init_winsize, EnvIdentifiers, Filters, Size,
 };
 
 fn main() {
@@ -99,7 +99,7 @@ fn main() {
                 .long("spx")
                 .help("the size of the screen in px (fallback) <width>x<height>x<force> for instance 1920x1080xfalse")
                 .value_parser(|spx: &str| {
-                    break_size_string(spx).map_err(|_|clap::Error::new(ErrorKind::InvalidValue))
+                    break_size_string(spx).map_err(|e|clap::Error::raw(ErrorKind::InvalidValue, e))
                 })
                 .default_value("1920x1080"),
         )
@@ -108,9 +108,30 @@ fn main() {
                 .long("sc")
                 .help("the size of the screen in cells (fallback) <width>x<height>x<force> for instance 100x20xtrue")
                 .value_parser(|spx: &str| {
-                    break_size_string(spx).map_err(|_|clap::Error::new(ErrorKind::InvalidValue))
+                    break_size_string(spx).map_err(|e|clap::Error::raw(ErrorKind::InvalidValue, e))
                 })
                 .default_value("100x20"),
+        )
+        .arg(
+            Arg::new("filter")
+                .long("filter")
+                .help("filters to apply: [scale, blur, invert, rotate, grayscale, brighten, unsharpen, hue_rotate, contrast]. filter1=value,filter2=value (will extend the default)")
+                .value_parser(|filter: &str| {
+                    break_filter_string(filter).map_err(|e|clap::Error::raw(ErrorKind::InvalidValue, e))
+                })
+        )
+        .arg(
+            Arg::new("save")
+                .long("save")
+                .help("path to save the image into, will save instead of printing the image")
+                .value_parser(|path: &str| {
+                    let p = Path::new(path);
+                    if p.extension().is_some_and(|f| f == "png") {
+                        return Ok(path.to_string());
+                    } else {
+                        return Err(clap::Error::raw(ErrorKind::InvalidValue, "path must be a png file"));
+                    }
+                })
         )
         .get_matches();
 
@@ -124,8 +145,10 @@ fn main() {
     let cache = opts.get_flag("cache");
     let spx = opts.get_one::<Size>("spx").unwrap();
     let sc = opts.get_one::<Size>("sc").unwrap();
+    let filter = opts.get_one::<Filters>("filter");
+    let save = opts.get_one::<String>("save");
 
-    let _ = init_winsize(&spx, &sc);
+    let _ = init_winsize(&spx, &sc, filter.and_then(|f| f.scale));
     let width = dim_to_px(&width, term_misc::SizeDirection::WIDTH).unwrap_or_else(|_| {
         eprintln!("invalid width format, please see mcat --help");
         std::process::exit(1);
@@ -162,11 +185,14 @@ fn main() {
             center,
             resize_video,
         },
+        filter,
+        save,
     ) {
         Ok(img) => img,
         Err(e) => {
+            let status = e.to_string() == "file saved";
             eprintln!("{}", e);
-            std::process::exit(1)
+            std::process::exit(!status as i32)
         }
     };
 
