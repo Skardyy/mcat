@@ -5,6 +5,7 @@ mod iterm_encoder;
 mod kitty_encoder;
 mod sixel_encoder;
 mod term_misc;
+mod url_query;
 mod video;
 
 #[macro_use]
@@ -18,7 +19,7 @@ use clap::{
     Arg, ColorChoice, Command,
 };
 use image_extended::{parse_resize_mode, ResizeMode};
-use inline_image::InlineImgOpts;
+use inline_image::{InlineImage, InlineImgOpts};
 use inline_image_reader::InlineImgReader;
 use iterm_encoder::is_iterm_capable;
 use kitty_encoder::is_kitty_capable;
@@ -135,7 +136,7 @@ fn main() {
         )
         .get_matches();
 
-    let path = opts.get_one::<String>("input").unwrap();
+    let input = opts.get_one::<String>("input").unwrap();
     let mut format = opts.get_one::<String>("format").unwrap().as_str();
     let resize_mode = opts.get_one::<ResizeMode>("resize-mode").unwrap();
     let width = opts.get_one::<String>("width").unwrap();
@@ -173,27 +174,36 @@ fn main() {
         }
     }
 
-    let img_path = Path::new(path).to_path_buf();
-    let img = match InlineImgReader::open(
-        &img_path,
-        cache,
-        format != "sixel",
-        InlineImgOpts {
-            width,
-            height,
-            resize_mode: resize_mode.clone(),
-            center,
-            resize_video,
-        },
-        filter,
-        save,
-    ) {
-        Ok(img) => img,
-        Err(e) => {
-            let status = e.to_string() == "file saved";
-            eprintln!("{}", e);
-            std::process::exit(!status as i32)
-        }
+    let try_video = format != "sixel";
+    let opts = InlineImgOpts {
+        width,
+        height,
+        resize_mode: resize_mode.clone(),
+        center,
+        resize_video,
+    };
+    let img: InlineImage = if input.contains("http") {
+        let img = match InlineImgReader::from_url(input, try_video, opts, filter, save) {
+            Ok(img) => img,
+            Err(e) => {
+                eprintln!("{}", e);
+                std::process::exit(1)
+            }
+        };
+
+        img
+    } else {
+        let img_path = Path::new(input).to_path_buf();
+        let img = match InlineImgReader::open(&img_path, cache, try_video, opts, filter, save) {
+            Ok(img) => img,
+            Err(e) => {
+                let status = e.to_string() == "file saved";
+                eprintln!("{}", e);
+                std::process::exit(!status as i32)
+            }
+        };
+
+        img
     };
 
     match format {

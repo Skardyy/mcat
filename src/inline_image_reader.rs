@@ -169,6 +169,44 @@ where
 
 pub struct InlineImgReader {}
 
+fn apply_filters(img: &mut DynamicImage, filter: &Filters) {
+    if let Some(contrast) = filter.contrast {
+        *img = img.adjust_contrast(contrast);
+    }
+
+    if let Some(hue_degrees) = filter.hue_rotate {
+        *img = img.huerotate(hue_degrees);
+    }
+
+    if let Some((sigma, threshold)) = filter.unsharpen {
+        *img = img.unsharpen(sigma, threshold);
+    }
+
+    if let Some(brighten) = filter.brighten {
+        *img = img.brighten(brighten);
+    }
+
+    if filter.grayscale {
+        *img = img.grayscale();
+    }
+
+    if let Some(rotate_filter) = &filter.rotate {
+        *img = match rotate_filter {
+            RotateFilter::Rotate90 => img.rotate90(),
+            RotateFilter::Rotate180 => img.rotate180(),
+            RotateFilter::Rotate270 => img.rotate270(),
+        };
+    }
+
+    if filter.invert_colors {
+        img.invert();
+    }
+
+    if let Some(blur_sigma) = filter.blur {
+        *img = img.fast_blur(blur_sigma);
+    }
+}
+
 impl InlineImgReader {
     /// will return err when saving, string will be "file saved"
     /// can also return err for other things.
@@ -212,41 +250,7 @@ impl InlineImgReader {
 
         // applying filters
         if let Some(filter) = filter {
-            if let Some(contrast) = filter.contrast {
-                img = img.adjust_contrast(contrast);
-            }
-
-            if let Some(hue_degrees) = filter.hue_rotate {
-                img = img.huerotate(hue_degrees);
-            }
-
-            if let Some((sigma, threshold)) = filter.unsharpen {
-                img = img.unsharpen(sigma, threshold);
-            }
-
-            if let Some(brighten) = filter.brighten {
-                img = img.brighten(brighten);
-            }
-
-            if filter.grayscale {
-                img = img.grayscale();
-            }
-
-            if let Some(rotate_filter) = &filter.rotate {
-                img = match rotate_filter {
-                    RotateFilter::Rotate90 => img.rotate90(),
-                    RotateFilter::Rotate180 => img.rotate180(),
-                    RotateFilter::Rotate270 => img.rotate270(),
-                };
-            }
-
-            if filter.invert_colors {
-                img.invert();
-            }
-
-            if let Some(blur_sigma) = filter.blur {
-                img = img.fast_blur(blur_sigma);
-            }
+            apply_filters(&mut img, filter);
         }
 
         if let Some(path) = save {
@@ -257,5 +261,20 @@ impl InlineImgReader {
 
         let img = img.into_inline_img(opts)?;
         Ok(img)
+    }
+
+    pub fn from_url(
+        url: &str,
+        try_video: bool,
+        opts: InlineImgOpts,
+        filter: Option<&Filters>,
+        save: Option<&String>,
+    ) -> Result<InlineImage, Box<dyn Error>> {
+        let response = ureq::get(url).call()?;
+
+        let mut bytes = Vec::new();
+        response.into_body().into_reader().read_to_end(&mut bytes)?;
+
+        todo!();
     }
 }
