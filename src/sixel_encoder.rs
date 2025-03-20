@@ -6,7 +6,7 @@ use std::io::{self, Write};
 const SIXEL_MIN: u8 = 0x3f; // '?'
 
 pub fn encode_image(img: &InlineImage) -> Result<String, Box<dyn std::error::Error>> {
-    let dyn_img = img.into_dyn_img()?;
+    let dyn_img = image::load_from_memory_with_format(&img.buffer, image::ImageFormat::Png)?;
     let rgb_img = dyn_img.to_rgb8();
 
     let mut sixel_sequence = String::with_capacity(rgb_img.len() * 3);

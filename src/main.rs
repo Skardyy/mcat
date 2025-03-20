@@ -19,7 +19,7 @@ use clap::{
     Arg, ColorChoice, Command,
 };
 use image_extended::{parse_resize_mode, ResizeMode};
-use inline_image::{InlineImage, InlineImgOpts};
+use inline_image::{InlineImage, InlineImgOpts, ResizeOpts};
 use inline_image_reader::InlineImgReader;
 use iterm_encoder::is_iterm_capable;
 use kitty_encoder::is_kitty_capable;
@@ -75,17 +75,17 @@ fn main() {
                 .default_value("fit"),
         )
         .arg(
-            Arg::new("resize-video")
-                .short('r')
-                .long("resize-video")
-                .help("tries to resize video as well (doesn't respect crop)")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
             Arg::new("no-center")
                 .short('C')
                 .long("no-center")
                 .help("disable centering for the image with the remaining space")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("no-resize")
+                .short('r')
+                .long("no-resize")
+                .help("disable resizing for the image")
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
@@ -142,13 +142,14 @@ fn main() {
     let width = opts.get_one::<String>("width").unwrap();
     let height = opts.get_one::<String>("height").unwrap();
     let center = !opts.get_flag("no-center");
-    let resize_video = opts.get_flag("resize-video");
+    let resize = !opts.get_flag("no-resize");
     let cache = opts.get_flag("cache");
     let spx = opts.get_one::<Size>("spx").unwrap();
     let sc = opts.get_one::<Size>("sc").unwrap();
     let filter = opts.get_one::<Filters>("filter");
     let save = opts.get_one::<String>("save");
 
+    // making sizes work with cells and percent
     let _ = init_winsize(&spx, &sc, filter.and_then(|f| f.scale));
     let width = dim_to_px(&width, term_misc::SizeDirection::WIDTH).unwrap_or_else(|_| {
         eprintln!("invalid width format, please see mcat --help");
@@ -159,6 +160,7 @@ fn main() {
         std::process::exit(1);
     }) as u16;
 
+    // hanlding auto format
     if format == "auto" {
         let env = &EnvIdentifiers::new();
         let kitty_capable = is_kitty_capable(env);
@@ -174,16 +176,28 @@ fn main() {
         }
     }
 
+    // options for inline image
     let try_video = format != "sixel";
-    let opts = InlineImgOpts {
+    let resize_opts = ResizeOpts {
         width,
         height,
         resize_mode: resize_mode.clone(),
-        center,
-        resize_video,
     };
+    let opts = InlineImgOpts {
+        resize_opts: if resize { Some(resize_opts) } else { None },
+        center,
+    };
+    // if saving no need for resize and centering
+    let opts = match save {
+        Some(_) => InlineImgOpts {
+            resize_opts: None,
+            center: false,
+        },
+        None => opts,
+    };
+
     let img: InlineImage = if input.contains("http") {
-        let img = match InlineImgReader::from_url(input, try_video, opts, filter, save) {
+        let img = match InlineImgReader::from_url(input, try_video, opts, filter) {
             Ok(img) => img,
             Err(e) => {
                 eprintln!("{}", e);
@@ -194,16 +208,30 @@ fn main() {
         img
     } else {
         let img_path = Path::new(input).to_path_buf();
-        let img = match InlineImgReader::open(&img_path, cache, try_video, opts, filter, save) {
+        let img = match InlineImgReader::open(&img_path, cache, try_video, opts, filter) {
             Ok(img) => img,
             Err(e) => {
-                let status = e.to_string() == "file saved";
                 eprintln!("{}", e);
-                std::process::exit(!status as i32)
+                std::process::exit(1)
             }
         };
 
         img
+    };
+
+    // if saving no need for printing the image into the terminal
+    if let Some(path) = save {
+        let path = Path::new(path);
+        match img.save(path) {
+            Ok(_) => {
+                println!("saved file in {}", path.display());
+                std::process::exit(0);
+            }
+            Err(e) => {
+                eprintln!("failed saving file: {}", e);
+                std::process::exit(1);
+            }
+        };
     };
 
     match format {

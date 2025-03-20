@@ -7,14 +7,15 @@ use std::{env, fs};
 
 use base64::{engine::general_purpose, Engine};
 use image::{DynamicImage, ImageBuffer, ImageFormat, ImageReader, Rgba};
-use resvg::tiny_skia;
 use resvg::usvg::{Options, Tree};
+use resvg::{tiny_skia, usvg};
 use std::process::Command;
 use which::which;
 
 use crate::image_extended::PNGImage;
 use crate::inline_image::{self, InlineImage, InlineImgOpts};
 use crate::term_misc::{Filters, RotateFilter};
+use crate::url_query::handle_url;
 use crate::video::{is_video, InlineVideo};
 
 pub struct ImgCache {
@@ -133,7 +134,7 @@ fn find_libreoffice_path() -> Option<PathBuf> {
     None
 }
 
-fn load_svg<R>(mut reader: R) -> Result<DynamicImage, Box<dyn std::error::Error>>
+pub fn load_svg<R>(mut reader: R) -> Result<DynamicImage, Box<dyn std::error::Error>>
 where
     R: Read,
 {
@@ -141,7 +142,13 @@ where
     reader.read_to_end(&mut svg_data)?;
 
     // Create options for parsing SVG
-    let opt = Options::default();
+    let mut opt = Options::default();
+
+    // allowing text
+    let mut fontdb = fontdb::Database::new();
+    fontdb.load_system_fonts();
+    opt.fontdb = std::sync::Arc::new(fontdb);
+    opt.text_rendering = usvg::TextRendering::OptimizeLegibility;
 
     // Parse SVG
     let tree = Tree::from_data(&svg_data, &opt)?;
@@ -169,7 +176,7 @@ where
 
 pub struct InlineImgReader {}
 
-fn apply_filters(img: &mut DynamicImage, filter: &Filters) {
+pub fn apply_filters(img: &mut DynamicImage, filter: &Filters) {
     if let Some(contrast) = filter.contrast {
         *img = img.adjust_contrast(contrast);
     }
@@ -216,7 +223,6 @@ impl InlineImgReader {
         try_video: bool,
         opts: InlineImgOpts,
         filter: Option<&Filters>,
-        save: Option<&String>,
     ) -> Result<InlineImage, Box<dyn Error>> {
         if !path.exists() {
             return Err(From::from("file doesn't exists"));
@@ -226,7 +232,7 @@ impl InlineImgReader {
 
         // ffmpeg supported videos
         if try_video && is_video(path) {
-            let vid = InlineVideo::open(path, &opts)?;
+            let vid = InlineVideo::open(path)?;
             let offset = vid.get_offset_for_center(opts.center)?;
             let inline_img =
                 InlineImage::from_raw(vid.data, inline_image::InlineImageFormat::GIF, Some(offset));
@@ -253,28 +259,19 @@ impl InlineImgReader {
             apply_filters(&mut img, filter);
         }
 
-        if let Some(path) = save {
-            let path = Path::new(path);
-            img.save(path)?;
-            return Err("file saved".into());
-        }
-
         let img = img.into_inline_img(opts)?;
         Ok(img)
     }
 
+    /// will return err when saving, string will be "file saved"
+    /// can also return err for other things.
     pub fn from_url(
         url: &str,
         try_video: bool,
         opts: InlineImgOpts,
         filter: Option<&Filters>,
-        save: Option<&String>,
     ) -> Result<InlineImage, Box<dyn Error>> {
-        let response = ureq::get(url).call()?;
-
-        let mut bytes = Vec::new();
-        response.into_body().into_reader().read_to_end(&mut bytes)?;
-
-        todo!();
+        let img = handle_url(url, opts, try_video, filter)?;
+        Ok(img)
     }
 }

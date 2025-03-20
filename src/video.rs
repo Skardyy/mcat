@@ -1,4 +1,4 @@
-use crate::{image_extended::ResizeMode, inline_image::InlineImgOpts, term_misc};
+use crate::term_misc;
 use ffmpeg_sidecar::command::FfmpegCommand;
 use image::{codecs::gif::GifDecoder, AnimationDecoder, Frames, ImageResult};
 use std::{fs::File, io::Read, path::PathBuf};
@@ -18,12 +18,15 @@ pub fn is_video(input: &PathBuf) -> bool {
 }
 
 impl InlineVideo {
-    fn raw_gif_no_resizing(input: &PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new(data: Vec<u8>) -> Self {
+        InlineVideo { data }
+    }
+    fn raw_gif(input: &PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
         let mut file = File::open(input)?;
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)?;
 
-        Ok(InlineVideo { data: buffer })
+        Ok(InlineVideo::new(buffer))
     }
 
     pub fn into_frames(data: &Vec<u8>) -> ImageResult<Frames> {
@@ -44,29 +47,19 @@ impl InlineVideo {
         Ok(offset)
     }
 
-    pub fn open(path: &PathBuf, opts: &InlineImgOpts) -> Result<Self, Box<dyn std::error::Error>> {
-        // no resizing and is gif already
-        if !opts.resize_video && path.extension().is_some_and(|f| f == "gif") {
-            let vid = InlineVideo::raw_gif_no_resizing(path)?;
-            return Ok(vid);
+    pub fn open(path: &PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
+        // already a gif so no converting
+        if path.extension().is_some_and(|f| f == "gif") {
+            return InlineVideo::raw_gif(path);
         }
-        ffmpeg_sidecar::download::auto_download()?;
 
-        let scale = &format!("scale={}:{}", opts.width, opts.height);
-        let filter = match (opts.resize_mode.clone(), opts.resize_video) {
-            // ignoring crop for videos
-            (ResizeMode::Fit | ResizeMode::Crop, true) => {
-                &format!("{}:force_original_aspect_ratio=decrease,", scale)
-            }
-            (ResizeMode::Strech, true) => &format!("{},", scale),
-            (_, false) => "",
-        };
+        ffmpeg_sidecar::download::auto_download()?;
 
         let mut command = FfmpegCommand::new();
         command
             .hwaccel("auto")
             .input(path.to_string_lossy())
-            .filter(format!("{}fps=24", filter))
+            .filter("fps=24")
             .format("gif")
             .output("-");
 

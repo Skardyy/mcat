@@ -33,6 +33,9 @@
     - [x] Sixel
 - [x] Caching documents convertion
 - [ ] Add Simple Ascii fallback
-- [ ] Add Url Reading
-- [ ] Add Raw Reading
-- [ ] Add SSH Reading?
+- [x] Add Url Reading
+
+## Make a better ReadMe  
+* make sure the formats for video / png / docuemtns match
+* make a video that runs through examples (make a script)
+

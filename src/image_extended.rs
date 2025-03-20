@@ -45,24 +45,46 @@ pub trait PNGImage {
     ) -> Result<InlineImage, Box<dyn std::error::Error>>;
 }
 
+fn encode_png(img: &DynamicImage) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let mut buffer = Vec::new();
+    img.write_to(&mut Cursor::new(&mut buffer), image::ImageFormat::Png)?;
+
+    Ok(buffer)
+}
+
 impl PNGImage for DynamicImage {
     fn into_inline_img(
         &self,
         opts: InlineImgOpts,
     ) -> Result<InlineImage, Box<dyn std::error::Error>> {
+        // without resizing
+        let resize_opts = match opts.resize_opts {
+            Some(opts) => opts,
+            None => {
+                let buf = encode_png(self)?;
+                let offset = match opts.center {
+                    true => center_image(self.width() as u16),
+                    false => 0,
+                };
+                let img = InlineImage::from_raw(buf, InlineImageFormat::PNG, Some(offset));
+                return Ok(img);
+            }
+        };
+
+        //with resizing
         let crop_opts = &ResizeOptions::new().fit_into_destination(Some((1.0 as f64, 1.0 as f64)));
-        let (new_width, new_height, resize_opts) = match opts.resize_mode {
+        let (new_width, new_height, resize_opts) = match resize_opts.resize_mode {
             ResizeMode::Fit => {
                 let size = calc_fit(
                     self.width() as u16,
                     self.height() as u16,
-                    opts.width,
-                    opts.height,
+                    resize_opts.width,
+                    resize_opts.height,
                 );
                 (size.0, size.1, None::<&ResizeOptions>)
             }
-            ResizeMode::Crop => (opts.width, opts.height, Some(crop_opts)),
-            ResizeMode::Strech => (opts.width, opts.height, None),
+            ResizeMode::Crop => (resize_opts.width, resize_opts.height, Some(crop_opts)),
+            ResizeMode::Strech => (resize_opts.width, resize_opts.height, None),
         };
 
         let offset = match opts.center {

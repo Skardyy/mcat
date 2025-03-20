@@ -1,102 +1,171 @@
-use infer;
+use image::ImageFormat;
 use scraper::{Html, Selector};
-use std::error::Error;
+use std::{
+    error::Error,
+    io::{Cursor, Read},
+};
 use ureq;
 
-fn get_and_infer_url_content(url: &str) -> Result<(String, Vec<u8>), Box<dyn Error>> {
-    let response = ureq::get(url).call()?;
-    let mut bytes = Vec::new();
-    response.into_reader().read_to_end(&mut bytes)?;
+use crate::{
+    image_extended::PNGImage,
+    inline_image::{self, InlineImage, InlineImgOpts},
+    inline_image_reader::{apply_filters, load_svg},
+    term_misc::Filters,
+    video::InlineVideo,
+};
 
-    if let Some(kind) = infer::get(&bytes) {
-        Ok((kind.mime_type().to_string(), bytes))
-    } else {
-        Ok(("application/octet-stream".to_string(), bytes))
+enum Mime {
+    SVG,
+    GIF,
+    Image(ImageFormat),
+    NotSupported,
+    HTML,
+}
+fn get_and_infer_url_content(url: &str) -> Result<(Mime, Vec<u8>), Box<dyn Error>> {
+    let url_without_params = match url.rfind('?') {
+        Some(i) => &url[..i],
+        None => url,
+    };
+    let base_url_name = match url_without_params.rfind('/') {
+        Some(i) => &url_without_params[i..],
+        None => url_without_params,
+    };
+    let ext = match base_url_name.rfind('.') {
+        Some(i) => &base_url_name[i + 1..],
+        None => "",
+    };
+    let ext: &str = &ext.to_lowercase();
+
+    let mime = match ext {
+        "svg" => Mime::SVG,
+        "gif" => Mime::GIF,
+        "" => Mime::HTML,
+        _ => match ImageFormat::from_extension(ext) {
+            Some(f) => Mime::Image(f),
+            None => Mime::NotSupported,
+        },
+    };
+    let (mime, content) = match mime {
+        Mime::HTML => match handle_html(url) {
+            Ok(c) => c,
+            Err(e) => return Err(e),
+        },
+        Mime::NotSupported => (mime, Vec::new()),
+        _ => {
+            let response = ureq::get(url).call()?;
+            let mut bytes = Vec::new();
+            response.into_body().into_reader().read_to_end(&mut bytes)?;
+
+            (mime, bytes)
+        }
+    };
+
+    Ok((mime, content))
+}
+
+fn parse_dimension(value: Option<&str>, reference_size: i32) -> i32 {
+    match value {
+        Some(dim) => {
+            if dim.ends_with('%') {
+                // Handle percentage
+                if let Ok(percent) = dim.trim_end_matches('%').parse::<f32>() {
+                    (reference_size as f32 * percent / 100.0) as i32
+                } else {
+                    reference_size // Default to reference size if parsing fails
+                }
+            } else if dim == "auto" {
+                reference_size // Assume full size for "auto"
+            } else if let Ok(num) = dim.parse::<i32>() {
+                num // Use numeric value
+            } else {
+                reference_size // Default to reference size for other cases
+            }
+        }
+        None => reference_size, // Default to reference size if not specified
     }
 }
 
-fn handle_html(html_string: &str) -> Result<(String, Vec<u8>), Box<dyn Error>> {
-    let document = Html::parse_document(html_string);
+fn handle_html(url: &str) -> Result<(Mime, Vec<u8>), Box<dyn Error>> {
+    let html_string = ureq::get(url).call()?.into_body().read_to_string()?;
+    let document = Html::parse_document(&html_string);
 
-    // Check for top-level SVG
-    let svg_selector = Selector::parse("svg").unwrap();
-    if let Some(svg) = document.select(&svg_selector).next() {
-        return Ok(("svg".to_string(), svg.html().as_bytes().to_vec()));
-    }
+    let img_selector = Selector::parse("img")?;
+    let img_elements: Vec<_> = document.select(&img_selector).collect();
 
-    // Check for top-level img tag. Only the src attribute is used.
-    let img_selector = Selector::parse("img").unwrap();
-    if let Some(img) = document.select(&img_selector).next() {
-        if let Some(src) = img.value().attr("src") {
-            //Recursively call the main function.
+    if !img_elements.is_empty() {
+        const REF_WIDTH: i32 = 1920;
+        const REF_HEIGHT: i32 = 1080;
+        let mut largest_img_src = None;
+        let mut largest_area = 0;
+
+        for img in img_elements {
+            let src = match img.value().attr("src") {
+                Some(s) => s,
+                None => continue, // Skip images without src
+            };
+
+            let width = parse_dimension(img.value().attr("width"), REF_WIDTH);
+            let height = parse_dimension(img.value().attr("height"), REF_HEIGHT);
+            let area = width * height;
+
+            // Check for largest image
+            if area > largest_area {
+                largest_area = area;
+                largest_img_src = Some(src);
+            }
+        }
+
+        // If we found an image src, fetch and return it
+        if let Some(src) = largest_img_src {
             let (img_mime, img_bytes) = get_and_infer_url_content(src)?;
             return Ok((img_mime, img_bytes));
         }
     }
 
-    // If no top-level SVG or IMG, return the entire HTML
-    Ok(("html".to_string(), html_string.as_bytes().to_vec()))
-}
-
-fn handle_url(url: &str) -> Result<(String, Vec<u8>), Box<dyn Error>> {
-    let (mime_type, content) = get_and_infer_url_content(url)?;
-
-    if mime_type == "image/svg+xml" || url.ends_with(".svg") {
-        Ok(("svg".to_string(), content))
-    } else if mime_type == "image/gif" || url.ends_with(".gif") {
-        Ok(("gif".to_string(), content))
-    } else if mime_type == "image/jpeg" || url.ends_with(".jpg") || url.ends_with(".jpeg") {
-        Ok(("jpeg".to_string(), content))
-    } else if mime_type == "image/png" || url.ends_with(".png") {
-        Ok(("png".to_string(), content))
-    } else if mime_type == "image/bmp" || url.ends_with(".bmp") {
-        Ok(("bmp".to_string(), content))
-    } else if mime_type == "text/html" {
-        let html_string = String::from_utf8_lossy(&content).to_string();
-        handle_html(&html_string)
-    } else {
-        Ok((mime_type, content))
+    // Check for top-level SVG
+    let svg_selector = Selector::parse("svg")?;
+    if let Some(svg) = document.select(&svg_selector).next() {
+        return Ok((Mime::SVG, svg.html().as_bytes().to_vec()));
     }
+
+    Err("url doesn't contain a top level svg / img".into())
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
-    let svg_url = "https://upload.wikimedia.org/wikipedia/commons/0/02/SVG_logo.svg";
-    let png_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6a/PNG_transparency_demonstration_1.png/640px-PNG_transparency_demonstration_1.png";
-    let gif_url =
-        "https://upload.wikimedia.org/wikipedia/commons/2/2c/Rotating_earth_%28large%29.gif";
-    let jpg_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PNG_transparency_demonstration_1.png/640px-PNG_transparency_demonstration_1.jpg";
-    let bmp_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/a/af/Windows_BMP_file_example.bmp/640px-Windows_BMP_file_example.bmp";
-    let html_svg_url = "https://img.shields.io/badge/neovim-1e2029?logo=neovim&logoColor=3CA628&label=built%20for&labelColor=15161b";
-    let html_img_url = "https://www.w3schools.com/html/html_images.asp";
+pub fn handle_url(
+    url: &str,
+    opts: InlineImgOpts,
+    try_video: bool,
+    filter: Option<&Filters>,
+) -> Result<InlineImage, Box<dyn Error>> {
+    let (mime_type, content) = get_and_infer_url_content(url)?;
+    let mut img = match mime_type {
+        Mime::SVG => {
+            let cursor = Cursor::new(content);
+            load_svg(cursor)?
+        }
+        Mime::GIF => {
+            if try_video {
+                let vid = InlineVideo::new(content);
+                let offset = vid.get_offset_for_center(opts.center)?;
+                let inline_img = InlineImage::from_raw(
+                    vid.data,
+                    inline_image::InlineImageFormat::GIF,
+                    Some(offset),
+                );
+                return Ok(inline_img);
+            } else {
+                image::load_from_memory_with_format(&content, ImageFormat::Gif)?
+            }
+        }
+        Mime::Image(image_format) => image::load_from_memory_with_format(&content, image_format)?,
+        Mime::NotSupported => return Err("url type is not supported".into()),
+        Mime::HTML => return Err("couldn't find anything to turn into image in the url".into()),
+    };
 
-    let (svg_type, svg_content) = handle_url(svg_url)?;
-    println!("SVG: Type: {}, Length: {}", svg_type, svg_content.len());
+    if let Some(filter) = filter {
+        apply_filters(&mut img, filter);
+    };
 
-    let (png_type, png_content) = handle_url(png_url)?;
-    println!("PNG: Type: {}, Length: {}", png_type, png_content.len());
-
-    let (gif_type, gif_content) = handle_url(gif_url)?;
-    println!("GIF: Type: {}, Length: {}", gif_type, gif_content.len());
-
-    let (jpg_type, jpg_content) = handle_url(jpg_url)?;
-    println!("JPG: Type: {}, Length: {}", jpg_type, jpg_content.len());
-
-    let (bmp_type, bmp_content) = handle_url(bmp_url)?;
-    println!("BMP: Type: {}, Length: {}", bmp_type, bmp_content.len());
-
-    let (html_svg_type, html_svg_content) = handle_url(html_svg_url)?;
-    println!(
-        "HTML SVG: Type: {}, Length: {}",
-        html_svg_type,
-        html_svg_content.len()
-    );
-
-    let (html_img_type, html_img_content) = handle_url(html_img_url)?;
-    println!(
-        "HTML IMG: Type: {}, Length: {}",
-        html_img_type,
-        html_img_content.len()
-    );
-
-    Ok(())
+    let inline_img = img.into_inline_img(opts)?;
+    Ok(inline_img)
 }

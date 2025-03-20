@@ -1,16 +1,17 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, error::Error, fs, path::Path};
 
 use base64::{engine::general_purpose, Engine};
-use image::{DynamicImage, ImageResult};
 
 use crate::image_extended::ResizeMode;
 
-pub struct InlineImgOpts {
+pub struct ResizeOpts {
     pub width: u16,
     pub height: u16,
     pub resize_mode: ResizeMode,
+}
+pub struct InlineImgOpts {
+    pub resize_opts: Option<ResizeOpts>,
     pub center: bool,
-    pub resize_video: bool,
 }
 
 pub enum InlineImageFormat {
@@ -19,8 +20,8 @@ pub enum InlineImageFormat {
 }
 pub struct InlineImage {
     pub buffer: Vec<u8>,
-    offset: Option<u16>,
     pub format: InlineImageFormat,
+    offset: Option<u16>,
 }
 impl InlineImage {
     pub fn encode_base64(&self) -> Cow<'_, str> {
@@ -44,7 +45,24 @@ impl InlineImage {
         None
     }
 
-    pub fn into_dyn_img(&self) -> ImageResult<DynamicImage> {
-        image::load_from_memory(&self.buffer)
+    pub fn save(&self, path: &Path) -> Result<(), Box<dyn Error>> {
+        match self.format {
+            InlineImageFormat::GIF => {
+                if path.extension().is_some_and(|f| f == "gif") {
+                    fs::write(path, &self.buffer)?
+                } else {
+                    return Err("video must be saved into a .gif file".into());
+                }
+            }
+            InlineImageFormat::PNG => {
+                if path.extension().is_some_and(|f| f == "png") {
+                    fs::write(path, &self.buffer)?
+                } else {
+                    return Err("images must be saved into a .png file".into());
+                }
+            }
+        };
+
+        Ok(())
     }
 }
