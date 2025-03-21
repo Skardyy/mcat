@@ -1,4 +1,4 @@
-use std::{borrow::Cow, error::Error, fs, path::Path};
+use std::{error::Error, fs, path::Path};
 
 use base64::{engine::general_purpose, Engine};
 
@@ -24,8 +24,8 @@ pub struct InlineImage {
     offset: Option<u16>,
 }
 impl InlineImage {
-    pub fn encode_base64(&self) -> Cow<'_, str> {
-        Cow::Owned(general_purpose::STANDARD.encode(&self.buffer))
+    pub fn encode_base64(&self) -> String {
+        general_purpose::STANDARD.encode(&self.buffer)
     }
 
     pub fn from_raw(buffer: Vec<u8>, format: InlineImageFormat, offset: Option<u16>) -> Self {

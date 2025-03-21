@@ -1,5 +1,4 @@
-use anyhow::Result;
-use std::{collections::HashMap, env, f32, sync::OnceLock};
+use std::{collections::HashMap, env, error::Error, f32, sync::OnceLock};
 
 use crossterm::terminal::{size, window_size};
 
@@ -221,19 +220,21 @@ impl EnvIdentifiers {
         self.data.contains_key(key)
     }
 
+    /// all values are normalized into lowercase
+    /// pass the substr as lowercase
     pub fn contains(&self, key: &str, substr: &str) -> bool {
         if self.has_key(key) {
-            return self.data[key]
-                .to_lowercase()
-                .contains(&substr.to_lowercase());
+            return self.data.get(key).is_some_and(|f| f.contains(&substr));
         }
         false
     }
 
+    /// all values are normalized into lowercase
+    /// pass the term as lowercase
     pub fn term_contains(&self, term: &str) -> bool {
-        self.contains("TERM_PROGRAM", term)
-            || self.contains("TERM", term)
-            || self.contains("LC_TERMINAL", term)
+        ["TERM_PROGRAM", "TERM", "LC_TERMINAL"]
+            .iter()
+            .any(|key| self.contains(key, term))
     }
 }
 
@@ -257,7 +258,7 @@ pub struct Filters {
     pub blur: Option<f32>,
 }
 
-pub fn break_filter_string(s: &str) -> Result<Filters> {
+pub fn break_filter_string(s: &str) -> Result<Filters, Box<dyn Error>> {
     let parts = s.split(",");
     let mut filter = Filters {
         scale: None,
@@ -281,24 +282,24 @@ pub fn break_filter_string(s: &str) -> Result<Filters> {
         match key {
             Some("scale") => {
                 if let Some(value) = value {
-                    let value = value.parse::<f32>().map_err(|_| {
-                        anyhow::anyhow!("Failed to parse '{}' as f32 for scale", value)
-                    })?;
+                    let value = value
+                        .parse::<f32>()
+                        .map_err(|_| format!("Failed to parse '{}' as f32 for scale", value))?;
                     filter.scale = Some(value);
                 }
             }
             Some("contrast") => {
                 if let Some(value) = value {
-                    let value = value.parse::<f32>().map_err(|_| {
-                        anyhow::anyhow!("Failed to parse '{}' as f32 for contrast", value)
-                    })?;
+                    let value = value
+                        .parse::<f32>()
+                        .map_err(|_| format!("Failed to parse '{}' as f32 for contrast", value))?;
                     filter.contrast = Some(value);
                 }
             }
             Some("hue_rotate") => {
                 if let Some(value) = value {
                     let value = value.parse::<i32>().map_err(|_| {
-                        anyhow::anyhow!("Failed to parse '{}' as i32 for hue_rotate", value)
+                        format!("Failed to parse '{}' as i32 for hue_rotate", value)
                     })?;
                     filter.hue_rotate = Some(value);
                 }
@@ -307,17 +308,17 @@ pub fn break_filter_string(s: &str) -> Result<Filters> {
                 if let Some(value) = value {
                     let parts: Vec<&str> = value.split(":").collect();
                     if parts.len() != 2 {
-                        return Err(anyhow::anyhow!(
+                        return Err(format!(
                             "Unsharpen requires two values separated by ':' (sigma:threshold) but got '{}'",
                             value
-                        ));
+                        ).into());
                     }
 
                     let sigma = parts[0].parse::<f32>().map_err(|_| {
-                        anyhow::anyhow!("Failed to parse '{}' as f32 for unsharpen sigma", parts[0])
+                        format!("Failed to parse '{}' as f32 for unsharpen sigma", parts[0])
                     })?;
                     let threshold = parts[1].parse::<i32>().map_err(|_| {
-                        anyhow::anyhow!(
+                        format!(
                             "Failed to parse '{}' as i32 for unsharpen threshold",
                             parts[1]
                         )
@@ -328,9 +329,9 @@ pub fn break_filter_string(s: &str) -> Result<Filters> {
             }
             Some("brighten") => {
                 if let Some(value) = value {
-                    let value = value.parse::<i32>().map_err(|_| {
-                        anyhow::anyhow!("Failed to parse '{}' as i32 for brighten", value)
-                    })?;
+                    let value = value
+                        .parse::<i32>()
+                        .map_err(|_| format!("Failed to parse '{}' as i32 for brighten", value))?;
                     filter.brighten = Some(value);
                 }
             }
@@ -344,10 +345,11 @@ pub fn break_filter_string(s: &str) -> Result<Filters> {
                         "180" => RotateFilter::Rotate180,
                         "270" => RotateFilter::Rotate270,
                         _ => {
-                            return Err(anyhow::anyhow!(
+                            return Err(format!(
                                 "Invalid rotate value: '{}'. Expected 90, 180, or 270",
                                 value
-                            ))
+                            )
+                            .into())
                         }
                     };
                     filter.rotate = Some(rotate_filter);
@@ -358,15 +360,15 @@ pub fn break_filter_string(s: &str) -> Result<Filters> {
             }
             Some("blur") => {
                 if let Some(value) = value {
-                    let value = value.parse::<f32>().map_err(|_| {
-                        anyhow::anyhow!("Failed to parse '{}' as f32 for blur", value)
-                    })?;
+                    let value = value
+                        .parse::<f32>()
+                        .map_err(|_| format!("Failed to parse '{}' as f32 for blur", value))?;
                     filter.blur = Some(value);
                 }
             }
             None => continue,
             Some(key) => {
-                return Err(anyhow::anyhow!("Unknown filter key: {}", key));
+                return Err(format!("Unknown filter key: {}", key).into());
             }
         }
     }

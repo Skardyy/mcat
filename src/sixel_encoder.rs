@@ -1,24 +1,27 @@
 use crate::{inline_image::InlineImage, term_misc::EnvIdentifiers};
 use color_quant::NeuQuant;
 use image::{ImageBuffer, Rgb};
-use std::io::{self, Write};
+use std::{
+    error::Error,
+    io::{self, Write},
+};
 
 const SIXEL_MIN: u8 = 0x3f; // '?'
 
-pub fn encode_image(img: &InlineImage) -> Result<String, Box<dyn std::error::Error>> {
+pub fn encode_image(img: &InlineImage) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let dyn_img = image::load_from_memory_with_format(&img.buffer, image::ImageFormat::Png)?;
     let rgb_img = dyn_img.to_rgb8();
 
-    let mut sixel_sequence = String::with_capacity(rgb_img.len() * 3);
+    let mut buffer = Vec::with_capacity(rgb_img.len() * 3);
 
     if let Some(center) = img.center() {
-        sixel_sequence.push_str(&center);
+        buffer.extend_from_slice(center.as_bytes());
     }
 
-    let encoded_sixel = encode_sixel(&rgb_img);
-    sixel_sequence.push_str(&encoded_sixel);
+    let encoded_sixel = encode_sixel(&rgb_img)?;
+    buffer.extend_from_slice(&encoded_sixel);
 
-    Ok(sixel_sequence)
+    Ok(buffer)
 }
 
 pub fn is_sixel_capable(env: &EnvIdentifiers) -> bool {
@@ -28,17 +31,17 @@ pub fn is_sixel_capable(env: &EnvIdentifiers) -> bool {
         || env.term_contains("sixel-tmux")
 }
 
-pub fn encode_sixel(img: &ImageBuffer<Rgb<u8>, Vec<u8>>) -> String {
+pub fn encode_sixel(img: &ImageBuffer<Rgb<u8>, Vec<u8>>) -> Result<Vec<u8>, Box<dyn Error>> {
     let width = img.width() as usize;
     let height = img.height() as usize;
 
     if width == 0 || height == 0 {
-        return String::new();
+        return Err("image is empty".into());
     }
 
     let mut output = Vec::new();
     if write_sixel(&mut output, img).is_ok() {
-        String::from_utf8_lossy(&output).to_string()
+        Ok(output)
     } else {
         eprintln!("failed to write sixel");
         std::process::exit(1)

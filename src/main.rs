@@ -11,7 +11,10 @@ mod video;
 #[macro_use]
 extern crate lazy_static;
 
-use std::path::Path;
+use std::{
+    io::{self, BufWriter, Write},
+    path::Path,
+};
 
 use clap::{
     builder::{styling::AnsiColor, Styles},
@@ -234,23 +237,34 @@ fn main() {
         };
     };
 
+    let stdout = io::stdout();
+    let mut writer = BufWriter::new(stdout.lock());
     match format {
         "iterm" => match iterm_encoder::encode_image(&img) {
-            Ok(item) => println!("{}", item),
+            Ok(buf) => {
+                writer.write_all(&buf).unwrap();
+                writer.flush().unwrap()
+            }
             Err(e) => {
                 eprintln!("{}", e);
                 std::process::exit(1)
             }
         },
         "kitty" => match kitty_encoder::encode_image(&img) {
-            Ok(item) => println!("{}", item),
+            Ok(buf) => {
+                writer.write_all(&buf).unwrap();
+                writer.flush().unwrap()
+            }
             Err(e) => {
                 eprintln!("{}", e);
                 std::process::exit(1)
             }
         },
         "sixel" => match sixel_encoder::encode_image(&img) {
-            Ok(item) => println!("{}", item),
+            Ok(buf) => {
+                writer.write_all(&buf).unwrap();
+                writer.flush().unwrap()
+            }
             Err(e) => {
                 eprintln!("{}", e);
                 std::process::exit(1)

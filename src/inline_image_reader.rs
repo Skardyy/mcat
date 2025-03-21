@@ -56,10 +56,11 @@ impl ImgCache {
 fn is_document(input: &PathBuf) -> bool {
     let supported_extensions = ["docx", "xlsx", "pdf", "pptx", "odf", "odp", "ods", "odt"];
 
-    match input.extension() {
-        Some(ext) => supported_extensions.contains(&ext.to_string_lossy().to_lowercase().as_str()),
-        None => false,
-    }
+    input
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| supported_extensions.contains(&ext.to_lowercase().as_str()))
+        .unwrap_or(false)
 }
 
 fn is_image(input: &PathBuf) -> bool {

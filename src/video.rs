@@ -11,10 +11,12 @@ pub fn is_video(input: &PathBuf) -> bool {
     let supported_extensions = [
         "mp4", "mov", "avi", "mkv", "webm", "wmv", "flv", "m4v", "ts", "gif",
     ];
-    match input.extension() {
-        Some(ext) => supported_extensions.contains(&ext.to_string_lossy().to_lowercase().as_str()),
-        None => false,
-    }
+
+    input
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| supported_extensions.contains(&ext.to_lowercase().as_str()))
+        .unwrap_or(false)
 }
 
 impl InlineVideo {

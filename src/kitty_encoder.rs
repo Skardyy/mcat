@@ -1,9 +1,4 @@
-use std::{
-    borrow::Cow,
-    cmp::min,
-    collections::HashMap,
-    io::{Error, Write},
-};
+use std::{cmp::min, collections::HashMap, error::Error, io::Write};
 
 use base64::{engine::general_purpose, Engine};
 use flate2::{write::ZlibEncoder, Compression};
@@ -15,39 +10,39 @@ use crate::{
     video::InlineVideo,
 };
 
-fn chunk_base64<'a>(
-    base64: Cow<'a, str>,
+fn chunk_base64(
+    base64: &str,
+    buffer: &mut Vec<u8>,
     size: usize,
     first_opts: HashMap<String, String>,
     sub_opts: HashMap<String, String>,
-) -> Cow<'a, str> {
+) -> Result<(), std::io::Error> {
     // first block
-    let mut first_opts_string = String::with_capacity(first_opts.len() * 8);
+    let mut first_opts_string = Vec::with_capacity(first_opts.len() * 8);
     for (key, value) in first_opts {
-        if first_opts_string != "" {
-            first_opts_string.push_str(",");
+        if !first_opts_string.is_empty() {
+            first_opts_string.push(b',');
         }
-        first_opts_string.push_str(&format!("{}={}", key, value));
+        write!(first_opts_string, "{}={}", key, value)?;
     }
-    if first_opts_string != "" {
-        first_opts_string.push_str(",");
+    if !first_opts_string.is_empty() {
+        first_opts_string.push(b',');
     }
 
     // all other blocks
-    let mut sub_opts_string = String::with_capacity(sub_opts.len() * 8);
+    let mut sub_opts_string = Vec::with_capacity(sub_opts.len() * 8);
     for (key, value) in sub_opts {
-        if sub_opts_string != "" {
-            sub_opts_string.push_str(",");
+        if !sub_opts_string.is_empty() {
+            sub_opts_string.push(b',');
         }
-        sub_opts_string.push_str(&format!("{}={}", key, value));
+        write!(sub_opts_string, "{}={}", key, value)?;
     }
-    if sub_opts_string != "" {
-        sub_opts_string.push_str(",");
+    if !sub_opts_string.is_empty() {
+        sub_opts_string.push(b',');
     }
 
     let total_bytes = base64.len();
     let mut start = 0;
-    let mut chunked_result = String::with_capacity(total_bytes + (total_bytes / size) * 30);
 
     while start < total_bytes {
         let end = min(start + size, total_bytes);
@@ -60,20 +55,23 @@ fn chunk_base64<'a>(
             &sub_opts_string
         };
 
-        let chunk = format!("\x1b_G{}m={};{}\x1b\\", opts, more_chunks, chunk_data);
-        chunked_result.push_str(&chunk);
+        buffer.extend_from_slice(b"\x1b_G");
+        buffer.extend_from_slice(&opts);
+        write!(buffer, "m={};{}", more_chunks, chunk_data)?;
+        buffer.extend_from_slice(b"\x1b\\");
 
         start = end;
     }
 
-    Cow::Owned(chunked_result)
+    Ok(())
 }
 
 fn process_frame(
     frame: &RgbaImage,
+    buffer: &mut Vec<u8>,
     first_opts: HashMap<String, String>,
     sub_opts: HashMap<String, String>,
-) -> Result<Cow<'_, str>, Error> {
+) -> Result<(), Box<dyn Error>> {
     let width = frame.width() as usize;
     let height = frame.height() as usize;
     let rgb_size = width * height * 3;
@@ -90,30 +88,29 @@ fn process_frame(
     encoder.write_all(&rgb_data)?;
     let compressed = encoder.finish()?;
 
-    let base64 = Cow::Owned(general_purpose::STANDARD.encode(compressed));
-    let encoded_data = chunk_base64(base64, 4096, first_opts, sub_opts);
+    let base64 = general_purpose::STANDARD.encode(compressed);
+    chunk_base64(&base64, buffer, 4096, first_opts, sub_opts)?;
 
-    Ok(encoded_data)
+    Ok(())
 }
 
-pub fn encode_frames(frames: Frames<'_>, id: u32) -> Cow<'_, str> {
+pub fn encode_frames(
+    frames: Frames<'_>,
+    id: u32,
+    pre_string: String,
+) -> Result<Vec<u8>, Box<dyn Error>> {
     let mut frames = frames.into_iter();
 
     // getting the first frame
-    let first = frames.next().unwrap_or_else(|| {
-        eprintln!("video is empty");
-        std::process::exit(1);
-    });
-    let first = first.unwrap_or_else(|_| {
-        eprintln!("video is invalid");
-        std::process::exit(1);
-    });
+    let first = frames.next().ok_or("video doesn't contain any frames")??;
     let img = first.buffer();
 
     // not accurate cuz there is deflating and base64 encoding (can't allocate something close)
     let frame_count = frames.size_hint().0 + 1;
-    let mut full_data =
-        String::with_capacity(frame_count * img.width() as usize * img.height() as usize * 3);
+    let mut buffer = Vec::with_capacity(
+        frame_count * img.width() as usize * img.height() as usize * 3 + pre_string.len(),
+    );
+    buffer.extend_from_slice(pre_string.as_bytes());
 
     // adding the root image
     let i = id.to_string();
@@ -122,8 +119,9 @@ pub fn encode_frames(frames: Frames<'_>, id: u32) -> Cow<'_, str> {
     let f = "24".to_string();
     let o = "z".to_string();
     let q = "2".to_string();
-    let root_img = process_frame(
+    process_frame(
         img,
+        &mut buffer,
         HashMap::from([
             ("a".to_string(), "T".to_string()),
             ("f".to_string(), f),
@@ -134,22 +132,17 @@ pub fn encode_frames(frames: Frames<'_>, id: u32) -> Cow<'_, str> {
             ("q".to_string(), q),
         ]),
         HashMap::new(),
-    )
-    .unwrap_or_else(|_| {
-        eprintln!("video is invalid");
-        std::process::exit(1);
-    });
-    full_data.push_str(&root_img);
+    )?;
 
     // starting the animation
     let (z, _) = first.delay().numer_denom_ms();
-    full_data.push_str(&format!("\x1b_Ga=a,s=2,v=1,r=1,I={},z={}\x1b\\", id, z));
+    write!(buffer, "\x1b_Ga=a,s=2,v=1,r=1,I={},z={}\x1b\\", id, z)?;
 
     for (c, frame) in frames.enumerate() {
         if let Ok(frame) = frame {
-            let buffer = frame.buffer();
-            let s = buffer.width().to_string();
-            let v = buffer.height().to_string();
+            let img = frame.buffer();
+            let s = img.width().to_string();
+            let v = img.height().to_string();
             let i = id.to_string();
             let f = "24".to_string();
             let o = "z".to_string();
@@ -167,38 +160,41 @@ pub fn encode_frames(frames: Frames<'_>, id: u32) -> Cow<'_, str> {
             ]);
             let sub_opts = HashMap::from([("a".to_string(), "f".to_string())]);
 
-            if let Ok(f) = process_frame(buffer, first_opts, sub_opts) {
-                full_data.push_str(&f);
-            }
+            process_frame(img, &mut buffer, first_opts, sub_opts)?;
         }
     }
 
-    full_data.push_str(&format!("\x1b_Ga=a,s=3,v=1,r=1,I={},z={}\x1b\\", id, z));
-    Cow::Owned(full_data)
+    write!(buffer, "\x1b_Ga=a,s=3,v=1,r=1,I={},z={}\x1b\\", id, z)?;
+    Ok(buffer)
 }
 
-pub fn encode_image(img: &InlineImage) -> Result<String, Box<dyn std::error::Error>> {
+pub fn encode_image(img: &InlineImage) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let id: u32 = rand::random();
+    let center_string = img.center().unwrap_or(String::new());
     let encoded_data = match img.format {
-        InlineImageFormat::GIF => encode_frames(InlineVideo::into_frames(&img.buffer)?, id),
-        InlineImageFormat::PNG => chunk_base64(
-            img.encode_base64(),
-            4096,
-            HashMap::from([
-                ("f".to_string(), "100".to_string()),
-                ("a".to_string(), "T".to_string()),
-            ]),
-            HashMap::new(),
-        ),
+        InlineImageFormat::GIF => {
+            encode_frames(InlineVideo::into_frames(&img.buffer)?, id, center_string)?
+        }
+        InlineImageFormat::PNG => {
+            let base64 = img.encode_base64();
+            let mut buffer = Vec::with_capacity(base64.len() + 10);
+            buffer.extend_from_slice(center_string.as_bytes());
+            chunk_base64(
+                &base64,
+                &mut buffer,
+                4096,
+                HashMap::from([
+                    ("f".to_string(), "100".to_string()),
+                    ("a".to_string(), "T".to_string()),
+                ]),
+                HashMap::new(),
+            )?;
+
+            buffer
+        }
     };
-    let mut kitty_sequence = String::with_capacity(encoded_data.len() + 10);
 
-    if let Some(center) = img.center() {
-        kitty_sequence.push_str(&center);
-    }
-    kitty_sequence.push_str(&encoded_data);
-
-    Ok(kitty_sequence)
+    Ok(encoded_data)
 }
 
 pub fn is_kitty_capable(env: &EnvIdentifiers) -> bool {
