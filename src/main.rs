@@ -131,9 +131,9 @@ fn main() {
                 .value_parser(|path: &str| {
                     let p = Path::new(path);
                     if p.extension().is_some_and(|f| f == "png") {
-                        return Ok(path.to_string());
+                         Ok(path.to_string())
                     } else {
-                        return Err(clap::Error::raw(ErrorKind::InvalidValue, "path must be a png file"));
+                         Err(clap::Error::raw(ErrorKind::InvalidValue, "path must be a png file"))
                     }
                 })
         )
@@ -153,12 +153,12 @@ fn main() {
     let save = opts.get_one::<String>("save");
 
     // making sizes work with cells and percent
-    let _ = init_winsize(&spx, &sc, filter.and_then(|f| f.scale));
-    let width = dim_to_px(&width, term_misc::SizeDirection::WIDTH).unwrap_or_else(|_| {
+    let _ = init_winsize(spx, sc, filter.and_then(|f| f.scale));
+    let width = dim_to_px(width, term_misc::SizeDirection::Width).unwrap_or_else(|_| {
         eprintln!("invalid width format, please see mcat --help");
         std::process::exit(1);
     }) as u16;
-    let height = dim_to_px(&height, term_misc::SizeDirection::HEIGHT).unwrap_or_else(|_| {
+    let height = dim_to_px(height, term_misc::SizeDirection::Height).unwrap_or_else(|_| {
         eprintln!("invalid height format, please see mcat --help");
         std::process::exit(1);
     }) as u16;
@@ -200,26 +200,22 @@ fn main() {
     };
 
     let img: InlineImage = if input.contains("http") {
-        let img = match InlineImgReader::from_url(input, try_video, opts, filter) {
+        match InlineImgReader::from_url(input, try_video, opts, filter) {
             Ok(img) => img,
             Err(e) => {
                 eprintln!("{}", e);
                 std::process::exit(1)
             }
-        };
-
-        img
+        }
     } else {
         let img_path = Path::new(input).to_path_buf();
-        let img = match InlineImgReader::open(&img_path, cache, try_video, opts, filter) {
+        match InlineImgReader::open(&img_path, cache, try_video, opts, filter) {
             Ok(img) => img,
             Err(e) => {
                 eprintln!("{}", e);
                 std::process::exit(1)
             }
-        };
-
-        img
+        }
     };
 
     // if saving no need for printing the image into the terminal

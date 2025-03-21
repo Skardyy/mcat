@@ -15,8 +15,8 @@ pub struct InlineImgOpts {
 }
 
 pub enum InlineImageFormat {
-    GIF,
-    PNG,
+    Gif,
+    Png,
 }
 pub struct InlineImage {
     pub buffer: Vec<u8>,
@@ -47,14 +47,14 @@ impl InlineImage {
 
     pub fn save(&self, path: &Path) -> Result<(), Box<dyn Error>> {
         match self.format {
-            InlineImageFormat::GIF => {
+            InlineImageFormat::Gif => {
                 if path.extension().is_some_and(|f| f == "gif") {
                     fs::write(path, &self.buffer)?
                 } else {
                     return Err("video must be saved into a .gif file".into());
                 }
             }
-            InlineImageFormat::PNG => {
+            InlineImageFormat::Png => {
                 if path.extension().is_some_and(|f| f == "png") {
                     fs::write(path, &self.buffer)?
                 } else {

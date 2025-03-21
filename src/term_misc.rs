@@ -79,8 +79,8 @@ pub fn init_winsize(spx: &Size, sc: &Size, scale: Option<f32>) -> Result<(), &'s
 }
 
 pub enum SizeDirection {
-    WIDTH,
-    HEIGHT,
+    Width,
+    Height,
 }
 
 /// call init_winsize before it if you need to
@@ -123,8 +123,8 @@ pub fn dim_to_px(dim: &str, direction: SizeDirection) -> Result<u32, String> {
     let (width, height) = if not_px {
         let winsize = get_winsize();
         match direction {
-            SizeDirection::WIDTH => (winsize.spx_width, winsize.sc_width),
-            SizeDirection::HEIGHT => (winsize.spx_height, winsize.sc_height),
+            SizeDirection::Width => (winsize.spx_width, winsize.sc_width),
+            SizeDirection::Height => (winsize.spx_height, winsize.sc_height),
         }
     } else {
         (1, 1)
@@ -177,7 +177,7 @@ fn get_size_windows() -> Option<(u16, u16)> {
         top: 0,
     };
     unsafe {
-        let _ = AdjustWindowRect(&mut frame_rect, WINDOW_STYLE(style as u32), false.into());
+        let _ = AdjustWindowRect(&mut frame_rect, WINDOW_STYLE(style as u32), false);
     }
     let frame_width = frame_rect.right - frame_rect.left;
     let frame_height = frame_rect.bottom - frame_rect.top;
@@ -224,7 +224,7 @@ impl EnvIdentifiers {
     /// pass the substr as lowercase
     pub fn contains(&self, key: &str, substr: &str) -> bool {
         if self.has_key(key) {
-            return self.data.get(key).is_some_and(|f| f.contains(&substr));
+            return self.data.get(key).is_some_and(|f| f.contains(substr));
         }
         false
     }
@@ -271,7 +271,7 @@ pub fn break_filter_string(s: &str) -> Result<Filters, Box<dyn Error>> {
         invert_colors: false,
         blur: None,
     };
-    if s == "" {
+    if s.is_empty() {
         return Ok(filter);
     }
     for part in parts {

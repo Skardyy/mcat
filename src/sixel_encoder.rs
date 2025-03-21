@@ -171,7 +171,7 @@ fn map_to_palette(img: &ImageBuffer<Rgb<u8>, Vec<u8>>, palette: &[(u8, u8, u8)])
 
 // Graphics Repeat Introducer encoding
 fn write_gri<W: Write>(out: &mut W, repeat_count: usize, sixel: u8) -> io::Result<()> {
-    if repeat_count <= 0 {
+    if repeat_count == 0 {
         return Ok(());
     }
 

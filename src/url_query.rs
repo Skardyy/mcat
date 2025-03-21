@@ -4,7 +4,6 @@ use std::{
     error::Error,
     io::{Cursor, Read},
 };
-use ureq;
 
 use crate::{
     image_extended::PNGImage,
@@ -15,11 +14,11 @@ use crate::{
 };
 
 enum Mime {
-    SVG,
-    GIF,
+    Svg,
+    Gif,
     Image(ImageFormat),
     NotSupported,
-    HTML,
+    Html,
 }
 fn get_and_infer_url_content(url: &str) -> Result<(Mime, Vec<u8>), Box<dyn Error>> {
     let url_without_params = match url.rfind('?') {
@@ -37,19 +36,16 @@ fn get_and_infer_url_content(url: &str) -> Result<(Mime, Vec<u8>), Box<dyn Error
     let ext: &str = &ext.to_lowercase();
 
     let mime = match ext {
-        "svg" => Mime::SVG,
-        "gif" => Mime::GIF,
-        "" => Mime::HTML,
+        "svg" => Mime::Svg,
+        "gif" => Mime::Gif,
+        "" => Mime::Html,
         _ => match ImageFormat::from_extension(ext) {
             Some(f) => Mime::Image(f),
             None => Mime::NotSupported,
         },
     };
     let (mime, content) = match mime {
-        Mime::HTML => match handle_html(url) {
-            Ok(c) => c,
-            Err(e) => return Err(e),
-        },
+        Mime::Html => handle_html(url)?,
         Mime::NotSupported => (mime, Vec::new()),
         _ => {
             let response = ureq::get(url).call()?;
@@ -125,7 +121,7 @@ fn handle_html(url: &str) -> Result<(Mime, Vec<u8>), Box<dyn Error>> {
     // Check for top-level SVG
     let svg_selector = Selector::parse("svg")?;
     if let Some(svg) = document.select(&svg_selector).next() {
-        return Ok((Mime::SVG, svg.html().as_bytes().to_vec()));
+        return Ok((Mime::Svg, svg.html().as_bytes().to_vec()));
     }
 
     Err("url doesn't contain a top level svg / img".into())
@@ -139,17 +135,17 @@ pub fn handle_url(
 ) -> Result<InlineImage, Box<dyn Error>> {
     let (mime_type, content) = get_and_infer_url_content(url)?;
     let mut img = match mime_type {
-        Mime::SVG => {
+        Mime::Svg => {
             let cursor = Cursor::new(content);
             load_svg(cursor)?
         }
-        Mime::GIF => {
+        Mime::Gif => {
             if try_video {
                 let vid = InlineVideo::new(content);
                 let offset = vid.get_offset_for_center(opts.center)?;
                 let inline_img = InlineImage::from_raw(
                     vid.data,
-                    inline_image::InlineImageFormat::GIF,
+                    inline_image::InlineImageFormat::Gif,
                     Some(offset),
                 );
                 return Ok(inline_img);
@@ -159,7 +155,7 @@ pub fn handle_url(
         }
         Mime::Image(image_format) => image::load_from_memory_with_format(&content, image_format)?,
         Mime::NotSupported => return Err("url type is not supported".into()),
-        Mime::HTML => return Err("couldn't find anything to turn into image in the url".into()),
+        Mime::Html => return Err("couldn't find anything to turn into image in the url".into()),
     };
 
     if let Some(filter) = filter {

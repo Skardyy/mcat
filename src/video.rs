@@ -1,13 +1,13 @@
 use crate::term_misc;
 use ffmpeg_sidecar::command::FfmpegCommand;
 use image::{codecs::gif::GifDecoder, AnimationDecoder, Frames, ImageResult};
-use std::{fs::File, io::Read, path::PathBuf};
+use std::{fs::File, io::Read, path::Path};
 
 pub struct InlineVideo {
     pub data: Vec<u8>,
 }
 
-pub fn is_video(input: &PathBuf) -> bool {
+pub fn is_video(input: &Path) -> bool {
     let supported_extensions = [
         "mp4", "mov", "avi", "mkv", "webm", "wmv", "flv", "m4v", "ts", "gif",
     ];
@@ -23,7 +23,7 @@ impl InlineVideo {
     pub fn new(data: Vec<u8>) -> Self {
         InlineVideo { data }
     }
-    fn raw_gif(input: &PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
+    fn raw_gif(input: &Path) -> Result<Self, Box<dyn std::error::Error>> {
         let mut file = File::open(input)?;
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)?;
@@ -49,7 +49,7 @@ impl InlineVideo {
         Ok(offset)
     }
 
-    pub fn open(path: &PathBuf) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn open(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
         // already a gif so no converting
         if path.extension().is_some_and(|f| f == "gif") {
             return InlineVideo::raw_gif(path);
@@ -78,7 +78,7 @@ impl InlineVideo {
         let status = child.wait()?;
 
         if status.success() {
-            return Ok(InlineVideo { data: output_bytes });
+            Ok(InlineVideo { data: output_bytes })
         } else {
             let mut err_buffer = Vec::new();
             stderr

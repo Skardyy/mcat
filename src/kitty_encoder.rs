@@ -47,7 +47,7 @@ fn chunk_base64(
     while start < total_bytes {
         let end = min(start + size, total_bytes);
         let chunk_data = &base64[start..end];
-        let more_chunks = !(end == total_bytes) as u8;
+        let more_chunks = (end != total_bytes) as u8;
 
         let opts = if start == 0 {
             &first_opts_string
@@ -56,7 +56,7 @@ fn chunk_base64(
         };
 
         buffer.extend_from_slice(b"\x1b_G");
-        buffer.extend_from_slice(&opts);
+        buffer.extend_from_slice(opts);
         write!(buffer, "m={};{}", more_chunks, chunk_data)?;
         buffer.extend_from_slice(b"\x1b\\");
 
@@ -170,12 +170,12 @@ pub fn encode_frames(
 
 pub fn encode_image(img: &InlineImage) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let id: u32 = rand::random();
-    let center_string = img.center().unwrap_or(String::new());
+    let center_string = img.center().unwrap_or_default();
     let encoded_data = match img.format {
-        InlineImageFormat::GIF => {
+        InlineImageFormat::Gif => {
             encode_frames(InlineVideo::into_frames(&img.buffer)?, id, center_string)?
         }
-        InlineImageFormat::PNG => {
+        InlineImageFormat::Png => {
             let base64 = img.encode_base64();
             let mut buffer = Vec::with_capacity(base64.len() + 10);
             buffer.extend_from_slice(center_string.as_bytes());

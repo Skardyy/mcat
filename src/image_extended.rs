@@ -40,7 +40,7 @@ fn calc_fit(src_width: u16, src_height: u16, dst_width: u16, dst_height: u16) ->
 
 pub trait PNGImage {
     fn into_inline_img(
-        &self,
+        self,
         opts: InlineImgOpts,
     ) -> Result<InlineImage, Box<dyn std::error::Error>>;
 }
@@ -54,25 +54,25 @@ fn encode_png(img: &DynamicImage) -> Result<Vec<u8>, Box<dyn std::error::Error>>
 
 impl PNGImage for DynamicImage {
     fn into_inline_img(
-        &self,
+        self,
         opts: InlineImgOpts,
     ) -> Result<InlineImage, Box<dyn std::error::Error>> {
         // without resizing
         let resize_opts = match opts.resize_opts {
             Some(opts) => opts,
             None => {
-                let buf = encode_png(self)?;
+                let buf = encode_png(&self)?;
                 let offset = match opts.center {
                     true => center_image(self.width() as u16),
                     false => 0,
                 };
-                let img = InlineImage::from_raw(buf, InlineImageFormat::PNG, Some(offset));
+                let img = InlineImage::from_raw(buf, InlineImageFormat::Png, Some(offset));
                 return Ok(img);
             }
         };
 
         //with resizing
-        let crop_opts = &ResizeOptions::new().fit_into_destination(Some((1.0 as f64, 1.0 as f64)));
+        let crop_opts = &ResizeOptions::new().fit_into_destination(Some((1.0_f64, 1.0_f64)));
         let (new_width, new_height, resize_opts) = match resize_opts.resize_mode {
             ResizeMode::Fit => {
                 let size = calc_fit(
@@ -98,7 +98,7 @@ impl PNGImage for DynamicImage {
             self.pixel_type().ok_or("image is invalid")?,
         );
         let mut resizer = Resizer::new();
-        resizer.resize(self, &mut dst_image, resize_opts)?;
+        resizer.resize(&self, &mut dst_image, resize_opts)?;
 
         let mut buffer = Vec::new();
         let mut cursor = Cursor::new(&mut buffer);
@@ -110,7 +110,7 @@ impl PNGImage for DynamicImage {
             self.color().into(),
         )?;
 
-        let img = InlineImage::from_raw(buffer, InlineImageFormat::PNG, Some(offset));
+        let img = InlineImage::from_raw(buffer, InlineImageFormat::Png, Some(offset));
         Ok(img)
     }
 }

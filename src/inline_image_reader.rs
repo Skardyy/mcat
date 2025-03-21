@@ -47,13 +47,11 @@ impl ImgCache {
     pub fn get_cache_path(&self) -> PathBuf {
         let tmp_dir = env::temp_dir();
         let digested_name = general_purpose::URL_SAFE.encode(&self.id) + ".png";
-        let path = tmp_dir.join(&digested_name);
-
-        path
+        tmp_dir.join(&digested_name)
     }
 }
 
-fn is_document(input: &PathBuf) -> bool {
+fn is_document(input: &Path) -> bool {
     let supported_extensions = ["docx", "xlsx", "pdf", "pptx", "odf", "odp", "ods", "odt"];
 
     input
@@ -63,7 +61,7 @@ fn is_document(input: &PathBuf) -> bool {
         .unwrap_or(false)
 }
 
-fn is_image(input: &PathBuf) -> bool {
+fn is_image(input: &Path) -> bool {
     if let Some(ext) = input.extension() {
         return ImageFormat::from_extension(ext).is_some();
     }
@@ -71,7 +69,7 @@ fn is_image(input: &PathBuf) -> bool {
 }
 
 fn libreoffice_convert(
-    input: &PathBuf,
+    input: &Path,
     cache: bool,
 ) -> Result<DynamicImage, Box<dyn std::error::Error>> {
     let office_path = find_libreoffice_path().ok_or("libreoffice isn't installed or visible")?;
@@ -219,7 +217,7 @@ impl InlineImgReader {
     /// will return err when saving, string will be "file saved"
     /// can also return err for other things.
     pub fn open(
-        path: &PathBuf,
+        path: &Path,
         cache: bool,
         try_video: bool,
         opts: InlineImgOpts,
@@ -236,7 +234,7 @@ impl InlineImgReader {
             let vid = InlineVideo::open(path)?;
             let offset = vid.get_offset_for_center(opts.center)?;
             let inline_img =
-                InlineImage::from_raw(vid.data, inline_image::InlineImageFormat::GIF, Some(offset));
+                InlineImage::from_raw(vid.data, inline_image::InlineImageFormat::Gif, Some(offset));
             return Ok(inline_img);
         }
         // image crate supported files
