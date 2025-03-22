@@ -7,6 +7,7 @@ use std::{env, fs};
 
 use base64::{engine::general_purpose, Engine};
 use image::{DynamicImage, ImageBuffer, ImageFormat, ImageReader, Rgba};
+use pulldown_cmark::{html, Parser};
 use resvg::usvg::{Options, Tree};
 use resvg::{tiny_skia, usvg};
 use std::process::Command;
@@ -18,23 +19,24 @@ use crate::term_misc::{Filters, RotateFilter};
 use crate::url_query::handle_url;
 use crate::video::{is_video, InlineVideo};
 
-pub struct ImgCache {
-    pub id: String,
+pub struct ImgCache<'a> {
+    pub id: Cow<'a, str>,
 }
-impl ImgCache {
+impl ImgCache<'_> {
     pub fn new(id: Cow<'_, str>, is_path: bool) -> Self {
-        let id = match is_path {
-            false => id.into_owned(),
-            true => {
-                let path = Path::new(&id as &str);
-                match path.canonicalize() {
-                    Ok(path) => path.to_string_lossy().into_owned(),
-                    Err(_) => id.into_owned(),
-                }
+        let id = if is_path {
+            let path = Path::new(&id); // Directly using &id, no need for `&str`
+            match path.canonicalize() {
+                Ok(path) => Cow::Owned(path.to_string_lossy().into_owned()), // Convert to Cow::Owned
+                Err(_) => id,
             }
+        } else {
+            id
         };
+
         ImgCache { id }
     }
+}
     pub fn get_png(&self) -> Result<DynamicImage, Box<dyn std::error::Error>> {
         let path = self.get_cache_path();
         if !path.exists() {
@@ -52,7 +54,9 @@ impl ImgCache {
 }
 
 fn is_document(input: &Path) -> bool {
-    let supported_extensions = ["docx", "xlsx", "pdf", "pptx", "odf", "odp", "ods", "odt"];
+    let supported_extensions = [
+        "docx", "xlsx", "pdf", "pptx", "odf", "odp", "ods", "odt", "html", "md",
+    ];
 
     input
         .extension()
@@ -66,6 +70,17 @@ fn is_image(input: &Path) -> bool {
         return ImageFormat::from_extension(ext).is_some();
     }
     false
+}
+
+fn convert_md(markdown: &str, cache: bool) -> Result<DynamicImage, Box<dyn std::error::Error>> {
+    let parser = Parser::new(markdown);
+    let mut html_output = String::new();
+    html::push_html(&mut html_output, parser);
+
+    let l = html_output.len().min(15);
+    let img_cache = ImgCache::new(html_output[..15], false);
+
+    todo!()
 }
 
 fn libreoffice_convert(
@@ -91,10 +106,18 @@ fn libreoffice_convert(
         .to_string();
     let path = tmp_dir.join(base_name);
 
+    let is_html = input.extension().is_some_and(|f| f == "html");
+    let filter = if is_html {
+        "png:writer_png_Export"
+    } else {
+        "png"
+    };
+
     Command::new(office_path)
         .arg("--headless")
+        .arg("--norestore")
         .arg("--convert-to")
-        .arg("png")
+        .arg(filter)
         .arg(input)
         .arg("--outdir")
         .arg(tmp_dir)
