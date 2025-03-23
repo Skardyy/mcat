@@ -5,8 +5,8 @@ use fast_image_resize::{IntoImageView, ResizeOptions, Resizer};
 use image::codecs::png::PngEncoder;
 use image::{DynamicImage, ImageEncoder};
 
-use crate::inline_image::{InlineImage, InlineImageFormat, InlineImgOpts};
-use crate::term_misc::center_image;
+use crate::inline_image::{InlineImage, ResizeOpts};
+use crate::term_misc::{center_image, Filters, RotateFilter};
 
 #[derive(Clone)]
 pub enum ResizeMode {
@@ -41,8 +41,10 @@ fn calc_fit(src_width: u16, src_height: u16, dst_width: u16, dst_height: u16) ->
 pub trait PNGImage {
     fn into_inline_img(
         self,
-        opts: InlineImgOpts,
+        opts: Option<ResizeOpts>,
+        center: bool,
     ) -> Result<InlineImage, Box<dyn std::error::Error>>;
+    fn apply_filters(&mut self, filter: Filters);
 }
 
 fn encode_png(img: &DynamicImage) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
@@ -55,18 +57,19 @@ fn encode_png(img: &DynamicImage) -> Result<Vec<u8>, Box<dyn std::error::Error>>
 impl PNGImage for DynamicImage {
     fn into_inline_img(
         self,
-        opts: InlineImgOpts,
+        resize_opts: Option<ResizeOpts>,
+        center: bool,
     ) -> Result<InlineImage, Box<dyn std::error::Error>> {
         // without resizing
-        let resize_opts = match opts.resize_opts {
+        let resize_opts = match resize_opts {
             Some(opts) => opts,
             None => {
                 let buf = encode_png(&self)?;
-                let offset = match opts.center {
+                let offset = match center {
                     true => center_image(self.width() as u16),
                     false => 0,
                 };
-                let img = InlineImage::from_raw(buf, InlineImageFormat::Png, Some(offset));
+                let img = InlineImage::from_raw(buf, Some(offset));
                 return Ok(img);
             }
         };
@@ -87,7 +90,7 @@ impl PNGImage for DynamicImage {
             ResizeMode::Strech => (resize_opts.width, resize_opts.height, None),
         };
 
-        let offset = match opts.center {
+        let offset = match center {
             true => center_image(new_width),
             false => 0,
         };
@@ -110,7 +113,45 @@ impl PNGImage for DynamicImage {
             self.color().into(),
         )?;
 
-        let img = InlineImage::from_raw(buffer, InlineImageFormat::Png, Some(offset));
+        let img = InlineImage::from_raw(buffer, Some(offset));
         Ok(img)
+    }
+
+    fn apply_filters(&mut self, filter: Filters) {
+        if let Some(contrast) = filter.contrast {
+            *self = self.adjust_contrast(contrast);
+        }
+
+        if let Some(hue_degrees) = filter.hue_rotate {
+            *self = self.huerotate(hue_degrees);
+        }
+
+        if let Some((sigma, threshold)) = filter.unsharpen {
+            *self = self.unsharpen(sigma, threshold);
+        }
+
+        if let Some(brighten) = filter.brighten {
+            *self = self.brighten(brighten);
+        }
+
+        if filter.grayscale {
+            *self = self.grayscale();
+        }
+
+        if let Some(rotate_filter) = &filter.rotate {
+            *self = match rotate_filter {
+                RotateFilter::Rotate90 => self.rotate90(),
+                RotateFilter::Rotate180 => self.rotate180(),
+                RotateFilter::Rotate270 => self.rotate270(),
+            };
+        }
+
+        if filter.invert_colors {
+            self.invert();
+        }
+
+        if let Some(blur_sigma) = filter.blur {
+            *self = self.fast_blur(blur_sigma);
+        }
     }
 }

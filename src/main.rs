@@ -1,12 +1,11 @@
+mod converters;
+mod encoders;
 mod image_extended;
 mod inline_image;
-mod inline_image_reader;
-mod iterm_encoder;
-mod kitty_encoder;
-mod sixel_encoder;
+mod inline_video;
+mod media;
+mod media_reader;
 mod term_misc;
-mod url_query;
-mod video;
 
 #[macro_use]
 extern crate lazy_static;
@@ -21,12 +20,14 @@ use clap::{
     error::ErrorKind,
     Arg, ColorChoice, Command,
 };
+use encoders::{
+    iterm_encoder::is_iterm_capable, kitty_encoder::is_kitty_capable,
+    sixel_encoder::is_sixel_capable,
+};
 use image_extended::{parse_resize_mode, ResizeMode};
-use inline_image::{InlineImage, InlineImgOpts, ResizeOpts};
-use inline_image_reader::InlineImgReader;
-use iterm_encoder::is_iterm_capable;
-use kitty_encoder::is_kitty_capable;
-use sixel_encoder::is_sixel_capable;
+use inline_image::{InlineImage, ResizeOpts};
+use media::Media;
+use media_reader::{Encoder, MediaReader};
 use term_misc::{
     break_filter_string, break_size_string, dim_to_px, init_winsize, EnvIdentifiers, Filters, Size,
 };
@@ -179,37 +180,39 @@ fn main() {
         }
     }
 
-    // options for inline image
+    // resizing
     let try_video = format != "sixel";
-    let resize_opts = ResizeOpts {
+    let mut resize_opts = ResizeOpts {
         width,
         height,
         resize_mode: resize_mode.clone(),
     };
-    let opts = InlineImgOpts {
-        resize_opts: if resize { Some(resize_opts) } else { None },
-        center,
-    };
-    // if saving no need for resize and centering
-    let opts = match save {
-        Some(_) => InlineImgOpts {
-            resize_opts: None,
-            center: false,
-        },
-        None => opts,
+    let resize_opts = if resize { Some(resize_opts) } else { None };
+    let resize_opts = match save {
+        Some(_) => None,
+        None => resize_opts,
     };
 
-    let img: InlineImage = if input.contains("http") {
-        match InlineImgReader::from_url(input, try_video, opts, filter) {
-            Ok(img) => img,
-            Err(e) => {
-                eprintln!("{}", e);
-                std::process::exit(1)
-            }
-        }
+    let img: Media = if input.contains("http") {
+        todo!()
+        // match InlineImgReader::from_url(input, try_video, opts, filter) {
+        //     Ok(img) => img,
+        //     Err(e) => {
+        //         eprintln!("{}", e);
+        //         std::process::exit(1)
+        //     }
+        // }
     } else {
-        let img_path = Path::new(input).to_path_buf();
-        match InlineImgReader::open(&img_path, cache, try_video, opts, filter) {
+        let img_path = Path::new(input);
+        let encoder = Encoder::from_string(format).unwrap();
+        match MediaReader::open(
+            &img_path,
+            cache,
+            encoder,
+            center,
+            resize_opts,
+            filter.cloned(),
+        ) {
             Ok(img) => img,
             Err(e) => {
                 eprintln!("{}", e);

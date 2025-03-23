@@ -6,8 +6,8 @@ use image::{Frames, Pixel, RgbaImage};
 
 use crate::{
     inline_image::{InlineImage, InlineImageFormat},
+    inline_video::InlineVideo,
     term_misc::EnvIdentifiers,
-    video::InlineVideo,
 };
 
 fn chunk_base64(

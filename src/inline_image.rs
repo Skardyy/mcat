@@ -9,31 +9,20 @@ pub struct ResizeOpts {
     pub height: u16,
     pub resize_mode: ResizeMode,
 }
-pub struct InlineImgOpts {
-    pub resize_opts: Option<ResizeOpts>,
-    pub center: bool,
-}
 
-pub enum InlineImageFormat {
-    Gif,
-    Png,
-}
 pub struct InlineImage {
     pub buffer: Vec<u8>,
-    pub format: InlineImageFormat,
     offset: Option<u16>,
 }
+
 impl InlineImage {
     pub fn encode_base64(&self) -> String {
         general_purpose::STANDARD.encode(&self.buffer)
     }
 
-    pub fn from_raw(buffer: Vec<u8>, format: InlineImageFormat, offset: Option<u16>) -> Self {
-        InlineImage {
-            buffer,
-            offset,
-            format,
-        }
+    /// the bytes must be of a png image.
+    pub fn from_raw(buffer: Vec<u8>, offset: Option<u16>) -> Self {
+        InlineImage { buffer, offset }
     }
 
     pub fn center(&self) -> Option<String> {
@@ -43,26 +32,5 @@ impl InlineImage {
             }
         }
         None
-    }
-
-    pub fn save(&self, path: &Path) -> Result<(), Box<dyn Error>> {
-        match self.format {
-            InlineImageFormat::Gif => {
-                if path.extension().is_some_and(|f| f == "gif") {
-                    fs::write(path, &self.buffer)?
-                } else {
-                    return Err("video must be saved into a .gif file".into());
-                }
-            }
-            InlineImageFormat::Png => {
-                if path.extension().is_some_and(|f| f == "png") {
-                    fs::write(path, &self.buffer)?
-                } else {
-                    return Err("images must be saved into a .png file".into());
-                }
-            }
-        };
-
-        Ok(())
     }
 }
