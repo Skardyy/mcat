@@ -1,7 +1,5 @@
-use chromiumoxide::{Browser, BrowserConfig, BrowserFetcher, BrowserFetcherOptions};
 use crossterm::tty::IsTty;
 use ffmpeg_sidecar::event::OutputVideoFrame;
-use futures::{lock::Mutex, stream::StreamExt};
 use ignore::WalkBuilder;
 use image::{DynamicImage, GenericImage, ImageBuffer, ImageFormat, Rgba, RgbaImage};
 use indicatif::{ProgressBar, ProgressStyle};
@@ -23,11 +21,9 @@ use std::{
     fs::{self},
     io::{BufRead, Cursor, Read},
     path::Path,
-    sync::{Arc, atomic::Ordering},
 };
-use tokio::sync::oneshot;
 
-use crate::{catter, config::LsixOptions, fetch_manager};
+use crate::{catter, config::LsixOptions, fetch_manager, wry_screenshot};
 
 pub fn svg_to_image(
     mut reader: impl Read,
@@ -85,89 +81,44 @@ pub fn svg_to_image(
 }
 
 pub fn html_to_image(html: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let encoded_html = urlencoding::encode(html);
-    let data_uri = format!("data:text/html;charset=utf-8,{}", encoded_html);
-    let data = screenshot_uri(&data_uri)?;
+    // JS to take a screenshot and send it back to Rust
+    let inject_script = r#"
+<script src="https://cdn.jsdelivr.net/npm/dom-to-image@2.6.0/dist/dom-to-image.min.js"></script>
+<script>
+window.addEventListener("load", async () => {
+    // Set crossOrigin='anonymous' for all images in the body
+    const images = document.body.querySelectorAll('img');
+    images.forEach(img => {
+      // Only set if image src is external or cross-origin (optional check)
+      if (!img.src.startsWith(window.location.origin)) {
+        img.crossOrigin = 'anonymous';
+      }
+    });
+
+    domtoimage.toPng(document.body, {
+      filter: (node) => {
+        // Skip videos AND images (you skip images here)
+        if (node.tagName === 'VIDEO') return false;
+        return true;
+      }
+    }).then(uri => window.ipc.postMessage(uri))
+      .catch(err => console.error('dom-to-image error:', err));
+});
+</script>
+    "#;
+
+    // Inject script before </body> or </html>, or append it to the end
+    let html_with_script = if html.contains("</body>") {
+        html.replacen("</body>", &format!("{}</body>", inject_script), 1)
+    } else if html.contains("</html>") {
+        html.replacen("</html>", &format!("{} </html>", inject_script), 1)
+    } else {
+        format!("{}{}", html, inject_script)
+    };
+
+    let data = wry_screenshot::screenshot_html(&html_with_script)?;
 
     Ok(data)
-}
-
-fn screenshot_uri(data_uri: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?;
-
-    rt.block_on(async {
-        let config = match BrowserConfig::builder().new_headless_mode().build() {
-            Ok(c) => c,
-            Err(_) => {
-                let cache_path = fetch_manager::get_cache_path();
-                let download_path = cache_path.join("chromium");
-                if download_path.join("installed.txt").exists() {
-                    let fetcher = BrowserFetcher::new(
-                        BrowserFetcherOptions::builder()
-                            .with_path(&download_path)
-                            .build()?,
-                    );
-                    let info = fetcher.fetch().await?;
-                    BrowserConfig::builder()
-                        .chrome_executable(info.executable_path)
-                        .new_headless_mode()
-                        .build()?
-                } else {
-                    return Err("chromium isn't installed. either install it manually (chrome/msedge will do so too) or call `mcat --fetch-chromium`".into())
-                }
-            }
-        };
-
-        let (cancel_tx, cancel_rx) = oneshot::channel();
-        let shutdown = rasteroid::term_misc::setup_signal_handler();
-
-        let (browser, mut handler) = Browser::launch(config)
-            .await
-            .map_err(|e| format!("failed to launch chromium\noriginal error: {}", e))?;
-        let browser_arc = Arc::new(Mutex::new(browser));
-        let signal_browser = browser_arc.clone();
-
-        // freeing the browser when process is killed, to avoid zombie process
-        tokio::spawn(async move {
-            loop {
-                if shutdown.load(Ordering::SeqCst) {
-                    if !cancel_tx.is_closed() {
-                        let _ = cancel_tx.send(true);
-                        let mut browser = signal_browser.lock().await;
-                        let _ = browser.close().await;
-                        let _ = browser.wait().await;
-                        std::process::exit(1);
-                    }
-                };
-                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-            }
-        });
-        // main function
-        tokio::spawn(async move { while handler.next().await.is_some() {} });
-
-        let data_uri = data_uri.to_string();
-        let page = tokio::spawn(async move {
-            tokio::select! {
-                result = async {
-                    let browser = browser_arc.lock().await;
-                    browser.new_page(data_uri).await
-                } => Some(result),
-                _ = cancel_rx => None
-            }
-        })
-        .await?;
-        let page = page.ok_or("Canceled")??;
-
-        let prms = chromiumoxide::page::ScreenshotParams::builder()
-            .full_page(true)
-            .omit_background(true)
-            .build();
-        let screenshot = page.screenshot(prms).await?;
-
-        Ok(screenshot)
-    })
 }
 
 pub struct VideoFrames {

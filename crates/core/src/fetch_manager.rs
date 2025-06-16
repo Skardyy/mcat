@@ -1,9 +1,5 @@
 use std::{error, fs, path::PathBuf};
 
-use chromiumoxide::{
-    BrowserConfig, BrowserFetcher, BrowserFetcherOptions,
-    detection::{DetectionOptions, default_executable},
-};
 use ffmpeg_sidecar::{
     command::FfmpegCommand,
     download::{download_ffmpeg_package, ffmpeg_download_url, unpack_ffmpeg},
@@ -16,7 +12,7 @@ pub fn is_chromium_installed() -> bool {
         return true;
     }
 
-    default_executable(DetectionOptions::default()).is_ok()
+    todo!()
 }
 pub fn is_ffmpeg_installed() -> bool {
     let cache_path = get_cache_path();
@@ -35,29 +31,7 @@ pub fn fetch_chromium() -> Result<(), Box<dyn error::Error>> {
         .enable_all()
         .build()?;
 
-    rt.block_on(async {
-        let cache_path = get_cache_path();
-        eprintln!("downloading chromium, it may take a while..");
-        let download_path = cache_path.join("chromium");
-        if !download_path.exists() {
-            fs::create_dir_all(download_path.clone())?;
-        }
-        let fetcher = BrowserFetcher::new(
-            BrowserFetcherOptions::builder()
-                .with_path(&download_path)
-                .build()?,
-        );
-        let info = fetcher.fetch().await?;
-        BrowserConfig::builder()
-            .chrome_executable(info.executable_path)
-            .new_headless_mode()
-            .build()?;
-
-        let ind = download_path.join("installed.txt");
-        fs::File::create(ind)?;
-        eprintln!("done!");
-        Ok(())
-    })
+    rt.block_on(async { todo!() })
 }
 
 pub fn fetch_ffmpeg() -> Result<(), Box<dyn error::Error>> {

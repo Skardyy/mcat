@@ -8,6 +8,7 @@ mod inspector;
 mod markdown;
 mod prompter;
 mod scrapy;
+mod wry_screenshot;
 
 use clap::{
     Arg, ColorChoice, Command,
