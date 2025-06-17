@@ -81,42 +81,7 @@ pub fn svg_to_image(
 }
 
 pub fn html_to_image(html: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    // JS to take a screenshot and send it back to Rust
-    let inject_script = r#"
-<script src="https://cdn.jsdelivr.net/npm/dom-to-image@2.6.0/dist/dom-to-image.min.js"></script>
-<script>
-window.addEventListener("load", async () => {
-    // Set crossOrigin='anonymous' for all images in the body
-    const images = document.body.querySelectorAll('img');
-    images.forEach(img => {
-      // Only set if image src is external or cross-origin (optional check)
-      if (!img.src.startsWith(window.location.origin)) {
-        img.crossOrigin = 'anonymous';
-      }
-    });
-
-    domtoimage.toPng(document.body, {
-      filter: (node) => {
-        // Skip videos AND images (you skip images here)
-        if (node.tagName === 'VIDEO') return false;
-        return true;
-      }
-    }).then(uri => window.ipc.postMessage(uri))
-      .catch(err => console.error('dom-to-image error:', err));
-});
-</script>
-    "#;
-
-    // Inject script before </body> or </html>, or append it to the end
-    let html_with_script = if html.contains("</body>") {
-        html.replacen("</body>", &format!("{}</body>", inject_script), 1)
-    } else if html.contains("</html>") {
-        html.replacen("</html>", &format!("{} </html>", inject_script), 1)
-    } else {
-        format!("{}{}", html, inject_script)
-    };
-
-    let data = wry_screenshot::screenshot_html(&html_with_script)?;
+    let data = wry_screenshot::screenshot_html(&html)?;
 
     Ok(data)
 }
@@ -208,11 +173,11 @@ fn calculate_items_per_row(terminal_width: u16, ctx: &LsixOptions) -> Result<usi
 #[rustfmt::skip]
 fn ext_to_svg(ext: &str) -> &'static str {
     let svg = if ext == "IAMADIR" {
-        include_str!("../svgs/folder.svg")
+        include_str!("../assets//folder.svg")
     } else if catter::is_video(ext) {
-        include_str!("../svgs/video.svg")
+        include_str!("../assets/video.svg")
     } else if ext == "" {
-        include_str!("../svgs/file.svg")
+        include_str!("../assets/file.svg")
     } else if matches!(ext, 
         "codes" | "py" | "rs" | "js" | "ts" | "java" | "c" | "cpp" | "h" | "hpp" | 
         "go" | "php" | "rb" | "sh" | "pl" | "lua" | "swift" | "kt" | "kts" | 
@@ -222,7 +187,7 @@ fn ext_to_svg(ext: &str) -> &'static str {
         "css" | "scss" | "less" | "vue" | "svelte" | "md" | "markdown" | "tex" | 
         "nim" | "zig" | "v" | "odin" | "d" | "sql" | "ps1" | "bash" | "zsh" | "fish"
     ) {
-        include_str!("../svgs/code.svg")
+        include_str!("../assets/code.svg")
     } else if matches!(ext, 
         "conf" | "config" | "ini" | "cfg" | "cnf" | "properties" | "env" | 
         "gitconfig" | "gitignore" | "npmrc" | "yarnrc" | "editorconfig" | 
@@ -240,7 +205,7 @@ fn ext_to_svg(ext: &str) -> &'static str {
         "fish_user_variables" | "fish_user_functions" | "fish_user_completions" | 
         "fish_user_abbreviations" | "fish_user_aliases" | "fish_user_key_bindings"
     ) {
-        include_str!("../svgs/conf.svg")
+        include_str!("../assets/conf.svg")
     } else if matches!(ext,
         "zip" | "tar" | "gz" | "bz2" | "xz" | "zst" | "lz" | "lzma" | "lzo" | 
         "rz" | "sz" | "7z" | "rar" | "iso" | "dmg" | "pkg" | "deb" | "rpm" | 
@@ -255,9 +220,9 @@ fn ext_to_svg(ext: &str) -> &'static str {
         "war" |  "xar" | "xp3" | "yz1" | "zap" |  
         "zz"
     ) {
-        include_str!("../svgs/archive.svg")
+        include_str!("../assets/archive.svg")
     } else {
-        include_str!("../svgs/txt.svg")
+        include_str!("../assets/txt.svg")
     };
     svg
 }

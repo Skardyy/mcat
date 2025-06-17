@@ -1089,7 +1089,7 @@ impl CustomTheme {
             self.surface.value,
             self.border.value
         );
-        let full_css = include_str!("../styles/style.css");
+        let full_css = include_str!("../assets//style.css");
         format!("{full_css}\n\n{root_css}")
     }
 }
