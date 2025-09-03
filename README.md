@@ -226,7 +226,7 @@ each variable mimicks its corresponding flag alternative.
 ## 🚧 Roadmap
 - [ ] mcat.nvim: a neovim plugin to use mcat inside neovim
 
-## 📎License
+## ⚖️ License
 MIT License
 
 ---
@@ -240,4 +240,10 @@ MIT License
    <a href="https://www.warp.dev/">
       <img height="70" src="https://github.com/user-attachments/assets/c21102f7-bab9-4344-a731-0cf6b341cab2">
    </a>
+</div>
+
+<br/>
+<br/>
+<div align="right">
+   🦆
 </div>
