@@ -243,7 +243,6 @@ MIT License
 </div>
 
 <br/>
-<br/>
 <div align="right">
    🦆
 </div>
