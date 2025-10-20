@@ -60,7 +60,7 @@ pub fn opendoc_convert(path: &Path) -> Result<String, Box<dyn std::error::Error>
                 }
             },
             Ok(Event::Text(e)) => {
-                let text = &e.unescape()?.into_owned();
+                let text = &e.decode()?.into_owned();
                 if is_table {
                     current_row.push(text.into());
                 } else if is_list_item == 1 {

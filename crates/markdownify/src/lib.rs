@@ -4,6 +4,8 @@ pub mod pdf;
 pub mod pptx;
 pub mod sheets;
 
+use chardetng::EncodingDetector;
+use encoding_rs::Encoding;
 use std::{
     borrow::Cow,
     fs::{self, File},
@@ -56,6 +58,13 @@ impl<'a> From<PathBuf> for ConvertOptions<'a> {
             screen_size: None,
         }
     }
+}
+
+pub fn get_encoding(buffer: &[u8], limit: usize) -> &'static Encoding {
+    let mut detector = EncodingDetector::new();
+    let len = std::cmp::min(limit, buffer.len());
+    detector.feed(&buffer[..len], true);
+    detector.guess(None, true)
 }
 
 /// Convert any document into markdown.

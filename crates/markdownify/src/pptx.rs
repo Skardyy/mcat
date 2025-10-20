@@ -86,7 +86,7 @@ pub fn pptx_converter(path: &Path) -> Result<String, Box<dyn std::error::Error>>
                     },
                     Ok(Event::Text(e)) => {
                         if in_text_body {
-                            let text = e.unescape().unwrap_or_default().to_string();
+                            let text = e.decode().unwrap_or_default().to_string();
 
                             if !text.trim().is_empty() {
                                 if in_title {
@@ -97,7 +97,7 @@ pub fn pptx_converter(path: &Path) -> Result<String, Box<dyn std::error::Error>>
                             }
                         }
                         if in_cell {
-                            cell_text.push_str(&e.unescape().unwrap_or_default());
+                            cell_text.push_str(&e.decode().unwrap_or_default());
                         }
                     }
                     Ok(Event::End(ref e)) => match e.name().as_ref() {

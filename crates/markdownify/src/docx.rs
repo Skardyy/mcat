@@ -1,3 +1,5 @@
+use crate::get_encoding;
+
 use super::sheets;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
@@ -34,7 +36,12 @@ impl Styles {
 fn get_attr(e: &quick_xml::events::BytesStart, key: &[u8]) -> Option<String> {
     for attr in e.attributes().with_checks(false).flatten() {
         if attr.key.as_ref() == key {
-            return Some(attr.unescape_value().ok()?.into_owned());
+            let buf = &attr.value;
+            let encoding = get_encoding(buf, 4096);
+            let mut decoder = encoding.new_decoder_with_bom_removal();
+            let mut text = String::default();
+            let _ = decoder.decode_to_string(&buf, &mut text, true);
+            return Some(text);
         }
     }
     None
@@ -133,7 +140,10 @@ pub fn docx_convert(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
                 _ => {}
             },
             Ok(Event::Text(e)) => {
-                let mut text = e.unescape()?.into_owned();
+                let encoding = get_encoding(&e, 4096);
+                let mut decoder = encoding.new_decoder_with_bom_removal();
+                let mut text = String::default();
+                let _ = decoder.decode_to_string(&e, &mut text, true);
                 if styles.bold {
                     text = format!("**{}** ", text.trim());
                     styles.bold = false;

@@ -24,38 +24,38 @@ license = false
 eula = false
 
 [dependencies]
-markdownify = { version = "0.2.1", path = "../markdownify" }
 rasteroid = { version = "0.1.8", path = "../rasteroid" }
-strip-ansi-escapes = "0.2.1"
-clap_complete = "4.5.50"
-which = "8.0.0"
-rayon = "1.10.0"
-itertools = "0.14.0"
-inquire = "0.7.5"
-shell-words = "1.1.0"
-ignore = "0.4.23"
-textwrap = "0.16.2"
-clap = "4.5.36"
-comrak = "0.39.0"
-crossterm = "0.29.0"
-image = { version = "0.25.6", default-features = false, features = ["bmp", "dds", "exr", "ff", "gif", "hdr", "ico", "jpeg", "png", "pnm", "qoi", "tga", "tiff", "webp"] }
-tempfile = "3.19.1"
-ffmpeg-sidecar = "2.0.5"
-syntect = "5.2.0"
-resvg = "0.45.1"
-fontdb = "0.23.0"
-serde_json = "1.0.140"
-base64 = "0.22.1"
-tokio = { version = "1.44.2", default-features = false, features = ["macros"] }
-tokio-tungstenite = "0.27.0"
-futures = "0.3.31"
-unicode-width = "0.2.1"
+markdownify = { version = "0.2.1", path = "../markdownify" }
+zip = "6.0.0"
 dirs = "6.0.0"
-zip = "3.0.0"
-scraper = "0.23.1"
-reqwest = { version = "0.12.15", default-features = false, features = ["rustls-tls", "stream"] }
-indicatif = "0.17.11"
-regex = "1.11.1"
+which = "8.0.0"
+clap = "4.5.49"
+rayon = "1.11.0"
+resvg = "0.45.1"
+regex = "1.12.2"
+inquire = "0.9.1"
+ignore = "0.4.24"
+fontdb = "0.23.0"
+comrak = "0.44.0"
+syntect = "5.3.0"
+base64 = "0.22.1"
+futures = "0.3.31"
+scraper = "0.24.0"
+textwrap = "0.16.2"
+tempfile = "3.23.0"
+indicatif = "0.18.0"
+itertools = "0.14.0"
+crossterm = "0.29.0"
+shell-words = "1.1.0"
+serde_json = "1.0.145"
+unicode-width = "0.2.2"
+clap_complete = "4.5.59"
+ffmpeg-sidecar = "2.2.0"
+tokio-tungstenite = "0.28.0"
+strip-ansi-escapes = "0.2.1"
+tokio = { version = "1.48.0", default-features = false, features = ["macros"] }
+reqwest = { version = "0.12.24", default-features = false, features = ["rustls-tls", "stream"] }
+image = { version = "0.25.8", default-features = false, features = ["bmp", "dds", "exr", "ff", "gif", "hdr", "ico", "jpeg", "png", "pnm", "qoi", "tga", "tiff", "webp"] }
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55.0"

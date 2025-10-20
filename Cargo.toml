@@ -11,3 +11,6 @@ resolver = "3"
 inherits = "release"
 codegen-units = 1
 lto = "fat"
+
+[patch.crates-io]
+markdownify = { path = "crates/markdownify" }

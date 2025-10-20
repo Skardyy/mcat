@@ -25,7 +25,7 @@ pub struct PdfPage<'a> {
 }
 
 impl<'a> PdfPage<'a> {
-    pub fn from_object_id(doc: &Document, id: ObjectId) -> Result<PdfPage, Box<dyn Error>> {
+    pub fn from_object_id(doc: &'_ Document, id: ObjectId) -> Result<PdfPage<'_>, Box<dyn Error>> {
         let stream = doc.get_page_content(id)?;
         let fonts = doc.get_page_fonts(id)?;
         let encodings: BTreeMap<Vec<u8>, Encoding> = fonts

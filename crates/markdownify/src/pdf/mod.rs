@@ -141,7 +141,7 @@ impl Pdf {
         Ok(pdf)
     }
 
-    pub fn iter_pages(&self) -> impl Iterator<Item = Result<PdfPage, Box<dyn Error>>> {
+    pub fn iter_pages(&'_ self) -> impl Iterator<Item = Result<PdfPage<'_>, Box<dyn Error>>> {
         self.doc
             .page_iter()
             .map(|id| PdfPage::from_object_id(&self.doc, id))
