@@ -5,7 +5,7 @@ pub mod themes;
 pub mod utils;
 
 use comrak::{
-    Arena, ComrakOptions, ComrakPlugins, markdown_to_html_with_plugins,
+    Arena, Options, markdown_to_html_with_plugins, options::Plugins,
     plugins::syntect::SyntectAdapterBuilder,
 };
 use image_preprocessor::ImagePreprocessor;
@@ -83,7 +83,7 @@ pub fn md_to_html(markdown: &str, style: Option<&str>) -> String {
 
     let theme = CustomTheme::from(style.unwrap_or_default());
     let mut theme_set = ThemeSet::load_defaults();
-    let mut plugins = ComrakPlugins::default();
+    let mut plugins = Plugins::default();
     theme_set
         .themes
         .insert("dark".to_string(), theme.to_syntect_theme());
@@ -121,8 +121,8 @@ pub fn md_to_html(markdown: &str, style: Option<&str>) -> String {
     }
 }
 
-fn comrak_options<'a>() -> ComrakOptions<'a> {
-    let mut options = ComrakOptions::default();
+fn comrak_options<'a>() -> Options<'a> {
+    let mut options = Options::default();
     // Enable extensions
     options.extension.strikethrough = true;
     options.extension.footnotes = true;
@@ -141,9 +141,6 @@ fn comrak_options<'a>() -> ComrakOptions<'a> {
     // Parsing options
     options.parse.smart = true;
     options.parse.relaxed_tasklist_matching = true;
-
-    // Render options
-    options.render.unsafe_ = true;
 
     options
 }

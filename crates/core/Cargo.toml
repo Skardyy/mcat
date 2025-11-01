@@ -27,35 +27,35 @@ eula = false
 markdownify = { version = "0.2.1", path = "../markdownify" }
 rasteroid = { version = "0.1.8", path = "../rasteroid" }
 strip-ansi-escapes = "0.2.1"
-clap_complete = "4.5.50"
+clap_complete = "4.5.60"
 which = "8.0.0"
-rayon = "1.10.0"
+rayon = "1.11.0"
 itertools = "0.14.0"
-inquire = "0.7.5"
+inquire = "0.9.1"
 shell-words = "1.1.0"
-ignore = "0.4.23"
+ignore = "0.4.25"
 textwrap = "0.16.2"
-clap = "4.5.36"
-comrak = "0.39.0"
+clap = "4.5.51"
+comrak = "0.47.0"
 crossterm = "0.29.0"
-image = { version = "0.25.6", default-features = false, features = ["bmp", "dds", "exr", "ff", "gif", "hdr", "ico", "jpeg", "png", "pnm", "qoi", "tga", "tiff", "webp"] }
-tempfile = "3.19.1"
-ffmpeg-sidecar = "2.0.5"
-syntect = "5.2.0"
+image = { version = "0.25.8", default-features = false, features = ["bmp", "dds", "exr", "ff", "gif", "hdr", "ico", "jpeg", "png", "pnm", "qoi", "tga", "tiff", "webp"] }
+tempfile = "3.23.0"
+ffmpeg-sidecar = "2.2.0"
+syntect = "5.3.0"
 resvg = "0.45.1"
 fontdb = "0.23.0"
-serde_json = "1.0.140"
+serde_json = "1.0.145"
 base64 = "0.22.1"
-tokio = { version = "1.44.2", default-features = false, features = ["macros"] }
-tokio-tungstenite = "0.27.0"
+tokio = { version = "1.48.0", default-features = false, features = ["macros"] }
+tokio-tungstenite = "0.28.0"
 futures = "0.3.31"
-unicode-width = "0.2.1"
+unicode-width = "0.2.2"
 dirs = "6.0.0"
-zip = "3.0.0"
-scraper = "0.23.1"
-reqwest = { version = "0.12.15", default-features = false, features = ["rustls-tls", "stream"] }
-indicatif = "0.17.11"
-regex = "1.11.1"
+zip = "6.0.0"
+scraper = "0.24.0"
+reqwest = { version = "0.12.24", default-features = false, features = ["rustls-tls", "stream"] }
+indicatif = "0.18.2"
+regex = "1.12.2"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55.0"
