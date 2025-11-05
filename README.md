@@ -231,11 +231,14 @@ MIT License
 
 ---
 
-<div align=center>
+<div align="center">
+   <a title="This tool is Tool of The Week on Terminal Trove, The $HOME of all things in the terminal" href="https://terminaltrove.com/">
+      <img src="https://cdn.terminaltrove.com/media/badges/tool_of_the_week/png/terminal_trove_tool_of_the_week_gold_transparent.png" alt="Terminal Trove Tool of The Week" height="50px"/>
+   </a>
+   <br/><br/>
    <p>Thanks to all contributors</p>   
    <img src="https://contributors-img.web.app/image?repo=skardyy/mcat" height="30"/>
-   <br/>
-   <br/>
+   <br/><br/>
    <p>Thanks to all sponsors</p>
    <a href="https://www.warp.dev/">
       <img height="70" src="https://github.com/user-attachments/assets/c21102f7-bab9-4344-a731-0cf6b341cab2">
