@@ -1,6 +1,7 @@
-## Src
+## V0.4.5
 - 📈 **markdown viewer** now supports `<figure>` and `<figcaption>` HTML elements
 - 🐛 fixed an issue in the `ls` command where unicode characters that are more then a single byte could cause a panick
+- 🎉 added macOS x86_64 build to the release
 
 ## V0.4.4
 - 🎉 **interactive viewer** now supports albums - passing multiple images with `-o interactive` can now be viewed as an album (n/p to move between images)

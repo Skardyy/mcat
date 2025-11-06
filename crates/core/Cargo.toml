@@ -1,6 +1,6 @@
 [package]
 name = "mcat"
-version = "0.4.4"
+version = "0.4.5"
 authors = ["Meron Bossin"]
 description = "a powerfull extended cat command, to cat all the things you couldn't before"
 keywords = ["cat", "inline", "markitdown", "terminal", "file-converter"]
