@@ -39,7 +39,7 @@ follow the instructions at the [latest release](https://github.com/Skardyy/mcat/
    <summary>Homebrew (MacOS/Linux)</summary>
 
 ```sh
-brew install Skardyy/mcat/mcat
+brew install mcat
 ```
 </details>
 <details>
