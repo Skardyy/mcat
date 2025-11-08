@@ -45,6 +45,7 @@ pub fn md_to_ansi(md: &str, config: &McatConfig, markdown_file_path: Option<&Pat
         centered_lines: &res.centered_lines,
         term_width: term_misc::get_wininfo().sc_width as usize,
         image_preprocessor: &image_preprocessor,
+        show_frontmatter: config.yaml_header,
 
         blockquote_fenced_offset: None,
         is_multi_block_quote: false,
@@ -126,6 +127,7 @@ fn comrak_options<'a>() -> ComrakOptions<'a> {
     // Enable extensions
     options.extension.strikethrough = true;
     options.extension.footnotes = true;
+    options.extension.front_matter_delimiter = Some("---".to_owned());
     options.extension.superscript = true;
     options.extension.tagfilter = true;
     options.extension.table = true;

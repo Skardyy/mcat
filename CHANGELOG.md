@@ -1,3 +1,6 @@
+# Src
+- 📈 **markdown viewer** now renders YAML headers in a box, but now disabled by default - to show the header you supply the `--header` flag
+
 ## V0.4.5
 - 📈 **markdown viewer** now supports `<figure>` and `<figcaption>` HTML elements
 - 🐛 fixed an issue in the `ls` command where unicode characters that are more then a single byte could cause a panick

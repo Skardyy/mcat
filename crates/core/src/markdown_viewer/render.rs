@@ -10,11 +10,14 @@ use crate::markdown_viewer::utils::{get_title_box, string_len, trim_ansi_string,
 use super::{
     image_preprocessor::ImagePreprocessor,
     themes::CustomTheme,
-    utils::{format_code_full, format_code_simple, format_tb, limit_newlines, wrap_char_based},
+    utils::{
+        format_code_box, format_code_full, format_code_simple, format_tb, limit_newlines,
+        wrap_char_based,
+    },
 };
 
 pub const RESET: &str = "\x1B[0m";
-const BOLD: &str = "\x1B[1m";
+pub const BOLD: &str = "\x1B[1m";
 const ITALIC: &str = "\x1B[3m";
 const UNDERLINE: &str = "\x1B[4m";
 const STRIKETHROUGH: &str = "\x1B[9m";
@@ -29,6 +32,7 @@ pub struct AnsiContext<'a> {
     pub ps: SyntaxSet,
     pub theme: CustomTheme,
     pub hide_line_numbers: bool,
+    pub show_frontmatter: bool,
     pub centered_lines: &'a [usize],
     pub term_width: usize,
     pub image_preprocessor: &'a ImagePreprocessor,
@@ -105,9 +109,10 @@ pub fn parse_node<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         // leave as is
         NodeValue::Text(literal) => literal.to_owned(),
         NodeValue::Raw(literal) => literal.to_owned(),
-        NodeValue::SoftBreak => " ".to_owned(),
         NodeValue::Math(NodeMath { literal, .. }) => literal.to_owned(),
-        NodeValue::LineBreak => "".to_owned(),
+        NodeValue::SoftBreak => " ".to_owned(),
+        // Ignore
+        NodeValue::LineBreak => String::new(),
         NodeValue::TableRow(_) => String::new(),
         NodeValue::TableCell => String::new(),
         NodeValue::Escaped => String::new(),
@@ -130,12 +135,24 @@ fn render_document<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         .collect()
 }
 
-fn render_front_matter<'a>(node: &'a AstNode<'a>, _ctx: &mut AnsiContext) -> String {
+fn render_front_matter<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     let NodeValue::FrontMatter(ref literal) = node.data.borrow().value else {
         panic!()
     };
 
-    literal.to_owned()
+    if !ctx.show_frontmatter {
+        return String::new();
+    }
+
+    let content = literal
+        .trim()
+        .strip_prefix("---")
+        .unwrap_or(literal.trim())
+        .strip_suffix("---")
+        .unwrap_or(literal.trim())
+        .trim();
+
+    format_code_box(content, "yaml", "Document Metadata", ctx)
 }
 
 fn render_footnote_def<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {

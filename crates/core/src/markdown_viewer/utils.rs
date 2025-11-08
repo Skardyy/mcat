@@ -11,7 +11,7 @@ use syntect::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use super::render::{AnsiContext, RESET};
+use super::render::{AnsiContext, BOLD, RESET};
 
 static NEWLINE_REGEX: OnceLock<Regex> = OnceLock::new();
 static ANSI_ESCAPE_REGEX: OnceLock<Regex> = OnceLock::new();
@@ -466,6 +466,84 @@ pub fn format_code_full<'a>(code: &str, lang: &str, ctx: &AnsiContext) -> String
     );
     buffer.push_str(&last_border);
     format!("\n\n{buffer}\n\n")
+}
+
+pub fn format_code_box<'a>(code: &str, lang: &str, title: &str, ctx: &AnsiContext) -> String {
+    let term_width = ctx.term_width;
+    let color = &ctx.theme.border.fg;
+    let content = code.trim();
+
+    let ts = ctx.theme.to_syntect_theme();
+    let syntax = ctx
+        .ps
+        .find_syntax_by_token(lang)
+        .unwrap_or_else(|| ctx.ps.find_syntax_plain_text());
+    let mut highlighter = HighlightLines::new(syntax, &ts);
+
+    let max_line_width = content
+        .lines()
+        .map(|line| line.chars().count())
+        .max()
+        .unwrap_or(0);
+    let box_width = (max_line_width + 4).min(term_width.saturating_sub(4));
+
+    let bg = &ctx.theme.keyword.bg;
+    let fg = &ctx.theme.black.fg;
+    let header_text = format!(" {} ", title);
+    let header_padding = box_width.saturating_sub(string_len(&header_text) + 2); // -2 for ╭╮
+    let styled_header = format!("{bg}{fg}{BOLD}{header_text}{RESET}{color}");
+    let left_pad = header_padding / 2;
+    let right_pad = header_padding - left_pad;
+
+    let mut buffer = String::new();
+
+    // Top border with title
+    buffer.push_str(&format!(
+        "{color}╭{}{}{}╮{RESET}\n",
+        "─".repeat(left_pad),
+        styled_header,
+        "─".repeat(right_pad)
+    ));
+
+    let prefix = format!("{color}│{RESET}     ");
+    let content_width = box_width.saturating_sub(4); // -4 for "│ " on each side
+    let sub_content_width = content_width.saturating_sub(4); // 4 spaces for visual indent
+    for line in LinesWithEndings::from(content) {
+        let ranges: Vec<(Style, &str)> = highlighter.highlight_line(line, &ctx.ps).unwrap();
+        let highlighted = as_24_bit_terminal_escaped(&ranges[..], false);
+        let wrapped = wrap_highlighted_line(
+            highlighted,
+            content_width,
+            sub_content_width,
+            &prefix,
+            false,
+        );
+
+        buffer.push_str(&format!("{color}│{RESET} "));
+        for (i, wrapped_line) in wrapped.lines().enumerate() {
+            let visible_len = string_len(wrapped_line);
+            let av_space = if i == 0 {
+                content_width
+            } else {
+                content_width + 2 // +2 for reversing the indent to "| " " |" spaces and indent
+            };
+            let padding = av_space.saturating_sub(visible_len);
+
+            buffer.push_str(&format!(
+                "{}{} {color}│{RESET}\n",
+                wrapped_line,
+                " ".repeat(padding)
+            ));
+        }
+    }
+
+    // Bottom border
+    buffer.push_str(&format!(
+        "{color}╰{}╯{RESET}\n",
+        "─".repeat(box_width.saturating_sub(2))
+    ));
+
+    format!("\n{buffer}\n")
 }
 
 pub fn format_tb(ctx: &AnsiContext, offset: usize) -> String {

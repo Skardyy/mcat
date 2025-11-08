@@ -153,6 +153,7 @@ pub struct McatConfig {
     pub report: bool,
     pub no_linenumbers: bool,
     pub md_image_render: MdImageRender,
+    pub yaml_header: bool,
     pub horizontal_image_stacking: bool,
     pub style_html: bool,
     pub theme: String,
@@ -219,6 +220,7 @@ impl Default for McatConfig {
             hidden: false,
             report: false,
             no_linenumbers: false,
+            yaml_header: false,
             md_image_render: MdImageRender::Auto,
             horizontal_image_stacking: false,
             style_html: false,
@@ -316,6 +318,9 @@ impl McatConfig {
         };
         if opts.get_flag("fast") {
             self.md_image_render = MdImageRender::None
+        }
+        if opts.get_flag("header") {
+            self.yaml_header = true;
         }
         if opts.get_flag("horizontal") {
             self.horizontal_image_stacking = true;

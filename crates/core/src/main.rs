@@ -87,6 +87,10 @@ fn build_markdown_viewer_args() -> Vec<Arg> {
             .short('f')
             .help("sets md-image to none, for speed.")
             .action(clap::ArgAction::SetTrue),
+        Arg::new("header")
+            .long("header")
+            .help("shows YAML headers too")
+            .action(clap::ArgAction::SetTrue),
         Arg::new("color")
             .long("color")
             .value_name("mode")

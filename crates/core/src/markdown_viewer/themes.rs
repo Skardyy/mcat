@@ -84,8 +84,7 @@ pub struct CustomTheme {
     magenta: ThemeColor,
     #[allow(dead_code)]
     white: ThemeColor,
-    #[allow(dead_code)]
-    black: ThemeColor,
+    pub black: ThemeColor,
 }
 
 fn hex_to_rgba(hex: &str) -> Color {
