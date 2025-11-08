@@ -238,9 +238,4 @@ MIT License
    <br/><br/>
    <p>Thanks to all contributors</p>   
    <img src="https://contributors-img.web.app/image?repo=skardyy/mcat" height="30"/>
-   <br/><br/>
-   <p>Thanks to all sponsors</p>
-   <a href="https://www.warp.dev/">
-      <img height="70" src="https://github.com/user-attachments/assets/c21102f7-bab9-4344-a731-0cf6b341cab2">
-   </a>
 </div>
