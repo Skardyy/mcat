@@ -280,6 +280,14 @@ pub fn load(
         return Ok((res, "image".to_owned(), to));
     }
 
+    // .url
+    if ext == "url" {
+        let dyn_img =
+            converter::url_file_to_image(path).ok_or("Url file doesn't contain an icon")?;
+        let res = LoadResult::Image(dyn_img);
+        return Ok((res, "image".to_owned(), to));
+    }
+
     //image
     if ImageFormat::from_extension(&ext).is_some() {
         let buf = fs::read(path)?;

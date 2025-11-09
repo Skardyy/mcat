@@ -129,6 +129,10 @@ fn build_image_viewer_args() -> Vec<Arg> {
             .short('i')
             .help("Shortcut for --output inline")
             .action(clap::ArgAction::SetTrue),
+        Arg::new("interactive")
+            .short('I')
+            .help("Shortcut for --output interactive")
+            .action(clap::ArgAction::SetTrue),
         Arg::new("style-html")
             .long("style-html")
             .short('s')

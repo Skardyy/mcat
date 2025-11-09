@@ -357,8 +357,11 @@ impl McatConfig {
 
         // output
         let inline = opts.get_flag("inline");
+        let interactive = opts.get_flag("interactive");
         self.output = if inline {
             Some("inline".to_string())
+        } else if interactive {
+            Some("interactive".to_string())
         } else {
             opts.get_one::<String>("output").cloned()
         };

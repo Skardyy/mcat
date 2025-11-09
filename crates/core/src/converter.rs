@@ -34,6 +34,25 @@ use crate::{
     markdown_viewer::utils::string_len,
 };
 
+fn get_icon_path_from_url(path: impl AsRef<Path>) -> Option<String> {
+    let content = fs::read_to_string(path).ok()?;
+    content
+        .lines()
+        .find_map(|line| line.strip_prefix("IconFile="))
+        .map(|s| s.trim().to_string())
+}
+pub fn url_file_to_image(path: impl AsRef<Path>) -> Option<DynamicImage> {
+    let path = path.as_ref();
+    let icon_path = get_icon_path_from_url(path)?;
+    let icon_path = Path::new(&icon_path);
+
+    if !icon_path.exists() || icon_path.extension()?.to_str()?.to_lowercase() != "ico" {
+        return None;
+    }
+
+    return image::open(icon_path).ok();
+}
+
 pub fn svg_to_image(
     mut reader: impl Read,
     width: Option<&str>,
@@ -492,16 +511,23 @@ pub fn lsix(
         .par_iter()
         .filter_map(|(path, ext, filename)| {
             let dyn_img = if ext == "svg" {
-                let buf = fs::read(path).ok()?;
-                svg_to_image(buf.as_slice(), Some(&width_formatted), Some(&height)).ok()?
+                fs::read(path).ok().and_then(|buf| {
+                    svg_to_image(buf.as_slice(), Some(&width_formatted), Some(&height)).ok()
+                })
             } else if ImageFormat::from_extension(ext).is_some() {
-                let buf = fs::read(path).ok()?;
-                image::load_from_memory(&buf).ok()?
+                fs::read(path)
+                    .ok()
+                    .and_then(|buf| image::load_from_memory(&buf).ok())
+            } else if ext == "url" {
+                url_file_to_image(path)
             } else {
+                None
+            };
+            let dyn_img = dyn_img.or_else(|| {
                 let svg = ext_to_svg(ext);
                 let cursor = Cursor::new(svg);
-                svg_to_image(cursor, Some(&width_formatted), Some(&height)).ok()?
-            };
+                svg_to_image(cursor, Some(&width_formatted), Some(&height)).ok()
+            })?;
 
             let (img, _, w, h) = dyn_img
                 .resize_plus(
