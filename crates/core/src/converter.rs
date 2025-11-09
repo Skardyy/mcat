@@ -4,6 +4,7 @@ use ignore::WalkBuilder;
 use image::{DynamicImage, GenericImage, ImageBuffer, ImageFormat, Rgba, RgbaImage};
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
+use pelite::PeFile;
 use rasteroid::{
     Frame,
     image_extended::InlineImage,
@@ -34,6 +35,49 @@ use crate::{
     markdown_viewer::utils::string_len,
 };
 
+pub fn exe_to_image(path: impl AsRef<Path>) -> Option<DynamicImage> {
+    let data = std::fs::read(path).ok()?;
+    let pe = PeFile::from_bytes(&data).ok()?;
+    let resources = pe.resources().ok()?;
+
+    let (_name, icon_group) = resources.icons().next()?.ok()?;
+    let entries = icon_group.entries();
+    let best_entry = entries.iter().max_by_key(|e| {
+        let width = if e.bWidth == 0 { 256 } else { e.bWidth as u32 };
+        let height = if e.bHeight == 0 {
+            256
+        } else {
+            e.bHeight as u32
+        };
+        let bits = e.wBitCount as u32;
+
+        // Prioritize: size first, then bit depth
+        (width * height, bits)
+    })?;
+
+    let icon_id = best_entry.nId;
+    let icon_data = icon_group.image(icon_id).ok()?;
+
+    let mut ico_file = Vec::new();
+    // ICO header
+    ico_file.extend_from_slice(&[
+        0, 0, // Reserved, must be 0
+        1, 0, // Type: 1 for ICO
+        1, 0, // Number of images: 1
+    ]);
+    ico_file.push(best_entry.bWidth); // Width
+    ico_file.push(best_entry.bHeight); // Height
+    ico_file.push(best_entry.bColorCount); // Color count
+    ico_file.push(0); // Reserved
+    ico_file.extend_from_slice(&best_entry.wPlanes.to_le_bytes()); // Color planes
+    ico_file.extend_from_slice(&best_entry.wBitCount.to_le_bytes()); // Bits per pixel
+    ico_file.extend_from_slice(&(icon_data.len() as u32).to_le_bytes()); // Size of img data
+    ico_file.extend_from_slice(&22u32.to_le_bytes()); // Offset to img data (6 + 16 = 22)
+    ico_file.extend_from_slice(icon_data); // Add the raw img data
+
+    return image::load_from_memory(&ico_file).ok();
+}
+
 fn get_icon_path_from_url(path: impl AsRef<Path>) -> Option<String> {
     let content = fs::read_to_string(path).ok()?;
     content
@@ -46,7 +90,16 @@ pub fn url_file_to_image(path: impl AsRef<Path>) -> Option<DynamicImage> {
     let icon_path = get_icon_path_from_url(path)?;
     let icon_path = Path::new(&icon_path);
 
-    if !icon_path.exists() || icon_path.extension()?.to_str()?.to_lowercase() != "ico" {
+    if !icon_path.exists() {
+        return None;
+    }
+
+    let ext = icon_path.extension()?.to_str()?.to_lowercase();
+    if ext == "exe" {
+        return exe_to_image(icon_path);
+    }
+
+    if ext != "ico" {
         return None;
     }
 
@@ -520,6 +573,8 @@ pub fn lsix(
                     .and_then(|buf| image::load_from_memory(&buf).ok())
             } else if ext == "url" {
                 url_file_to_image(path)
+            } else if ext == "exe" {
+                exe_to_image(path)
             } else {
                 None
             };
