@@ -2,6 +2,7 @@
 - 📈 **markdown viewer** now renders YAML headers in a box, but now disabled by default - to show the header you supply the `--header` flag
 - 📈 now **.url** files are also supported for image preview
 - 📈 now **.exe** files are also supported for image preview
+- 📈 now **.lnk** files are also supported for image preview
 
 ## V0.4.5
 - 📈 **markdown viewer** now supports `<figure>` and `<figcaption>` HTML elements

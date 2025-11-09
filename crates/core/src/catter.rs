@@ -295,6 +295,13 @@ pub fn load(
         return Ok((res, "image".to_owned(), to));
     }
 
+    // lnk
+    if ext == "lnk" {
+        let dyn_img = converter::lnk_to_image(path).ok_or("Failed to get lnk icon")?;
+        let res = LoadResult::Image(dyn_img);
+        return Ok((res, "image".to_owned(), to));
+    }
+
     //image
     if ImageFormat::from_extension(&ext).is_some() {
         let buf = fs::read(path)?;

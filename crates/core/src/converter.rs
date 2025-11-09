@@ -19,8 +19,8 @@ use resvg::{
 };
 use std::{
     error,
-    fs::{self},
-    io::{BufRead, Cursor, Read},
+    fs::{self, File},
+    io::{BufRead, Cursor, Read, Seek, SeekFrom},
     path::{Path, PathBuf},
     process::Stdio,
 };
@@ -34,6 +34,84 @@ use crate::{
     catter, cdp::ChromeHeadless, config::LsixOptions, fetch_manager,
     markdown_viewer::utils::string_len,
 };
+
+pub fn lnk_to_image(path: impl AsRef<Path>) -> Option<DynamicImage> {
+    // Rather lazy tbh, just checking for target and not to icon if set.
+    // Most will likely just target an exe which we can take the icon from.
+
+    let target = get_lnk_target(path)?;
+    let target = Path::new(&target);
+
+    if !target.exists() || target.extension()?.to_str()?.to_lowercase() != "exe" {
+        return None;
+    }
+
+    exe_to_image(target)
+}
+
+fn get_lnk_target(path: impl AsRef<Path>) -> Option<String> {
+    let mut file = File::open(path.as_ref()).ok()?;
+    let mut buf = vec![0u8; 1024];
+
+    // Quick verify
+    file.read(&mut buf).ok()?;
+    if &buf[0..4] != &[0x4C, 0x00, 0x00, 0x00] {
+        return None;
+    }
+
+    // Read LinkFlags at offset 0x14 (20 bytes into file)
+    let link_flags = u32::from_le_bytes([buf[0x14], buf[0x15], buf[0x16], buf[0x17]]);
+
+    // Check HasLinkInfo flag (bit 1)
+    if link_flags & 0x02 == 0 {
+        return None;
+    }
+
+    let mut offset = 0x4C; // After header (76 bytes)
+
+    // Skip LinkTargetIDList if present (bit 0)
+    if link_flags & 0x01 != 0 {
+        let id_list_size = u16::from_le_bytes([buf[offset], buf[offset + 1]]);
+        offset += 2 + id_list_size as usize;
+    }
+
+    // Ensure we have enough data
+    if offset + 28 > buf.len() {
+        file.seek(SeekFrom::Start(0)).ok()?;
+        buf.resize(offset + 1024, 0);
+        file.read(&mut buf).ok()?;
+    }
+
+    // Read LocalBasePath offset (at LinkInfo + 0x10)
+    let local_base_path_offset = u32::from_le_bytes([
+        buf[offset + 0x10],
+        buf[offset + 0x11],
+        buf[offset + 0x12],
+        buf[offset + 0x13],
+    ]);
+
+    if local_base_path_offset == 0 {
+        return None;
+    }
+
+    // Calculate absolute offset to path string
+    let path_offset = offset + local_base_path_offset as usize;
+
+    // Ensure buffer has the path
+    if path_offset + 260 > buf.len() {
+        file.seek(SeekFrom::Start(0)).ok()?;
+        buf.resize(path_offset + 1024, 0);
+        file.read(&mut buf).ok()?;
+    }
+
+    // Read to null char
+    let end = buf[path_offset..]
+        .iter()
+        .position(|&b| b == 0)
+        .unwrap_or(260);
+
+    String::from_utf8(buf[path_offset..path_offset + end].to_vec()).ok()
+}
 
 pub fn exe_to_image(path: impl AsRef<Path>) -> Option<DynamicImage> {
     let data = std::fs::read(path).ok()?;
@@ -575,6 +653,8 @@ pub fn lsix(
                 url_file_to_image(path)
             } else if ext == "exe" {
                 exe_to_image(path)
+            } else if ext == "lnk" {
+                lnk_to_image(path)
             } else {
                 None
             };
