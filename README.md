@@ -122,9 +122,10 @@ This starts at an HTML file and directly converts it into a PNG image.
 
 ## Example Usage
 ```sh
-#------------------------------------#
-#  View a documents in the terminal  #
-#------------------------------------#
+#---------------------------------------#
+#  View documents with ANSI formatting  #
+#  in the terminal                      #
+#---------------------------------------#
 
 mcat resume.pdf
 mcat project.docx -t monokai           # With a different theme
@@ -151,13 +152,15 @@ mcat "https://giphy.com/gifs/..."      # From a URL
 mcat README.md -i                      # Converts to image and then shows it
 mcat ls                                # ls command with images
 mcat massive_image.png -o interactive  # zoom and pan the image interactively in the terminal
+mcat document.pdf -o interactive       # view PDF rendered as images interactively
+mcat img.png README.md -o interactive  # view multiple files as images interactively
 
 #--------------------------#
 #  What I use it most for  #
 #--------------------------#
 
 mcat ls                                # To find the image i was looking for
-mcat . | scb                           # Selects files, concat them, and copy to clipboard ~ for AI prompts
+mcat . | scb                           # Selects files, concat them, and copy to clipboard - for AI prompts
 mcat index.html -o image > save.png    # Render HTML into images
 ```
 
