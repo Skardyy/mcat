@@ -243,5 +243,5 @@ MIT License
    </a>
    <br/><br/>
    <p>Thanks to all contributors</p>   
-   <img src="https://contributors-img.web.app/image?repo=skardyy/mcat" height="30"/>
+   <img src="https://contrib.rocks/image?repo=skardyy/mcat" height="30"/>
 </div>
