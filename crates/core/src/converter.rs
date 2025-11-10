@@ -451,8 +451,28 @@ impl Frame for VideoFrames {
     }
 }
 
-fn truncate_filename(name: String, width: u16) -> String {
+fn truncate_filename(name: String, width: u16, lnk: &Path, create_hyprlink: bool) -> String {
     let width = width as usize;
+
+    let osc8_start = if create_hyprlink {
+        std::fs::canonicalize(&lnk)
+            .ok()
+            .and_then(|abs_path| {
+                let abs_path = abs_path.display().to_string();
+                let abs_path = abs_path.strip_prefix(r"\\?\").unwrap_or(&abs_path);
+                let abs_path = abs_path.replace("\\", "/");
+                let uri = format!("file://{}", abs_path);
+                Some(format!("\x1b]8;;{}\x1b\\", uri))
+            })
+            .unwrap_or("".to_owned())
+    } else {
+        "".to_owned()
+    };
+    let osc8_end = if create_hyprlink {
+        "\x1b]8;;\x1b\\"
+    } else {
+        ""
+    };
 
     let le = string_len(&name);
     if le <= width {
@@ -460,7 +480,7 @@ fn truncate_filename(name: String, width: u16) -> String {
         let left_spaces = rem_space / 2;
         let right_spaces = rem_space - left_spaces;
         return format!(
-            "{}{}{}",
+            "{}{osc8_start}{}{osc8_end}{}",
             " ".repeat(left_spaces),
             name,
             " ".repeat(right_spaces)
@@ -498,7 +518,7 @@ fn truncate_filename(name: String, width: u16) -> String {
         base
     };
 
-    format!("{}{}", front_part, ext)
+    format!("{osc8_start}{}{}{osc8_end}", front_part, ext)
 }
 
 fn calculate_items_per_row(terminal_width: u16, ctx: &LsixOptions) -> Result<usize, String> {
@@ -576,6 +596,7 @@ pub fn lsix(
     out: &mut impl Write,
     ctx: &LsixOptions,
     hidden: bool,
+    create_hyprlink: bool,
     inline_encoder: &rasteroid::InlineEncoder,
 ) -> Result<(), Box<dyn error::Error>> {
     let dir_path = Path::new(input.as_ref());
@@ -673,7 +694,7 @@ pub fn lsix(
                 )
                 .ok()?;
 
-            Some((img, filename, w, h))
+            Some((img, filename, w, h, path))
         })
         .collect();
 
@@ -707,7 +728,7 @@ pub fn lsix(
         let names: Vec<String> = items
             .iter()
             .map(|f| {
-                let tpath = truncate_filename((*f.1).clone(), width);
+                let tpath = truncate_filename((*f.1).clone(), width, &f.4, create_hyprlink);
                 tpath
             })
             .collect();

@@ -223,6 +223,7 @@ each variable mimicks its corresponding flag alternative.
 * `MCAT_INLINE_OPTS`, <str> same as the `--opts` flag
 * `MCAT_LS_OPTS`, <str> same as the `--ls-opts` flag
 * `MCAT_SILENT`, <bool> same as the `--silent` flag
+* `MCAT_HYPRLINK`, <bool> same as the `--hyprlink` flag
 * `MCAT_NO_LINENUMBERS`, <bool> same as the `--no-linenumbers` flag
 * `MCAT_MD_IMAGE`, <bool> same as the `--no-images` flag
 ---

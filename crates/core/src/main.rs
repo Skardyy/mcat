@@ -214,6 +214,10 @@ fn build_ls_args() -> Vec<Arg> {
             .short('a')
             .help("Include hidden files")
             .action(clap::ArgAction::SetTrue),
+        Arg::new("hyprlink")
+            .long("hyprlink")
+            .help("adds hyprlink to the text in the ls command")
+            .action(clap::ArgAction::SetTrue),
         Arg::new("ls-options").long("ls-opts").help(
             "Options for directory listings:\n\
                  *  x_padding=<string>\n\
@@ -331,6 +335,7 @@ fn main() {
             &mut out,
             &config.ls_options,
             config.hidden,
+            config.ls_hyprlink,
             &config.inline_encoder,
         )
         .unwrap_or_exit();

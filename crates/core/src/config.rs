@@ -150,6 +150,7 @@ pub struct McatConfig {
     pub is_tmux: bool,
     pub silent: bool,
     pub hidden: bool,
+    pub ls_hyprlink: bool,
     pub report: bool,
     pub no_linenumbers: bool,
     pub md_image_render: MdImageRender,
@@ -218,6 +219,7 @@ impl Default for McatConfig {
             inline_options: InlineOptions::default(),
             silent: false,
             hidden: false,
+            ls_hyprlink: false,
             report: false,
             no_linenumbers: false,
             yaml_header: false,
@@ -303,6 +305,9 @@ impl McatConfig {
         if opts.get_flag("hidden") {
             self.hidden = true;
         }
+        if opts.get_flag("hyprlink") {
+            self.ls_hyprlink = true;
+        }
         if opts.get_flag("no-linenumbers") {
             self.no_linenumbers = true;
         }
@@ -384,6 +389,9 @@ impl McatConfig {
         }
         if let Ok(v) = env::var("MCAT_LS_OPTS") {
             self.ls_options.extend_from_string(&v);
+        }
+        if let Ok(v) = env::var("MCAT_HYPRLINK") {
+            self.ls_hyprlink = v == "1" || v.eq_ignore_ascii_case("true");
         }
         if let Ok(v) = env::var("MCAT_SILENT") {
             self.silent = v == "1" || v.eq_ignore_ascii_case("true");
