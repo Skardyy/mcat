@@ -59,7 +59,7 @@ winget install skardyy.mcat
 
 ## How it works
 
-![mcat-pipeline](https://github.com/user-attachments/assets/fbf4617d-453a-45e8-bbd5-5dfdac2b8086)
+<img alt="mcat-pipeline-graph" width="700" src="https://github.com/user-attachments/assets/4ec04541-39d8-4cd0-b05d-0a5813be61aa">
 
 <details>
 <summary>Advanced explanation</summary>
