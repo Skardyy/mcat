@@ -91,7 +91,7 @@ fn build_markdown_viewer_args() -> Vec<Arg> {
             .long("header")
             .help("shows YAML headers too")
             .action(clap::ArgAction::SetTrue),
-        Arg::new("color")
+        Arg::new("color") // doesn't have default because of env extending
             .long("color")
             .value_name("mode")
             .help("Control ANSI formatting [default: auto]")
@@ -108,7 +108,7 @@ fn build_markdown_viewer_args() -> Vec<Arg> {
             .long("pager")
             .value_name("command")
             .help("Modify the default pager [default: 'less -r']"),
-        Arg::new("paging")
+        Arg::new("paging") // doesn't have default because of env extending
             .long("paging")
             .value_name("mode")
             .help("Control paging behavior [default: auto]")
@@ -218,7 +218,17 @@ fn build_ls_args() -> Vec<Arg> {
             .long("hyprlink")
             .help("adds hyprlink to the text in the ls command")
             .action(clap::ArgAction::SetTrue),
-        Arg::new("ls-options").long("ls-opts").help(
+        Arg::new("sort") // doesn't have default because of env extending
+            .long("sort")
+            .value_parser(["name", "size", "time", "type"])
+            .help("sort method for the ls command [default: name]"),
+        Arg::new("reverse")
+            .long("reverse")
+            .help("reverse the order of items in the ls command")
+            .action(clap::ArgAction::SetTrue),
+        Arg::new("ls-options")
+            .long("ls-opts")
+            .help(
             "Options for directory listings:\n\
                  *  x_padding=<string>\n\
                  *  y_padding=<string>\n\
@@ -330,15 +340,8 @@ fn main() {
         if config.is_tmux {
             rasteroid::set_tmux_passthrough(true);
         }
-        converter::lsix(
-            input,
-            &mut out,
-            &config.ls_options,
-            config.hidden,
-            config.ls_hyprlink,
-            &config.inline_encoder,
-        )
-        .unwrap_or_exit();
+        converter::lsix(input, &mut out, &config.ls_options, &config.inline_encoder)
+            .unwrap_or_exit();
         return;
     }
 

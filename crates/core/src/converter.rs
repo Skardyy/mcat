@@ -31,7 +31,10 @@ use std::{
 use tempfile::{NamedTempFile, TempDir};
 
 use crate::{
-    catter, cdp::ChromeHeadless, config::LsixOptions, fetch_manager,
+    catter,
+    cdp::ChromeHeadless,
+    config::{LsixOptions, SortMode},
+    fetch_manager,
     markdown_viewer::utils::string_len,
 };
 
@@ -595,14 +598,12 @@ pub fn lsix(
     input: impl AsRef<str>,
     out: &mut impl Write,
     ctx: &LsixOptions,
-    hidden: bool,
-    create_hyprlink: bool,
     inline_encoder: &rasteroid::InlineEncoder,
 ) -> Result<(), Box<dyn error::Error>> {
     let dir_path = Path::new(input.as_ref());
     let walker = WalkBuilder::new(dir_path)
-        .standard_filters(!hidden)
-        .hidden(!hidden)
+        .standard_filters(!ctx.hidden)
+        .hidden(!ctx.hidden)
         .max_depth(Some(1))
         .follow_links(true)
         .build();
@@ -646,12 +647,48 @@ pub fn lsix(
     paths.sort_by(|a, b| {
         let a_is_dir = a.0.is_dir();
         let b_is_dir = b.0.is_dir();
-
         match b_is_dir.cmp(&a_is_dir) {
             std::cmp::Ordering::Equal => {
-                let a_str = a.0.to_string_lossy().to_lowercase();
-                let b_str = b.0.to_string_lossy().to_lowercase();
-                a_str.cmp(&b_str)
+                let order = match ctx.sort_mode {
+                    SortMode::Name => {
+                        let a_str = a.0.to_string_lossy().to_lowercase();
+                        let b_str = b.0.to_string_lossy().to_lowercase();
+                        a_str.cmp(&b_str)
+                    }
+                    SortMode::Size => {
+                        let a_size = a.0.metadata().ok().map(|m| m.len()).unwrap_or(0);
+                        let b_size = b.0.metadata().ok().map(|m| m.len()).unwrap_or(0);
+                        a_size.cmp(&b_size)
+                    }
+                    SortMode::Time => {
+                        let a_time = a.0.metadata().ok().and_then(|m| m.modified().ok());
+                        let b_time = b.0.metadata().ok().and_then(|m| m.modified().ok());
+                        a_time.cmp(&b_time)
+                    }
+                    SortMode::Type => {
+                        let a_ext =
+                            a.0.extension()
+                                .and_then(|e| e.to_str())
+                                .unwrap_or("")
+                                .to_lowercase();
+                        let b_ext =
+                            b.0.extension()
+                                .and_then(|e| e.to_str())
+                                .unwrap_or("")
+                                .to_lowercase();
+
+                        match a_ext.cmp(&b_ext) {
+                            std::cmp::Ordering::Equal => {
+                                let a_str = a.0.to_string_lossy().to_lowercase();
+                                let b_str = b.0.to_string_lossy().to_lowercase();
+                                a_str.cmp(&b_str)
+                            }
+                            ext_order => ext_order,
+                        }
+                    }
+                };
+
+                if ctx.reverse { order.reverse() } else { order }
             }
             dir_order => dir_order,
         }
@@ -728,7 +765,7 @@ pub fn lsix(
         let names: Vec<String> = items
             .iter()
             .map(|f| {
-                let tpath = truncate_filename((*f.1).clone(), width, &f.4, create_hyprlink);
+                let tpath = truncate_filename((*f.1).clone(), width, &f.4, ctx.create_hyprlink);
                 tpath
             })
             .collect();

@@ -88,6 +88,10 @@ pub struct LsixOptions {
     pub max_width: String,
     pub height: String,
     pub max_items_per_row: usize,
+    pub hidden: bool,
+    pub create_hyprlink: bool,
+    pub reverse: bool,
+    pub sort_mode: SortMode,
 }
 
 impl Default for LsixOptions {
@@ -99,6 +103,10 @@ impl Default for LsixOptions {
             max_width: "16c".into(),
             height: "2c".into(),
             max_items_per_row: 20,
+            hidden: false,
+            create_hyprlink: false,
+            reverse: false,
+            sort_mode: SortMode::Name,
         }
     }
 }
@@ -150,7 +158,6 @@ pub struct McatConfig {
     pub is_tmux: bool,
     pub silent: bool,
     pub hidden: bool,
-    pub ls_hyprlink: bool,
     pub report: bool,
     pub no_linenumbers: bool,
     pub md_image_render: MdImageRender,
@@ -163,6 +170,25 @@ pub struct McatConfig {
     pub color: AlwaysOrNever,
     pub paging: AlwaysOrNever,
     encoder_force: String,
+}
+
+#[derive(Clone)]
+pub enum SortMode {
+    Name,
+    Size,
+    Time,
+    Type,
+}
+impl SortMode {
+    pub fn from_string(s: &str) -> SortMode {
+        match s.to_lowercase().as_ref() {
+            "name" => return SortMode::Name,
+            "size" => return SortMode::Size,
+            "time" => return SortMode::Time,
+            "type" => return SortMode::Type,
+            _ => return SortMode::Name,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -219,7 +245,6 @@ impl Default for McatConfig {
             inline_options: InlineOptions::default(),
             silent: false,
             hidden: false,
-            ls_hyprlink: false,
             report: false,
             no_linenumbers: false,
             yaml_header: false,
@@ -304,9 +329,10 @@ impl McatConfig {
         }
         if opts.get_flag("hidden") {
             self.hidden = true;
+            self.ls_options.hidden = true;
         }
         if opts.get_flag("hyprlink") {
-            self.ls_hyprlink = true;
+            self.ls_options.create_hyprlink = true;
         }
         if opts.get_flag("no-linenumbers") {
             self.no_linenumbers = true;
@@ -359,6 +385,13 @@ impl McatConfig {
         if opts.get_flag("color-never") {
             self.color = AlwaysOrNever::Never
         }
+        // ls
+        if let Some(sort_method) = opts.get_one::<String>("sort") {
+            self.ls_options.sort_mode = SortMode::from_string(&sort_method);
+        }
+        if opts.get_flag("reverse") {
+            self.ls_options.reverse = true
+        }
 
         // output
         let inline = opts.get_flag("inline");
@@ -391,7 +424,7 @@ impl McatConfig {
             self.ls_options.extend_from_string(&v);
         }
         if let Ok(v) = env::var("MCAT_HYPRLINK") {
-            self.ls_hyprlink = v == "1" || v.eq_ignore_ascii_case("true");
+            self.ls_options.create_hyprlink = v == "1" || v.eq_ignore_ascii_case("true");
         }
         if let Ok(v) = env::var("MCAT_SILENT") {
             self.silent = v == "1" || v.eq_ignore_ascii_case("true");
