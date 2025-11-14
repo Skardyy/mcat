@@ -222,7 +222,16 @@ fn build_ls_args() -> Vec<Arg> {
             .long("sort")
             .value_parser(["name", "size", "time", "type"])
             .help("sort method for the ls command [default: name]"),
+        Arg::new("sort-type")
+            .short('X')
+            .help("shortcut for --sort type")
+            .action(clap::ArgAction::SetTrue),
+        Arg::new("sort-size")
+            .short('S')
+            .help("shortcut for --sort size")
+            .action(clap::ArgAction::SetTrue),
         Arg::new("reverse")
+            .short('r')
             .long("reverse")
             .help("reverse the order of items in the ls command")
             .action(clap::ArgAction::SetTrue),

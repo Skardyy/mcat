@@ -392,6 +392,12 @@ impl McatConfig {
         if opts.get_flag("reverse") {
             self.ls_options.reverse = true
         }
+        if opts.get_flag("sort-type") {
+            self.ls_options.sort_mode = SortMode::Type
+        }
+        if opts.get_flag("sort-size") {
+            self.ls_options.sort_mode = SortMode::Size
+        }
 
         // output
         let inline = opts.get_flag("inline");
