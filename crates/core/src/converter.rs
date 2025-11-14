@@ -11,6 +11,7 @@ use rasteroid::{
     inline_an_image,
     term_misc::{self, SizeDirection, dim_to_cells, dim_to_px, ensure_space},
 };
+use rayon::prelude::*;
 use regex::Regex;
 use reqwest::Url;
 use resvg::{
@@ -647,7 +648,14 @@ pub fn lsix(
     paths.sort_by(|a, b| {
         let a_is_dir = a.0.is_dir();
         let b_is_dir = b.0.is_dir();
-        match b_is_dir.cmp(&a_is_dir) {
+        let base_dir_order = b_is_dir.cmp(&a_is_dir);
+        let dir_order = if ctx.reverse {
+            base_dir_order.reverse()
+        } else {
+            base_dir_order
+        };
+
+        match dir_order {
             std::cmp::Ordering::Equal => {
                 let order = match ctx.sort_mode {
                     SortMode::Name => {
@@ -695,7 +703,6 @@ pub fn lsix(
     });
 
     // Process images in parallel
-    use rayon::prelude::*;
     let images: Vec<_> = paths
         .par_iter()
         .filter_map(|(path, ext, filename)| {
