@@ -4,6 +4,7 @@
 - 📈 now **.exe** files are also supported for image preview
 - 📈 now **.lnk** files are also supported for image preview
 - 📈 the **ls command** now supports hyprlinks when supplied with the `--hyprlink` flag, or when the `MCAT_HYPRLINK` env var is set to either true or 1
+- 📈 **ls command** now supports different sorting methods via the `--sort` flag, also with the `--reverse` flag
 
 ## V0.4.5
 - 📈 **markdown viewer** now supports `<figure>` and `<figcaption>` HTML elements
