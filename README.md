@@ -7,7 +7,7 @@
 Parse, Convert and Preview files  
 ***In your Terminal***
 
-![Downloads](https://img.shields.io/crates/d/mcat?style=for-the-badge) ![Version](https://img.shields.io/crates/v/mcat?style=for-the-badge)  
+![Total Downloads](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/skardyy/d30563e4945958e7d4f7560cf003c33c/raw/mcat-downloads.json) ![Version](https://img.shields.io/crates/v/mcat?style=for-the-badge)  
 
 [Installation](#installation) • [Examples](#example-usage) • [CHANGELOG](./CHANGELOG.md)
 
