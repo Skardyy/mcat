@@ -1,0 +1,106 @@
+name: Update Download Stats
+
+on:
+  schedule:
+    # Run every Monday at 00:00 UTC
+    - cron: "0 0 * * 1"
+  workflow_dispatch: # Allows manual trigger
+
+jobs:
+  update-stats:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch and Calculate Total Downloads
+        id: calculate
+        run: |
+          # Function to parse shields.io formatted numbers
+          parse_number() {
+            local input="$1"
+            # Remove "/year", "/month", "/day" suffixes
+            input=$(echo "$input" | sed 's/\/[a-z]*$//')
+            
+            # Handle k (thousands)
+            if [[ $input =~ ^([0-9.]+)k$ ]]; then
+              number="${BASH_REMATCH[1]}"
+              result=$(echo "$number * 1000" | bc)
+              echo ${result%.*}  # Remove decimal part
+            # Handle M (millions)
+            elif [[ $input =~ ^([0-9.]+)M$ ]]; then
+              number="${BASH_REMATCH[1]}"
+              result=$(echo "$number * 1000000" | bc)
+              echo ${result%.*}
+            # Plain number
+            else
+              echo "$input"
+            fi
+          }
+
+          # Fetch GitHub downloads
+          GITHUB_JSON=$(curl -s "https://img.shields.io/github/downloads/skardyy/mcat/total.json")
+          GITHUB_RAW=$(echo "$GITHUB_JSON" | jq -r '.message')
+          GITHUB_COUNT=$(parse_number "$GITHUB_RAW")
+          echo "GitHub: $GITHUB_RAW -> $GITHUB_COUNT"
+
+          # Fetch Homebrew installs
+          HOMEBREW_JSON=$(curl -s "https://img.shields.io/homebrew/installs/dy/mcat.json")
+          HOMEBREW_RAW=$(echo "$HOMEBREW_JSON" | jq -r '.message')
+          HOMEBREW_COUNT=$(parse_number "$HOMEBREW_RAW")
+          echo "Homebrew: $HOMEBREW_RAW -> $HOMEBREW_COUNT"
+
+          # Fetch Crates.io downloads
+          CRATES_JSON=$(curl -s "https://img.shields.io/crates/d/mcat.json")
+          CRATES_RAW=$(echo "$CRATES_JSON" | jq -r '.message')
+          CRATES_COUNT=$(parse_number "$CRATES_RAW")
+          echo "Crates.io: $CRATES_RAW -> $CRATES_COUNT"
+
+          # Calculate total
+          TOTAL=$((GITHUB_COUNT + HOMEBREW_COUNT + CRATES_COUNT))
+          echo "Total: $TOTAL"
+
+          # Format total with k/M suffix for display
+          if [ $TOTAL -ge 1000000 ]; then
+            FORMATTED=$(echo "scale=1; $TOTAL / 1000000" | bc)"M"
+          elif [ $TOTAL -ge 1000 ]; then
+            FORMATTED=$(echo "scale=1; $TOTAL / 1000" | bc)"k"
+          else
+            FORMATTED="$TOTAL"
+          fi
+
+          # Remove trailing .0
+          FORMATTED=$(echo "$FORMATTED" | sed 's/\.0\([kM]\)/\1/')
+
+          echo "Formatted: $FORMATTED"
+          echo "total=$TOTAL" >> $GITHUB_OUTPUT
+          echo "formatted=$FORMATTED" >> $GITHUB_OUTPUT
+
+      - name: Update Gist
+        run: |
+          # Create the JSON content
+          cat > downloads.json << EOF
+          {
+            "schemaVersion": 1,
+            "label": "Downloads",
+            "message": "${{ steps.calculate.outputs.formatted }}",
+            "color": "brightgreen",
+            "style": "for-the-badge"
+          }
+          EOF
+
+          cat downloads.json
+
+          # Update the gist using GitHub API
+          curl -X PATCH \
+            -H "Authorization: token ${{ secrets.GIST_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/gists/${{ secrets.GIST_ID }}" \
+            -d @- << EOF
+          {
+            "files": {
+              "mcat-downloads.json": {
+                "content": $(cat downloads.json | jq -Rs .)
+              }
+            }
+          }
+          EOF
+
+          echo "✅ Gist updated successfully!"
