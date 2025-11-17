@@ -1832,7 +1832,7 @@ dependencies = [
 
 [[package]]
 name = "mcat"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "base64",
  "clap",
