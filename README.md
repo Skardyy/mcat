@@ -218,14 +218,14 @@ run `mcat --help` for full detail, and other flags.
 ---
 each variable mimicks its corresponding flag alternative.
 * `MCAT_ENCODER`, Options: kitty,iterm,sixel,ascii. e.g. MCAT_ENCODER=kitty is the same as doing `--kitty`
-* `MCAT_PAGER`, <str> the full command mcat will try to pipe into.
-* `MCAT_THEME`, <str> same as the `--theme` flag
-* `MCAT_INLINE_OPTS`, <str> same as the `--opts` flag
-* `MCAT_LS_OPTS`, <str> same as the `--ls-opts` flag
-* `MCAT_SILENT`, <bool> same as the `--silent` flag
-* `MCAT_HYPRLINK`, <bool> same as the `--hyprlink` flag
-* `MCAT_NO_LINENUMBERS`, <bool> same as the `--no-linenumbers` flag
-* `MCAT_MD_IMAGE`, <bool> same as the `--no-images` flag
+* `MCAT_PAGER`, \<str\> the full command mcat will try to pipe into.
+* `MCAT_THEME`, \<str\> same as the `--theme` flag
+* `MCAT_INLINE_OPTS`, \<str\> same as the `--opts` flag
+* `MCAT_LS_OPTS`, \<str\> same as the `--ls-opts` flag
+* `MCAT_SILENT`, \<bool\> same as the `--silent` flag
+* `MCAT_HYPRLINK`, \<bool\> same as the `--hyprlink` flag
+* `MCAT_NO_LINENUMBERS`, \<bool\> same as the `--no-linenumbers` flag
+* `MCAT_MD_IMAGE`, \<bool\> same as the `--no-images` flag
 ---
 </details>
 
