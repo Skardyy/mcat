@@ -14,7 +14,7 @@ edition = "2024"
 
 [dependencies]
 crossterm = "0.29.0"
-shared_memory = "0.12.4"
+shared_memory = { git = "https://github.com/elast0ny/shared_memory", rev = "fda413410857e295fa7440691a79296e84bed525" }
 image = { version = "0.25.6", default-features = false, features = ["bmp", "dds", "exr", "ff", "gif", "hdr", "ico", "jpeg", "png", "pnm", "qoi", "tga", "tiff", "webp"] }
 color_quant = "1.1.0"
 base64 = "0.22.1"
