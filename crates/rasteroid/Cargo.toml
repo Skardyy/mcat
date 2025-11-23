@@ -1,6 +1,6 @@
 [package]
 name = "rasteroid"
-version = "0.1.8"
+version = "0.1.9"
 authors = ["Meron Bossin"]
 description = "turn images / videos into inline content for you terminal (iterm / kitty / sixel)"
 keywords = ["sixel", "iterm", "kitty", "terminal", "terminal-graphics"]
