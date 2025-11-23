@@ -352,7 +352,27 @@ pub unsafe fn encode_frames_fast(
     out: &mut impl Write,
     center: bool,
 ) -> Result<(), Box<dyn Error>> {
-    encode_frames_sep(frames, out, center, true)
+    let id = encode_frames_sep(frames, out, center, true)?;
+
+    // if the terminal didn't use a single shm object by now, im cleaning them all myself
+    let shm_name = format!("mcat-video-{id}-0");
+    if ShmemConf::new().os_id(&shm_name).open().is_ok() {
+        let mut index = 0;
+        loop {
+            let name = format!("mcat-video-{id}-{index}");
+
+            match ShmemConf::new().os_id(&name).open() {
+                Ok(mut shmem) => {
+                    shmem.set_owner(true);
+                    drop(shmem);
+                    index += 1;
+                }
+                Err(_) => break,
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// encode a video into inline video.
@@ -412,7 +432,8 @@ pub fn encode_frames(
     out: &mut impl Write,
     center: bool,
 ) -> Result<(), Box<dyn Error>> {
-    encode_frames_sep(frames, out, center, false)
+    encode_frames_sep(frames, out, center, false)?;
+    Ok(())
 }
 
 fn encode_frames_sep(
@@ -420,7 +441,7 @@ fn encode_frames_sep(
     out: &mut impl Write,
     center: bool,
     use_shm: bool,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<u32, Box<dyn Error>> {
     // getting the first frame
     let first = frames.next().ok_or("video doesn't contain any frames")?;
     let width = first.width();
@@ -532,7 +553,7 @@ fn encode_frames_sep(
         out.write_all(placement.as_bytes())?;
     }
     write!(out, "{prefix}a=a,s=3,v=1,r=1,i={id},z={z}{suffix}")?;
-    Ok(())
+    Ok(id)
 }
 
 pub fn delete_all_images(out: &mut impl Write) -> Result<(), std::io::Error> {
