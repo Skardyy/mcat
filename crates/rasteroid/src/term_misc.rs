@@ -46,7 +46,8 @@ pub fn loc_to_terminal(at: Option<(u16, u16)>) -> String {
 struct WininfoParams {
     spx: Size,
     sc: Size,
-    scale: Option<f32>,
+    scalex: Option<f32>,
+    scaley: Option<f32>,
     is_tmux: bool,
     needs_inline: bool,
 }
@@ -65,7 +66,8 @@ impl Wininfo {
     fn new(
         spx_fallback: &Size,
         sc_fallback: &Size,
-        scale: Option<f32>,
+        scalex: Option<f32>,
+        scaley: Option<f32>,
         is_tmux: bool,
         needs_inline: bool,
     ) -> Self {
@@ -95,13 +97,14 @@ impl Wininfo {
             sc_height = sc_fallback.height;
         }
 
-        let scale = scale.unwrap_or(1.0);
+        let scalex = scalex.unwrap_or(1.0);
+        let scaley = scaley.unwrap_or(1.0);
 
         Wininfo {
-            sc_height,
-            sc_width: (sc_width as f32 * scale) as u16,
-            spx_height,
-            spx_width: (spx_width as f32 * scale) as u16,
+            sc_height: (sc_height as f32 * scaley) as u16,
+            sc_width: (sc_width as f32 * scalex) as u16,
+            spx_height: (spx_height as f32 * scaley) as u16,
+            spx_width: (spx_width as f32 * scalex) as u16,
             is_tmux,
             needs_inline,
         }
@@ -130,19 +133,21 @@ impl Wininfo {
 /// // inline is for kitty to put a placeholder for images / videos so they can be placed in apps
 /// // that don't understand kitty gp and have them scroll with the buffer; e.g vim, tmux
 /// let inline = false;
-/// init_wininfo(&spx, &sc, None, is_tmux, inline).unwrap(); // going to error if you called it before already.
+/// init_wininfo(&spx, &sc, None, None, is_tmux, inline).unwrap(); // going to error if you called it before already.
 /// ```
 pub fn init_wininfo(
     spx: &Size,
     sc: &Size,
-    scale: Option<f32>,
+    scalex: Option<f32>,
+    scaley: Option<f32>,
     is_tmux: bool,
     needs_inline: bool,
 ) -> Result<(), &'static str> {
     let params = WininfoParams {
         spx: spx.clone(),
         sc: sc.clone(),
-        scale,
+        scalex,
+        scaley,
         is_tmux,
         needs_inline,
     };
@@ -188,7 +193,8 @@ pub fn get_wininfo() -> &'static Wininfo {
                     height: 20,
                     force: false,
                 },
-                scale: None,
+                scalex: None,
+                scaley: None,
                 is_tmux: false,
                 needs_inline: false,
             }
@@ -197,7 +203,8 @@ pub fn get_wininfo() -> &'static Wininfo {
         Wininfo::new(
             &params.spx,
             &params.sc,
-            params.scale,
+            params.scalex,
+            params.scaley,
             params.is_tmux,
             params.needs_inline,
         )

@@ -252,11 +252,15 @@ rasteroid provides utilities for working with terminal dimensions:
 ```rust
 use rasteroid::term_misc::{init_winsize, break_size_string, get_winsize, SizeDirection, dim_to_px};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() {
     // Initialize with fallback values
-    let spx = break_size_string("1920x1080")?;
-    let sc = break_size_string("100x30")?;
-    init_winsize(&spx, &sc, None)?;
+    let spx = break_size_string("1920x1080").unwrap();
+    let sc = break_size_string("100x30").unwrap();
+    let scalex = None;
+    let scaley = None;
+    let is_tmux = false; // encodes image and videos for tmux
+    let needs_inline = false; // makes image and videos in kitty use unicode placeholder see https://sw.kovidgoyal.net/kitty/graphics-protocol/#unicode-placeholders
+    init_winsize(&spx, &sc, scalex, scaley, is_tmux, needs_inline).unwrap();
     
     // Get window size
     let winsize = get_winsize();
@@ -264,10 +268,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Terminal is {} pixels by {} pixels", winsize.spx_width, winsize.spx_height);
     
     // Convert dimensions
-    let width_px = dim_to_px("50%", SizeDirection::Width)?;
+    let width_px = dim_to_px("50%", SizeDirection::Width).unwrap();
     println!("50% of terminal width is {} pixels", width_px);
-    
-    Ok(())
 }
 ```
 

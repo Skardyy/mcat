@@ -177,6 +177,8 @@ fn build_image_viewer_args() -> Vec<Arg> {
                      *  width=<string>\n\
                      *  height=<string>\n\
                      *  scale=<f32>\n\
+                     *  scalex=<f32>\n\
+                     *  scaley=<f32>\n\
                      *  spx=<string>\n\
                      *  sc=<string>\n\
                      *  zoom=<usize>\n\
@@ -313,7 +315,8 @@ fn main() {
     let _ = term_misc::init_wininfo(
         &spx,
         &sc,
-        config.inline_options.scale,
+        config.inline_options.scalex,
+        config.inline_options.scaley,
         config.is_tmux,
         config.inline_options.inline,
     );

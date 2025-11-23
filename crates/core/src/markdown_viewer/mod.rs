@@ -30,7 +30,8 @@ pub fn md_to_ansi(md: &str, config: &McatConfig, markdown_file_path: Option<&Pat
     let _ = term_misc::init_wininfo(
         &break_size_string(&config.inline_options.spx).unwrap_or_exit(),
         &break_size_string(&config.inline_options.spx).unwrap_or_exit(),
-        config.inline_options.scale,
+        config.inline_options.scalex,
+        config.inline_options.scaley,
         config.is_tmux,
         true,
     );

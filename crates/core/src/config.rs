@@ -10,7 +10,8 @@ pub struct InlineOptions {
     pub height: Option<String>,
     pub spx: String,
     pub sc: String,
-    pub scale: Option<f32>,
+    pub scalex: Option<f32>,
+    pub scaley: Option<f32>,
     pub zoom: Option<usize>,
     pub x: Option<i32>,
     pub y: Option<i32>,
@@ -25,7 +26,8 @@ impl Default for InlineOptions {
             height: Some("80%".into()),
             spx: "1920x1080".into(),
             sc: "100x20".into(),
-            scale: None,
+            scalex: None,
+            scaley: None,
             zoom: None,
             x: None,
             y: None,
@@ -66,7 +68,10 @@ impl InlineOptions {
         if let Some(sc) = get("sc") {
             self.sc = sc.to_string();
         }
-        self.scale = get("scale").and_then(|v| v.parse().ok()).or(self.scale);
+        self.scalex = get("scalex").and_then(|v| v.parse().ok()).or(self.scalex);
+        self.scalex = get("scale").and_then(|v| v.parse().ok()).or(self.scalex);
+        self.scaley = get("scaley").and_then(|v| v.parse().ok()).or(self.scaley);
+        self.scaley = get("scale").and_then(|v| v.parse().ok()).or(self.scaley);
         self.zoom = get("zoom").and_then(|v| v.parse().ok()).or(self.zoom);
         self.x = get("x").and_then(|v| v.parse().ok()).or(self.x);
         self.y = get("y").and_then(|v| v.parse().ok()).or(self.y);
