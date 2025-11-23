@@ -1,3 +1,6 @@
+## Src
+- 📈 `--opts` flag now supports both scalex and scaley
+
 ## V0.4.6
 - 📈 **markdown viewer** now renders YAML headers in a box, but now disabled by default - to show the header you supply the `--header` flag
 - 📈 now **.url** files are also supported for image preview
