@@ -57,17 +57,14 @@ jobs:
           TOTAL=$((GITHUB_COUNT + HOMEBREW_COUNT + CRATES_COUNT))
           echo "Total: $TOTAL"
 
-          # Format total with k/M suffix for display
+          # Round the number
           if [ $TOTAL -ge 1000000 ]; then
-            FORMATTED=$(echo "scale=1; $TOTAL / 1000000" | bc)"M"
+            FORMATTED=$(echo "($TOTAL + 500000) / 1000000" | bc)"M"
           elif [ $TOTAL -ge 1000 ]; then
-            FORMATTED=$(echo "scale=1; $TOTAL / 1000" | bc)"k"
+            FORMATTED=$(echo "($TOTAL + 500) / 1000" | bc)"k"
           else
             FORMATTED="$TOTAL"
           fi
-
-          # Remove trailing .0
-          FORMATTED=$(echo "$FORMATTED" | sed 's/\.0\([kM]\)/\1/')
 
           echo "Formatted: $FORMATTED"
           echo "total=$TOTAL" >> $GITHUB_OUTPUT
