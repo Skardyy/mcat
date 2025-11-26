@@ -106,13 +106,13 @@ This starts at an HTML file and directly converts it into a PNG image.
 
 * **`Markdown`** - set when `-o md` or when the stdout isn't the terminal (piped)  
 
-* **`Pretty Terminal`** is markdown with ANSI formatting, and is the **default** for any non video / image file. (the `-c` flag forces it)
+* **`Markdown Viewer`** is markdown with ANSI formatting, and is the **default** for any non video / image file. (the `-c` flag forces it)
 
 * **`HTML`** set when `-o html` -- only works for non image / video files  
 
-* **`Static Image`** set when `-o image` and gives an image  
+* **`PNG Image`** set when `-o image` and gives an image  
 
-* **`Interactive Image`** set when `-o interactive` and launches an interactive view to zoom and pan the image in the terminal.  
+* **`Interactive Viewer`** set when `-o interactive` or `-I` and launches an interactive view to zoom and pan the image in the terminal.  
 
 * **`Inline Display`** set when `-o inline` or `-i` and prints the content as image in the terminal  
 
