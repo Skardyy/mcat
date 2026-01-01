@@ -1,5 +1,6 @@
 ## Src
 - 📈 `--opts` flag now supports both scalex and scaley
+- 🐛 fixed an issue where color would persist after a simple code block in the **markdown viewer**
 
 ## V0.4.6
 - 📈 **markdown viewer** now renders YAML headers in a box, but now disabled by default - to show the header you supply the `--header` flag

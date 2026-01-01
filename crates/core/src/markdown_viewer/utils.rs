@@ -397,7 +397,7 @@ pub fn format_code_simple<'a>(code: &str, lang: &str, ctx: &AnsiContext, indent:
         })
         .join("\n");
 
-    format!("\n\n{indent}{header}\n{content}\n\n")
+    format!("\n\n{indent}{header}\n{content}{RESET}\n\n")
 }
 
 pub fn format_code_full<'a>(code: &str, lang: &str, ctx: &AnsiContext) -> String {
