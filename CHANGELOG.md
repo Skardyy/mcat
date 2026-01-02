@@ -13,10 +13,10 @@
 ## V0.4.5
 - 📈 **markdown viewer** now supports `<figure>` and `<figcaption>` HTML elements
 - 🐛 fixed an issue in the `ls` command where unicode characters that are more then a single byte could cause a panick
-- 🎉 added macOS x86_64 build to the release
+- 📈 added macOS x86_64 build to the release
 
 ## V0.4.4
-- 🎉 **interactive viewer** now supports albums - passing multiple images with `-o interactive` can now be viewed as an album (n/p to move between images)
+- 📈 **interactive viewer** now supports albums - passing multiple images with `-o interactive` can now be viewed as an album (n/p to move between images)
 - 📈 **interactive viewer** now automatically treats pdf/latex/typst as albums so you can view multiple pages.
 - 📈 **markdown viewer** now handles multi line links better (link images too)
 - 📈 **markdown viewer** now creates clickable links
@@ -32,8 +32,8 @@
 - 🐛 fixed a cleanup issue that causes the **markdown viewer** to take longer when images are included.
 
 ## V0.4.0
-- 🎉 **markdown viewer** now parses some HTML!, including `align=center` attributes on some elements
-- 🎉 **markdown viewer** now includes Images! - can be modified using `--md-image all/small/none/auto` the default is "auto"
+- 📈 **markdown viewer** now parses some HTML!, including `align=center` attributes on some elements
+- 📈 **markdown viewer** now includes Images! - can be modified using `--md-image all/small/none/auto` the default is "auto"
 - 📈 **markdown viewer** improved - better formatting for some elements and now indents content under headers.
 - 🐛 fixed an issue in the **markdown viewer** when certain styles would reset others
 
