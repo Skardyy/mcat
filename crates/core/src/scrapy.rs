@@ -260,7 +260,6 @@ async fn download_media(
     response: Response,
     options: &MediaScrapeOptions,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    // Get content length for progress bar if available
     let content_length = get_content_length(&response);
 
     // Check max content length before downloading
@@ -290,7 +289,6 @@ async fn download_media(
             None
         };
 
-    // Stream the response body
     let mut stream = response.bytes_stream();
     let mut file_data = Vec::new();
     while let Some(chunk_result) = stream.next().await {

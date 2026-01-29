@@ -459,10 +459,10 @@ fn render_table<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     };
 
     let alignments = &table.alignments;
-    let mut rows: Vec<Vec<Vec<String>>> = Vec::new(); // Now Vec<Vec<Vec<String>>> for multiline cells
+    let mut rows: Vec<Vec<Vec<String>>> = Vec::new();
     let mut row_heights: Vec<usize> = Vec::new();
 
-    // First pass: collect all cell contents and calculate row heights
+    // collect all cell contents and calculate row heights
     for child in node.children() {
         let mut row_cells: Vec<Vec<String>> = Vec::new();
         let mut max_lines_in_row = 1;
@@ -528,7 +528,6 @@ fn render_table<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
             let text_color = if row_idx == 0 { header_color } else { "" };
             let row_height = row_heights[row_idx];
 
-            // For each line in the row (handles multiline cells)
             for line_idx in 0..row_height {
                 result.push_str(&format!("{color}│{RESET}"));
 

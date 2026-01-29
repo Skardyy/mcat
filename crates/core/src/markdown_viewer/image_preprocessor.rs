@@ -31,7 +31,6 @@ fn handle_local_image(
 ) -> Result<NamedTempFile, Box<dyn std::error::Error>> {
     let original_path = Path::new(path);
 
-    // Get the file extension
     let extension = original_path
         .extension()
         .and_then(|ext| ext.to_str())
@@ -99,7 +98,7 @@ impl ImagePreprocessor {
         scrape_opts.documents = false;
         scrape_opts.max_content_length = match render_mode {
             MdImageRender::All => None,
-            _ => Some(50_000), // filter complex images -- won't scale down good
+            _ => Some(50_000), // filter complex images - won't scale down good
         };
 
         let items: Vec<(&ImageUrl, Vec<u8>, u32)> = urls

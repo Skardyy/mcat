@@ -79,10 +79,9 @@ pub fn concat_images(
         (max_width, total_height)
     };
 
-    // Create a new image with the calculated dimensions
+    // combine the images into 1
     let mut output = image::RgbaImage::new(width, height);
 
-    // Place each image in the output
     let mut x_offset = 0;
     let mut y_offset = 0;
 
@@ -96,7 +95,6 @@ pub fn concat_images(
         }
     }
 
-    // Create a temporary file with .png extension
     let temp_file = NamedTempFile::with_suffix(".png")?;
     output.save_with_format(temp_file.path(), image::ImageFormat::Png)?;
     Ok(temp_file)
@@ -184,7 +182,6 @@ pub fn check_unified_format(paths: &[(PathBuf, Option<String>)]) -> Vec<&'static
             "text" // Files with no extension are considered text
         };
 
-        // Add format if not already in the list
         if !detected_formats.contains(&current_format) {
             detected_formats.push(current_format);
         }

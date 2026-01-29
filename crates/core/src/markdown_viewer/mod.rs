@@ -125,7 +125,6 @@ pub fn md_to_html(markdown: &str, style: Option<&str>) -> String {
 
 fn comrak_options<'a>() -> ComrakOptions<'a> {
     let mut options = ComrakOptions::default();
-    // Enable extensions
     options.extension.strikethrough = true;
     options.extension.footnotes = true;
     options.extension.front_matter_delimiter = Some("---".to_owned());
@@ -141,11 +140,9 @@ fn comrak_options<'a>() -> ComrakOptions<'a> {
     options.extension.spoiler = true;
     options.extension.multiline_block_quotes = true;
 
-    // Parsing options
     options.parse.smart = true;
     options.parse.relaxed_tasklist_matching = true;
 
-    // Render options
     options.render.unsafe_ = true;
 
     options

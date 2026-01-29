@@ -91,7 +91,7 @@ pub fn pdf_convert(
                     }
                 }
             } else {
-                // Diagonal line, ignore -- too complex
+                // Diagonal line, ignore - too complex
             }
         }
 

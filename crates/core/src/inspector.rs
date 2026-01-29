@@ -71,7 +71,7 @@ fn detect_video(bytes: &[u8]) -> Option<&'static str> {
     }
 
     if bytes.starts_with(&[0x1A, 0x45, 0xDF, 0xA3]) {
-        return Some("mkv"); // or webm — needs deeper check of EBML DocType
+        return Some("mkv"); // or webm - needs deeper check of EBML DocType
     }
 
     if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"AVI ") {

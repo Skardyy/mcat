@@ -203,8 +203,6 @@ impl ZoomPanViewport {
         let scale_x = self.container_width as f32 / self.image_width as f32;
         let scale_y = self.container_height as f32 / self.image_height as f32;
         let base_scale = scale_x.min(scale_y);
-
-        // Apply zoom multiplier
         let scale_factor = base_scale * self.zoom as f32;
 
         // Calculate the viewport size in image coordinates
@@ -269,7 +267,6 @@ impl ZoomPanViewport {
             ((self.image_height - viewport_height) as f32 / 2.0) as i32
         };
 
-        // Return (min_x, max_x, min_y, max_y)
         (-max_pan_x, max_pan_x, -max_pan_y, max_pan_y)
     }
 

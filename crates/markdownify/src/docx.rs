@@ -216,7 +216,6 @@ pub fn docx_convert(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
     Ok(format(&markdown))
 }
 
-// Same format function from your ODT implementation
 fn format(input: &str) -> String {
     let mut result = String::with_capacity(input.len());
     let mut newline_count = 0;

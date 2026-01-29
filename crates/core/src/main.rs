@@ -537,20 +537,16 @@ fn report_full() {
     };
     let ver = env!("CARGO_PKG_VERSION");
 
-    // Print header with fancy box
     println!("┌────────────────────────────────────────────────────┐");
     println!("│               SYSTEM CAPABILITIES                  │");
     println!("├────────────────────────────────────────────────────┤");
 
-    // Color function helpers
     fn green(text: &str) -> String {
         format!("\x1b[32m{}\x1b[0m", text)
     }
-
     fn red(text: &str) -> String {
         format!("\x1b[31m{}\x1b[0m", text)
     }
-
     fn format_status(status: bool) -> String {
         if status {
             green("✓ INSTALLED")
@@ -573,7 +569,7 @@ fn report_full() {
         }
     }
 
-    // Print required dependencies
+    // required dependencies
     println!("│ Optional Dependencies:                             │");
     println!(
         "│   Chromium: {:<47} │",
@@ -585,7 +581,7 @@ fn report_full() {
         format_status(is_poppler_installed)
     );
 
-    // Print terminal capabilities
+    // terminal capabilities
     println!("├────────────────────────────────────────────────────┤");
     println!("│ Terminal Graphics Support:                         │");
     println!("│   Kitty:    {:<47} │", format_capability(kitty));
@@ -593,7 +589,7 @@ fn report_full() {
     println!("│   Sixel:    {:<47} │", format_capability(sixel));
     println!("│   ASCII:    {:<47} │", format_capability(ascii));
 
-    // Print terminal dimensions
+    // terminal dimensions
     println!("├────────────────────────────────────────────────────┤");
     println!("│ Terminal Info:                                     │");
     println!("│   Width:          {:<32} │", winsize.sc_width);
@@ -611,6 +607,5 @@ fn report_full() {
     println!("│   TERMTYPE:   {:<36} │", tmux_program);
     println!("│   Version:    {:<36} │", ver);
 
-    // Print footer
     println!("└────────────────────────────────────────────────────┘");
 }

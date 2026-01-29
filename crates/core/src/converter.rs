@@ -57,23 +57,22 @@ fn get_lnk_target(path: impl AsRef<Path>) -> Option<String> {
     let mut file = File::open(path.as_ref()).ok()?;
     let mut buf = vec![0u8; 1024];
 
-    // Quick verify
+    // magick
     file.read(&mut buf).ok()?;
     if &buf[0..4] != &[0x4C, 0x00, 0x00, 0x00] {
         return None;
     }
 
-    // Read LinkFlags at offset 0x14 (20 bytes into file)
     let link_flags = u32::from_le_bytes([buf[0x14], buf[0x15], buf[0x16], buf[0x17]]);
 
-    // Check HasLinkInfo flag (bit 1)
+    // Check HasLinkInfo
     if link_flags & 0x02 == 0 {
         return None;
     }
 
-    let mut offset = 0x4C; // After header (76 bytes)
+    let mut offset = 0x4C;
 
-    // Skip LinkTargetIDList if present (bit 0)
+    // Skip LinkTargetIDList
     if link_flags & 0x01 != 0 {
         let id_list_size = u16::from_le_bytes([buf[offset], buf[offset + 1]]);
         offset += 2 + id_list_size as usize;
@@ -143,7 +142,7 @@ pub fn exe_to_image(path: impl AsRef<Path>) -> Option<DynamicImage> {
     let mut ico_file = Vec::new();
     // ICO header
     ico_file.extend_from_slice(&[
-        0, 0, // Reserved, must be 0
+        0, 0, // Reserved
         1, 0, // Type: 1 for ICO
         1, 0, // Number of images: 1
     ]);
@@ -196,7 +195,6 @@ pub fn svg_to_image(
     let mut svg_data = Vec::new();
     reader.read_to_end(&mut svg_data)?;
 
-    // Create options for parsing SVG
     let mut opt = Options::default();
 
     // allowing text
@@ -205,7 +203,6 @@ pub fn svg_to_image(
     opt.fontdb = std::sync::Arc::new(fontdb);
     opt.text_rendering = usvg::TextRendering::OptimizeLegibility;
 
-    // Parse SVG
     let tree = Tree::from_data(&svg_data, &opt)?;
 
     // Get size of the SVG
@@ -231,7 +228,6 @@ pub fn svg_to_image(
         .ok_or("Failed to create pixmap for svg")?;
     let transform = tiny_skia::Transform::from_scale(scale, scale);
 
-    // Render SVG to Pixmap
     resvg::render(&tree, transform, &mut pixmap.as_mut());
 
     // Convert Pixmap to ImageBuffer
@@ -239,7 +235,6 @@ pub fn svg_to_image(
         ImageBuffer::<Rgba<u8>, _>::from_raw(target_width, target_height, pixmap.data().to_vec())
             .ok_or("Failed to create image buffer for svg")?;
 
-    // Convert ImageBuffer to DynamicImage
     Ok(DynamicImage::ImageRgba8(image_buffer))
 }
 
@@ -270,7 +265,7 @@ pub fn latex_to_pdf<P: AsRef<Path>>(input_path: P) -> Option<(TempDir, PathBuf)>
         .args(&[
             &format!("-output-directory={}", temp_dir.path().to_str()?),
             "-interaction=nonstopmode",
-            input_path.to_str()?,
+            &input_path.to_str().map(|v| v.to_owned())?,
         ])
         .output();
 
@@ -915,7 +910,7 @@ fn video_to_gif(input: impl AsRef<str>, silent: bool) -> Result<Vec<u8>, Box<dyn
         .hwaccel("auto")
         .input(input)
         .format("gif")
-        .args(&["-progress", "pipe:2"]) // Request progress output
+        .args(&["-progress", "pipe:2"])
         .output("-");
 
     let mut child = command.spawn()?;
@@ -926,7 +921,6 @@ fn video_to_gif(input: impl AsRef<str>, silent: bool) -> Result<Vec<u8>, Box<dyn
         .take_stderr()
         .ok_or("failed to get stderr for ffmpeg")?;
 
-    // Read stdout in a separate thread
     let output_thread = std::thread::spawn(move || {
         let mut output_bytes = Vec::new();
         stdout.read_to_end(&mut output_bytes).unwrap();
