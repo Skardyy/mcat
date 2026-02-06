@@ -1,6 +1,6 @@
 [package]
 name = "mcat"
-version = "0.4.7"
+version = "0.5.0"
 authors = ["Meron Bossin"]
 description = "a powerfull extended cat command, to cat all the things you couldn't before"
 keywords = ["cat", "inline", "markitdown", "terminal", "file-converter"]
@@ -24,7 +24,7 @@ license = false
 eula = false
 
 [dependencies]
-markdownify = { version = "0.2.1", path = "../markdownify" }
+markdownify = { version = "0.3.0", path = "../markdownify" }
 rasteroid = { version = "0.1.9", path = "../rasteroid" }
 strip-ansi-escapes = "0.2.1"
 clap_complete = "4.5.50"

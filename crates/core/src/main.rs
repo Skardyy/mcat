@@ -369,10 +369,10 @@ fn main() {
         match inter {
             inspector::InspectedBytes::File(named_temp_file) => {
                 let path = named_temp_file.path().to_path_buf();
-                path_bufs.push((path, Some("stdin input".to_string())));
+                path_bufs.push(path);
                 tmp_files.push(named_temp_file);
             }
-            inspector::InspectedBytes::Path(path_buf) => path_bufs.push((path_buf, None)),
+            inspector::InspectedBytes::Path(path_buf) => path_bufs.push(path_buf),
         };
     }
     let mut scraper_opts = MediaScrapeOptions::default();
@@ -382,7 +382,7 @@ fn main() {
             if let Ok(tmp) = scrapy::scrape_biggest_media(&i, &scraper_opts) {
                 let path = tmp.path().to_path_buf();
                 tmp_files.push(tmp);
-                path_bufs.push((path, Some(i.clone())));
+                path_bufs.push(path);
             } else {
                 eprintln!("{} didn't contain any supported media", i);
             }
@@ -399,7 +399,7 @@ fn main() {
                 selected_files.sort();
                 path_bufs.extend_from_slice(&selected_files);
             } else {
-                path_bufs.push((path.to_path_buf(), None));
+                path_bufs.push(path.to_path_buf());
             }
         }
     }
@@ -418,15 +418,14 @@ fn main() {
     ) {
         // images and videos and interactive
         (false, true | false, true | false, true) => {
-            let paths = path_bufs.iter().map(|v| v.0.as_path()).collect();
+            let paths = path_bufs.iter().map(|v| v.as_path()).collect();
             catter::cat(paths, &mut out, &config).unwrap_or_exit();
         }
         // only text
         (false, false, true, _) => {
             if path_bufs.len() == 1 {
-                catter::cat(vec![&path_bufs[0].0], &mut out, &config).unwrap_or_exit();
+                catter::cat(vec![&path_bufs[0]], &mut out, &config).unwrap_or_exit();
             } else {
-                let path_bufs = concater::assign_names(&path_bufs);
                 let tmp = concater::concat_text(path_bufs);
                 catter::cat(vec![tmp.path()], &mut out, &config).unwrap_or_exit();
             }
@@ -442,7 +441,7 @@ fn main() {
                 }
             }
             if path_bufs.len() == 1 {
-                catter::cat(vec![&path_bufs[0].0], &mut out, &config).unwrap_or_exit();
+                catter::cat(vec![&path_bufs[0]], &mut out, &config).unwrap_or_exit();
             } else {
                 #[allow(unused_variables)]
                 let (dir, path) = concater::concat_video(&path_bufs).unwrap_or_exit();
@@ -460,7 +459,7 @@ fn main() {
                 }
             }
             if path_bufs.len() == 1 {
-                catter::cat(vec![&path_bufs[0].0], &mut out, &config).unwrap_or_exit();
+                catter::cat(vec![&path_bufs[0]], &mut out, &config).unwrap_or_exit();
             } else {
                 let img = concater::concat_images(path_bufs, config.horizontal_image_stacking)
                     .unwrap_or_exit();
