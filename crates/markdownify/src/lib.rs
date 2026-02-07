@@ -45,8 +45,10 @@ impl Converter {
             "xlsx" | "xls" | "xlsm" | "xlsb" | "xla" | "xlam" | "ods" => Converter::Calamine,
             "odt" | "odp" => Converter::OpenDoc,
 
-            "jpg" | "jpeg" | "png" | "gif" | "webp" | "cr2" | "tif" | "tiff" | "bmp" | "heif"
-            | "avif" | "jxr" | "psd" | "ico" | "ora" | "djvu" => Converter::Image(path),
+            "jpg" | "jpeg" | "png" | "gif" | "eps" | "svg" | "webp" | "cr2" | "tif" | "tiff"
+            | "bmp" | "heif" | "avif" | "jxr" | "psd" | "ico" | "ora" | "djvu" => {
+                Converter::Image(path)
+            }
 
             "mp4" | "m4v" | "mkv" | "webm" | "mov" | "avi" | "wmv" | "mpg" | "flv" => {
                 Converter::Video(path)
@@ -96,20 +98,22 @@ pub fn convert_files(files: Vec<PathBuf>) -> Result<String, ParsingError> {
         .map(|p| p.canonicalize().unwrap_or(p))
         .collect();
 
-    let common_root = files[0]
-        .parent()
-        .map(|first_parent| {
-            files
-                .iter()
-                .skip(1)
-                .fold(first_parent.to_path_buf(), |mut root, path| {
-                    while !path.starts_with(&root) && root.parent().is_some() {
-                        root.pop();
-                    }
-                    root
-                })
+    let common_root: PathBuf = files
+        .iter()
+        .filter_map(|p| p.parent())
+        .fold(None::<PathBuf>, |acc, path| {
+            Some(match acc {
+                None => path.to_path_buf(),
+                Some(common) => common
+                    .components()
+                    .zip(path.components())
+                    .take_while(|(a, b)| a == b)
+                    .map(|(a, _)| a)
+                    .collect(),
+            })
         })
-        .unwrap_or_else(|| PathBuf::new());
+        .unwrap_or_default();
+    let common_root = common_root.parent().unwrap_or(&common_root);
 
     let bmap: BTreeMap<String, String> = files
         .into_iter()
@@ -124,12 +128,9 @@ pub fn convert_files(files: Vec<PathBuf>) -> Result<String, ParsingError> {
         })
         .collect::<Result<BTreeMap<String, String>, ParsingError>>()?;
 
-    let mut result = String::new();
-    archives::build_tree(&bmap, &mut result);
     let content = archives::build_output(bmap)?;
-    result.push_str(&content);
 
-    Ok(result)
+    Ok(content)
 }
 
 pub fn convert(path: &Path) -> Result<String, ParsingError> {

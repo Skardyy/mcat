@@ -11,15 +11,27 @@ pub fn parse_zip(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
     let mut archive = ZipArchive::new(Cursor::new(content))
         .map_err(|e| ParsingError::ArchiveError(e.to_string()))?;
     let mut files = BTreeMap::new();
+
     for i in 0..archive.len() {
         let mut entry = archive
             .by_index(i)
             .map_err(|e| ParsingError::ArchiveError(e.to_string()))?;
+
         if entry.is_dir() {
             continue;
         }
 
         let name = entry.name().to_string();
+
+        if name.starts_with("__MACOSX/")
+            || name.contains("/._")
+            || Path::new(&name)
+                .file_name()
+                .map_or(false, |f| f.to_string_lossy().starts_with("._"))
+        {
+            continue;
+        }
+
         let ext = Path::new(&name)
             .extension()
             .unwrap_or_default()
@@ -35,6 +47,7 @@ pub fn parse_zip(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
         let text = crate::convert_from_bytes(contents, convert_type)?;
         files.insert(name, text);
     }
+
     build_output(files)
 }
 
