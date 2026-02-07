@@ -6,7 +6,7 @@ use itertools::Itertools;
 use regex::Regex;
 use syntect::parsing::SyntaxSet;
 
-use crate::markdown_viewer::utils::{get_title_box, string_len, trim_ansi_string, wrap_lines};
+use crate::markdown_viewer::utils::{string_len, trim_ansi_string, wrap_lines};
 
 use super::{
     image_preprocessor::ImagePreprocessor,
@@ -361,20 +361,6 @@ fn render_html_block<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String
     let NodeValue::HtmlBlock(NodeHtmlBlock { ref literal, .. }) = node.data.borrow().value else {
         panic!()
     };
-
-    if let Some(title) = get_title_box(literal) {
-        let text_size = string_len(title);
-        let border_width = text_size + 4;
-        let center_padding = (ctx.term_width - border_width) / 2;
-
-        let fg_yellow = ctx.theme.yellow.fg.clone();
-        let border_line = "─".repeat(border_width);
-        let spaces = " ".repeat(center_padding);
-
-        return format!(
-            "{spaces}┌{border_line}┐\n{spaces}│  {fg_yellow}{BOLD}{title}{RESET}  │\n{spaces}└{border_line}┘\n"
-        );
-    }
 
     let sps = node.data.borrow().sourcepos;
     if literal.contains("<!--HR-->") {

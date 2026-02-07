@@ -416,13 +416,13 @@ fn main() {
         contains_text,
         is_interactive,
     ) {
-        // images and videos and interactive
+        // images and text and interactive
         (false, true | false, true | false, true) => {
             let paths = path_bufs.iter().map(|v| v.as_path()).collect();
             catter::cat(paths, &mut out, &config).unwrap_or_exit();
         }
-        // only text
-        (false, false, true, _) => {
+        // images and text non interactive
+        (false, true | false, true, false) => {
             if path_bufs.len() == 1 {
                 catter::cat(vec![&path_bufs[0]], &mut out, &config).unwrap_or_exit();
             } else {
@@ -467,7 +467,13 @@ fn main() {
             }
         }
         _ => {
-            eprintln!("Error: Cannot have 2 different formats [text / images / videos]");
+            eprintln!(
+                "Error: you combined formats that cannot be combined, supported combinations:\n\
+                - images and texts (simple markdown view)\n\
+                - images and texts with the '-I' flag (interactive album)\n\
+                - only images (combines the images)\n\
+                - only videos (concats the videos)"
+            );
             std::process::exit(1);
         }
     }
