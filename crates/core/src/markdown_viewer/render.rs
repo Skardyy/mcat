@@ -3,6 +3,7 @@ use comrak::nodes::{
     NodeValue, NodeWikiLink,
 };
 use itertools::Itertools;
+use regex::Regex;
 use syntect::parsing::SyntaxSet;
 
 use crate::markdown_viewer::utils::{get_title_box, string_len, trim_ansi_string, wrap_lines};
@@ -311,12 +312,49 @@ fn render_code_block<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String
     let info = if info.trim().is_empty() { "text" } else { info };
 
     // force_simple_code_block is a number because it may be recursive
-    if literal.lines().count() <= 10 || ctx.force_simple_code_block > 0 || ctx.hide_line_numbers {
+    if info == "file-tree" {
+        render_file_tree(literal, ctx)
+    } else if literal.lines().count() <= 10
+        || ctx.force_simple_code_block > 0
+        || ctx.hide_line_numbers
+    {
         let indent = if ctx.should_indent() { INDENT } else { 0 };
         format_code_simple(literal, info, ctx, indent)
     } else {
         format_code_full(literal, info, ctx)
     }
+}
+
+fn render_file_tree(tree: &str, ctx: &mut AnsiContext) -> String {
+    let tree_chars = Regex::new(r"[│├└─]").unwrap();
+    let folders = Regex::new(r"([a-zA-Z0-9_\-]+/)").unwrap();
+    let files = Regex::new(r"([a-zA-Z0-9_\-]+\.[a-zA-Z0-9]+)").unwrap();
+
+    let tree_char_color = &ctx.theme.guide.fg;
+    let folder_color = &ctx.theme.blue.fg;
+    let file_color = &ctx.theme.foreground.fg;
+
+    let mut result = tree.to_string();
+
+    result = tree_chars
+        .replace_all(&result, |caps: &regex::Captures| {
+            format!("{tree_char_color}{}{RESET}", &caps[0])
+        })
+        .to_string();
+
+    result = folders
+        .replace_all(&result, |caps: &regex::Captures| {
+            format!("{folder_color}{}{RESET}", &caps[1])
+        })
+        .to_string();
+
+    result = files
+        .replace_all(&result, |caps: &regex::Captures| {
+            format!("{file_color}{}{RESET}", &caps[1])
+        })
+        .to_string();
+
+    result
 }
 
 fn render_html_block<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {

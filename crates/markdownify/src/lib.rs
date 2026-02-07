@@ -6,7 +6,6 @@ pub mod pptx;
 pub mod sheets;
 
 use std::{
-    collections::BTreeMap,
     fs::File,
     io::Read,
     path::{Path, PathBuf},
@@ -15,7 +14,7 @@ use std::{
 use flate2::read::GzDecoder;
 use xz2::read::XzDecoder;
 
-use crate::error::ParsingError;
+use crate::{archives::FileTree, error::ParsingError};
 
 enum Converter {
     Tar,
@@ -115,22 +114,20 @@ pub fn convert_files(files: Vec<PathBuf>) -> Result<String, ParsingError> {
         .unwrap_or_default();
     let common_root = common_root.parent().unwrap_or(&common_root);
 
-    let bmap: BTreeMap<String, String> = files
-        .into_iter()
-        .map(|path| {
-            let key = path
-                .strip_prefix(&common_root)
-                .unwrap_or(&path)
-                .to_string_lossy()
-                .into_owned();
+    let mut tree = FileTree::new();
 
-            convert(&path).map(|content| (key, content))
-        })
-        .collect::<Result<BTreeMap<String, String>, ParsingError>>()?;
+    for path in files {
+        let key = path
+            .strip_prefix(&common_root)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .into_owned();
 
-    let content = archives::build_output(bmap)?;
+        let content = convert(&path)?;
+        tree.add_file(key, content);
+    }
 
-    Ok(content)
+    tree.render()
 }
 
 pub fn convert(path: &Path) -> Result<String, ParsingError> {
