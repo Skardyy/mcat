@@ -1,42 +1,26 @@
-use std::{
-    fs,
-    io::{Cursor, Read},
-    path::Path,
-};
+use std::io::{Cursor, Read};
 
 use quick_xml::events::Event;
 use zip::ZipArchive;
 
+use crate::error::ParsingError;
+
 use super::sheets;
 
-/// convert `pptx` files into markdown
-/// # usage:
-/// ```
-/// use std::path::Path;
-/// use markdownify::pptx::pptx_converter;
-///
-/// let path = Path::new("path/to/file.pptx");
-/// match pptx_converter(&path) {
-///     Ok(md) => println!("{}", md),
-///     Err(e) => eprintln!("Error: {}", e)
-/// }
-/// ```
-pub fn pptx_converter(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
-    let data = fs::read(path)?;
-    let cursor = Cursor::new(data);
-    let mut archive = ZipArchive::new(cursor)?;
+pub fn parse_pptx(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
+    let mut archive = ZipArchive::new(Cursor::new(content))
+        .map_err(|e| ParsingError::ArchiveError(e.to_string()))?;
     let mut markdown = String::new();
     let mut slide_num = 1;
 
     for i in 0..archive.len() {
-        let mut file = archive.by_index(i)?;
+        let mut file = archive
+            .by_index(i)
+            .map_err(|e| ParsingError::ArchiveError(e.to_string()))?;
         let file_name = file.name().to_string();
 
         if file_name.starts_with("ppt/slides/") && file_name.ends_with(".xml") {
-            markdown.push_str(&format!(
-                "\n\n<!-- S-TITLE: Slide number {} -->\n",
-                slide_num
-            ));
+            markdown.push_str(&format!("\n\n## Slide number {}\n", slide_num));
             slide_num += 1;
 
             let mut content = String::new();
@@ -85,19 +69,18 @@ pub fn pptx_converter(path: &Path) -> Result<String, Box<dyn std::error::Error>>
                         _ => {}
                     },
                     Ok(Event::Text(e)) => {
+                        let text = String::from_utf8_lossy(&e).to_string();
                         if in_text_body {
-                            let text = e.unescape().unwrap_or_default().to_string();
-
                             if !text.trim().is_empty() {
                                 if in_title {
-                                    markdown.push_str(&format!("# {}", text.trim()));
+                                    markdown.push_str(&format!("### {}", text.trim()));
                                 } else {
                                     markdown.push_str(&format!("{} ", text.trim()));
                                 }
                             }
                         }
                         if in_cell {
-                            cell_text.push_str(&e.unescape().unwrap_or_default());
+                            cell_text.push_str(&text);
                         }
                     }
                     Ok(Event::End(ref e)) => match e.name().as_ref() {
@@ -137,7 +120,12 @@ pub fn pptx_converter(path: &Path) -> Result<String, Box<dyn std::error::Error>>
                         _ => {}
                     },
                     Ok(Event::Eof) => break,
-                    Err(e) => return Err(Box::new(e)),
+                    Err(e) => {
+                        return Err(ParsingError::ParsingError(
+                            format!("Error at position {}: {:?}", reader.buffer_position(), e)
+                                .into(),
+                        ));
+                    }
                     _ => {}
                 }
                 buf.clear();

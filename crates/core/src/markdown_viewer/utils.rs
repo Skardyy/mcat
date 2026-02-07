@@ -15,7 +15,6 @@ use super::render::{AnsiContext, BOLD, RESET};
 
 static NEWLINE_REGEX: OnceLock<Regex> = OnceLock::new();
 static ANSI_ESCAPE_REGEX: OnceLock<Regex> = OnceLock::new();
-static TITLE_REGEX: OnceLock<Regex> = OnceLock::new();
 
 pub fn get_lang_icon_and_color(lang: &str) -> Option<(&'static str, &'static str)> {
     let map: HashMap<&str, (&str, &str)> = [
@@ -556,11 +555,4 @@ pub fn format_tb(ctx: &AnsiContext, offset: usize) -> String {
 pub fn limit_newlines<'a>(original: &'a str) -> Cow<'a, str> {
     let re = NEWLINE_REGEX.get_or_init(|| Regex::new(r"\n([ \t]*\n){2,}").unwrap());
     re.replace_all(&original, "\n\n")
-}
-
-pub fn get_title_box<'a>(literal: &'a str) -> Option<&'a str> {
-    let re = TITLE_REGEX.get_or_init(|| Regex::new(r#"<!--\s*S-TITLE:\s*(.*?)\s*-->"#).unwrap());
-
-    let caps = re.captures(literal)?;
-    caps.get(1).map(|v| v.as_str())
 }

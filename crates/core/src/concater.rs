@@ -3,36 +3,14 @@ use std::{fs::File, io::Write, path::PathBuf};
 use ffmpeg_sidecar::command::FfmpegCommand;
 use image::{GenericImage, ImageFormat};
 use itertools::Itertools;
-use markdownify::ConvertOptions;
-use rasteroid::term_misc;
+use markdownify::convert_files;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use tempfile::{NamedTempFile, TempDir};
 
 use crate::{catter, converter};
 
-pub fn concat_text(paths: Vec<(&PathBuf, Option<String>)>) -> NamedTempFile {
-    let mut chunks: Vec<(usize, String)> = paths
-        .into_par_iter()
-        .enumerate()
-        .map(|(idx, (path, name))| {
-            let screen_size = term_misc::get_wininfo();
-            let mut opts = ConvertOptions::new(path.as_path())
-                .with_screen_size((screen_size.sc_width, screen_size.sc_height));
-            opts.name_header = name.as_ref().map(|v| v.as_str());
-            let md = match markdownify::convert(opts) {
-                Ok(md) => md,
-                Err(err) => format!("**[Failed Reading: {}]**", err),
-            };
-            (idx, md)
-        })
-        .collect();
-
-    chunks.sort_by_key(|&(idx, _)| idx);
-    let markdown: String = chunks
-        .into_iter()
-        .map(|(_, md)| md)
-        .collect::<Vec<_>>()
-        .join("\n\n");
+pub fn concat_text(paths: Vec<PathBuf>) -> NamedTempFile {
+    let markdown = convert_files(paths).unwrap();
 
     let mut tmp_file = NamedTempFile::with_suffix(".md").expect("failed to create tmp file");
     tmp_file
@@ -43,13 +21,13 @@ pub fn concat_text(paths: Vec<(&PathBuf, Option<String>)>) -> NamedTempFile {
 }
 
 pub fn concat_images(
-    image_paths: Vec<(PathBuf, Option<String>)>,
+    image_paths: Vec<PathBuf>,
     horizontal: bool,
 ) -> Result<NamedTempFile, Box<dyn std::error::Error>> {
     let images: Vec<image::DynamicImage> = image_paths
         .into_par_iter()
         .enumerate()
-        .filter_map(|(idx, (path, _))| {
+        .filter_map(|(idx, path)| {
             let img = if path.extension().is_some_and(|e| e == "svg") {
                 File::open(&path)
                     .ok()
@@ -101,11 +79,11 @@ pub fn concat_images(
 }
 
 pub fn concat_video(
-    paths: &Vec<(PathBuf, Option<String>)>,
+    paths: &Vec<PathBuf>,
 ) -> Result<(TempDir, PathBuf), Box<dyn std::error::Error>> {
     let mut concat_list_file = NamedTempFile::new()?;
 
-    for (path, _) in paths {
+    for path in paths {
         let path_dis = path
             .canonicalize()?
             .to_string_lossy()
@@ -114,7 +92,7 @@ pub fn concat_video(
         writeln!(concat_list_file, "file '{}'", path_dis)?;
     }
 
-    let first_path = &paths[0].0;
+    let first_path = &paths[0];
     let suffix = first_path
         .extension()
         .unwrap_or_default()
@@ -157,14 +135,14 @@ pub fn concat_video(
     }
 }
 
-pub fn check_unified_format(paths: &[(PathBuf, Option<String>)]) -> Vec<&'static str> {
+pub fn check_unified_format(paths: &[PathBuf]) -> Vec<&'static str> {
     if paths.is_empty() {
         return vec!["text"]; // Default if no files
     }
 
     let mut detected_formats = Vec::new();
 
-    for (path, _) in paths {
+    for path in paths {
         let current_format = if let Some(extension) = path.extension() {
             if let Some(ext_str) = extension.to_str() {
                 let ext = ext_str.to_lowercase();
@@ -192,24 +170,4 @@ pub fn check_unified_format(paths: &[(PathBuf, Option<String>)]) -> Vec<&'static
     } else {
         detected_formats
     }
-}
-
-pub fn assign_names<'a>(
-    paths: &'a [(PathBuf, Option<String>)],
-) -> Vec<(&'a PathBuf, Option<String>)> {
-    if paths.len() == 1 {
-        return vec![(&paths[0].0, None)];
-    }
-
-    paths
-        .iter()
-        .map(|(path, name)| {
-            if name.is_some() {
-                (path, name.clone())
-            } else {
-                let path_str = path.to_string_lossy().to_string();
-                (path, Some(path_str))
-            }
-        })
-        .collect()
 }
