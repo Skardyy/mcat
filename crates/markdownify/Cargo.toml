@@ -13,15 +13,15 @@ readme = "README.md"
 edition = "2024"
 
 [dependencies]
-thiserror = "2.0.18"
+thiserror.workspace = true
 
-zip = { version = "7.4.0", features = [ "deflate-flate2" ], default-features = false }
-tar = "0.4.44"
+zip.workspace = true
+tar.workspace = true
 
-flate2 = "1.1.9"
-xz2 = "0.1.7"
+flate2.workspace = true
+xz2.workspace = true
 
-calamine = "0.33.0"
-csv = "1.4.0"
+calamine.workspace = true
+csv.workspace = true
 
-quick-xml = "0.39.0"
+quick-xml.workspace = true

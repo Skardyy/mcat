@@ -1,6 +1,5 @@
 use comrak::nodes::{
-    AstNode, NodeAlert, NodeCode, NodeCodeBlock, NodeHeading, NodeHtmlBlock, NodeLink, NodeMath,
-    NodeValue, NodeWikiLink,
+    AstNode, NodeCode, NodeHeading, NodeHtmlBlock, NodeMath, NodeValue, NodeWikiLink,
 };
 use itertools::Itertools;
 use regex::Regex;
@@ -107,12 +106,10 @@ pub fn parse_node<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         NodeValue::Alert(_) => render_alert(node, ctx),
         NodeValue::FootnoteDefinition(_) => render_footnote_def(node, ctx),
         NodeValue::FootnoteReference(_) => render_footnote_ref(node, ctx),
-        // leave as is
-        NodeValue::Text(literal) => literal.to_owned(),
+        NodeValue::Text(literal) => literal.to_string(),
         NodeValue::Raw(literal) => literal.to_owned(),
         NodeValue::Math(NodeMath { literal, .. }) => literal.to_owned(),
         NodeValue::SoftBreak => " ".to_owned(),
-        // Ignore
         NodeValue::LineBreak => String::new(),
         NodeValue::TableRow(_) => String::new(),
         NodeValue::TableCell => String::new(),
@@ -124,6 +121,11 @@ pub fn parse_node<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         NodeValue::EscapedTag(_) => String::new(),
         NodeValue::Underline => String::new(),
         NodeValue::Subscript => String::new(),
+        NodeValue::HeexBlock(_) => String::new(),
+        NodeValue::HeexInline(_) => String::new(),
+        NodeValue::Highlight => String::new(),
+        NodeValue::ShortCode(_) => String::new(),
+        NodeValue::Subtext => String::new(),
     };
     buffer.push_str(&content);
 
@@ -289,7 +291,7 @@ fn render_task_item<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String 
     let offset = " ".repeat(node.data.borrow().sourcepos.start.column - 1);
     let content = collect(node, ctx);
     let content = content.trim();
-    let (icon, colour) = match task.map(|c| c.to_ascii_lowercase()) {
+    let (icon, colour) = match task.symbol.map(|c| c.to_ascii_lowercase()) {
         Some('x') => ("󰱒", &ctx.theme.green.fg),
         Some('-') | Some('~') => ("󰛲", &ctx.theme.yellow.fg),
         Some('!') => ("󰳤", &ctx.theme.red.fg),
@@ -300,14 +302,11 @@ fn render_task_item<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String 
 }
 
 fn render_code_block<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
-    let NodeValue::CodeBlock(NodeCodeBlock {
-        ref literal,
-        ref info,
-        ..
-    }) = node.data.borrow().value
-    else {
+    let NodeValue::CodeBlock(ref node_code_block) = node.data.borrow().value else {
         panic!()
     };
+    let literal = &node_code_block.literal;
+    let info = &node_code_block.info;
 
     let info = if info.trim().is_empty() { "text" } else { info };
 
@@ -634,9 +633,10 @@ fn render_strikethrough<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> Str
 }
 
 fn render_link<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
-    let NodeValue::Link(NodeLink { ref url, .. }) = node.data.borrow().value else {
+    let NodeValue::Link(ref node_link) = node.data.borrow().value else {
         panic!()
     };
+    let url = &node_link.url;
 
     let content = collect(node, ctx);
     let cyan = ctx.theme.cyan.fg.clone();
@@ -656,9 +656,10 @@ fn render_link<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
 }
 
 fn render_image<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
-    let NodeValue::Image(NodeLink { ref url, .. }) = node.data.borrow().value else {
+    let NodeValue::Image(ref node_link) = node.data.borrow().value else {
         panic!()
     };
+    let url = &node_link.url;
 
     if let Some(img) = ctx.image_preprocessor.mapper.get(url) {
         if img.is_ok {
@@ -726,9 +727,10 @@ fn render_spoilered_text<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> St
 }
 
 fn render_alert<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
-    let NodeValue::Alert(NodeAlert { ref alert_type, .. }) = node.data.borrow().value else {
+    let NodeValue::Alert(ref node_alert) = node.data.borrow().value else {
         panic!()
     };
+    let alert_type = &node_alert.alert_type;
 
     let kind = alert_type;
     let blue = ctx.theme.blue.fg.clone();
