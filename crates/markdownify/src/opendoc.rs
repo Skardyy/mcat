@@ -1,31 +1,21 @@
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 use std::io::{Cursor, Read};
-use std::path::Path;
 use zip::ZipArchive;
+
+use crate::error::ParsingError;
 
 use super::sheets;
 
-/// convert `odt` and `odp` files into markdown
-/// # usage:
-/// ```
-/// use std::path::Path;
-/// use markdownify::opendoc::opendoc_convert;
-///
-/// let path = Path::new("path/to/file.odt");
-/// match opendoc_convert(&path) {
-///     Ok(md) => println!("{}", md),
-///     Err(e) => eprintln!("Error: {}", e)
-/// }
-/// ```
-pub fn opendoc_convert(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
-    let data = std::fs::read(path)?;
-    let cursor = Cursor::new(data);
-    let mut archive = ZipArchive::new(cursor)?;
+pub fn parse_opendoc(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
+    let mut archive = ZipArchive::new(Cursor::new(content))
+        .map_err(|e| ParsingError::ArchiveError(e.to_string()))?;
     let mut xml_content = String::new();
 
     for i in 0..archive.len() {
-        let mut file = archive.by_index(i)?;
+        let mut file = archive
+            .by_index(i)
+            .map_err(|e| ParsingError::ArchiveError(e.to_string()))?;
         if file.name() == "content.xml" {
             file.read_to_string(&mut xml_content)?;
             break;
@@ -60,14 +50,14 @@ pub fn opendoc_convert(path: &Path) -> Result<String, Box<dyn std::error::Error>
                 }
             },
             Ok(Event::Text(e)) => {
-                let text = &e.unescape()?.into_owned();
+                let text = String::from_utf8_lossy(&e);
                 if is_table {
                     current_row.push(text.into());
                 } else if is_list_item == 1 {
                     markdown.push_str(&format!(" * {}", text));
                     is_list_item = 2;
                 } else {
-                    markdown.push_str(text);
+                    markdown.push_str(&text);
                 }
             }
             Ok(Event::End(e)) => match e.name().as_ref() {
@@ -105,52 +95,14 @@ pub fn opendoc_convert(path: &Path) -> Result<String, Box<dyn std::error::Error>
             },
             Ok(Event::Eof) => break,
             Err(e) => {
-                return Err(
+                return Err(ParsingError::ParsingError(
                     format!("Error at position {}: {:?}", reader.buffer_position(), e).into(),
-                );
+                ));
             }
             _ => {}
         }
         buf.clear();
     }
 
-    Ok(format(&markdown))
-}
-
-fn format(input: &str) -> String {
-    let mut result = String::with_capacity(input.len());
-    let mut newline_count = 0;
-    let mut spaces_count = 0;
-
-    for line in input.lines() {
-        if line.trim() == "" {
-            result.push('\n');
-        } else {
-            result.push_str(&format!("{}\n", line));
-        }
-    }
-    let input = &result;
-    let mut result = String::with_capacity(input.len());
-
-    for c in input.chars() {
-        if c == ' ' {
-            spaces_count += 1;
-        }
-        if c == '\n' {
-            newline_count += 1;
-            if spaces_count >= 2 {
-                newline_count += 1;
-            }
-            spaces_count = 0;
-            if newline_count <= 2 {
-                result.push(c);
-            }
-        } else {
-            newline_count = 0;
-            spaces_count = 0;
-            result.push(c);
-        }
-    }
-
-    result
+    Ok(markdown)
 }

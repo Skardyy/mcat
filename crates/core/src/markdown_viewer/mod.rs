@@ -5,8 +5,7 @@ pub mod themes;
 pub mod utils;
 
 use comrak::{
-    Arena, ComrakOptions, ComrakPlugins, markdown_to_html_with_plugins,
-    plugins::syntect::SyntectAdapterBuilder,
+    Arena, markdown_to_html_with_plugins, options, plugins::syntect::SyntectAdapterBuilder,
 };
 use image_preprocessor::ImagePreprocessor;
 use rasteroid::term_misc::{self, break_size_string};
@@ -85,7 +84,7 @@ pub fn md_to_html(markdown: &str, style: Option<&str>) -> String {
 
     let theme = CustomTheme::from(style.unwrap_or_default());
     let mut theme_set = ThemeSet::load_defaults();
-    let mut plugins = ComrakPlugins::default();
+    let mut plugins = options::Plugins::default();
     theme_set
         .themes
         .insert("dark".to_string(), theme.to_syntect_theme());
@@ -123,8 +122,8 @@ pub fn md_to_html(markdown: &str, style: Option<&str>) -> String {
     }
 }
 
-fn comrak_options<'a>() -> ComrakOptions<'a> {
-    let mut options = ComrakOptions::default();
+fn comrak_options<'a>() -> options::Options<'a> {
+    let mut options = options::Options::default();
     options.extension.strikethrough = true;
     options.extension.footnotes = true;
     options.extension.front_matter_delimiter = Some("---".to_owned());
@@ -143,7 +142,7 @@ fn comrak_options<'a>() -> ComrakOptions<'a> {
     options.parse.smart = true;
     options.parse.relaxed_tasklist_matching = true;
 
-    options.render.unsafe_ = true;
+    options.render.r#unsafe = true;
 
     options
 }

@@ -1,11 +1,11 @@
 use comrak::nodes::{
-    AstNode, NodeAlert, NodeCode, NodeCodeBlock, NodeHeading, NodeHtmlBlock, NodeLink, NodeMath,
-    NodeValue, NodeWikiLink,
+    AstNode, NodeCode, NodeHeading, NodeHtmlBlock, NodeMath, NodeValue, NodeWikiLink,
 };
 use itertools::Itertools;
+use regex::Regex;
 use syntect::parsing::SyntaxSet;
 
-use crate::markdown_viewer::utils::{get_title_box, string_len, trim_ansi_string, wrap_lines};
+use crate::markdown_viewer::utils::{string_len, trim_ansi_string, wrap_lines};
 
 use super::{
     image_preprocessor::ImagePreprocessor,
@@ -106,12 +106,10 @@ pub fn parse_node<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         NodeValue::Alert(_) => render_alert(node, ctx),
         NodeValue::FootnoteDefinition(_) => render_footnote_def(node, ctx),
         NodeValue::FootnoteReference(_) => render_footnote_ref(node, ctx),
-        // leave as is
-        NodeValue::Text(literal) => literal.to_owned(),
+        NodeValue::Text(literal) => literal.to_string(),
         NodeValue::Raw(literal) => literal.to_owned(),
         NodeValue::Math(NodeMath { literal, .. }) => literal.to_owned(),
         NodeValue::SoftBreak => " ".to_owned(),
-        // Ignore
         NodeValue::LineBreak => String::new(),
         NodeValue::TableRow(_) => String::new(),
         NodeValue::TableCell => String::new(),
@@ -123,6 +121,11 @@ pub fn parse_node<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         NodeValue::EscapedTag(_) => String::new(),
         NodeValue::Underline => String::new(),
         NodeValue::Subscript => String::new(),
+        NodeValue::HeexBlock(_) => String::new(),
+        NodeValue::HeexInline(_) => String::new(),
+        NodeValue::Highlight => String::new(),
+        NodeValue::ShortCode(_) => String::new(),
+        NodeValue::Subtext => String::new(),
     };
     buffer.push_str(&content);
 
@@ -288,7 +291,7 @@ fn render_task_item<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String 
     let offset = " ".repeat(node.data.borrow().sourcepos.start.column - 1);
     let content = collect(node, ctx);
     let content = content.trim();
-    let (icon, colour) = match task.map(|c| c.to_ascii_lowercase()) {
+    let (icon, colour) = match task.symbol.map(|c| c.to_ascii_lowercase()) {
         Some('x') => ("󰱒", &ctx.theme.green.fg),
         Some('-') | Some('~') => ("󰛲", &ctx.theme.yellow.fg),
         Some('!') => ("󰳤", &ctx.theme.red.fg),
@@ -299,19 +302,21 @@ fn render_task_item<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String 
 }
 
 fn render_code_block<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
-    let NodeValue::CodeBlock(NodeCodeBlock {
-        ref literal,
-        ref info,
-        ..
-    }) = node.data.borrow().value
-    else {
+    let NodeValue::CodeBlock(ref node_code_block) = node.data.borrow().value else {
         panic!()
     };
+    let literal = &node_code_block.literal;
+    let info = &node_code_block.info;
 
     let info = if info.trim().is_empty() { "text" } else { info };
 
     // force_simple_code_block is a number because it may be recursive
-    if literal.lines().count() <= 10 || ctx.force_simple_code_block > 0 || ctx.hide_line_numbers {
+    if info == "file-tree" {
+        render_file_tree(literal, ctx)
+    } else if literal.lines().count() <= 10
+        || ctx.force_simple_code_block > 0
+        || ctx.hide_line_numbers
+    {
         let indent = if ctx.should_indent() { INDENT } else { 0 };
         format_code_simple(literal, info, ctx, indent)
     } else {
@@ -319,24 +324,42 @@ fn render_code_block<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String
     }
 }
 
+fn render_file_tree(tree: &str, ctx: &mut AnsiContext) -> String {
+    let tree_chars = Regex::new(r"[│├└─]").unwrap();
+    let folders = Regex::new(r"([a-zA-Z0-9_\-]+/)").unwrap();
+    let files = Regex::new(r"([a-zA-Z0-9_\-]+\.[a-zA-Z0-9]+)").unwrap();
+
+    let tree_char_color = &ctx.theme.guide.fg;
+    let folder_color = &ctx.theme.blue.fg;
+    let file_color = &ctx.theme.foreground.fg;
+
+    let mut result = tree.to_string();
+
+    result = tree_chars
+        .replace_all(&result, |caps: &regex::Captures| {
+            format!("{tree_char_color}{}{RESET}", &caps[0])
+        })
+        .to_string();
+
+    result = folders
+        .replace_all(&result, |caps: &regex::Captures| {
+            format!("{folder_color}{}{RESET}", &caps[1])
+        })
+        .to_string();
+
+    result = files
+        .replace_all(&result, |caps: &regex::Captures| {
+            format!("{file_color}{}{RESET}", &caps[1])
+        })
+        .to_string();
+
+    result
+}
+
 fn render_html_block<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     let NodeValue::HtmlBlock(NodeHtmlBlock { ref literal, .. }) = node.data.borrow().value else {
         panic!()
     };
-
-    if let Some(title) = get_title_box(literal) {
-        let text_size = string_len(title);
-        let border_width = text_size + 4;
-        let center_padding = (ctx.term_width - border_width) / 2;
-
-        let fg_yellow = ctx.theme.yellow.fg.clone();
-        let border_line = "─".repeat(border_width);
-        let spaces = " ".repeat(center_padding);
-
-        return format!(
-            "{spaces}┌{border_line}┐\n{spaces}│  {fg_yellow}{BOLD}{title}{RESET}  │\n{spaces}└{border_line}┘\n"
-        );
-    }
 
     let sps = node.data.borrow().sourcepos;
     if literal.contains("<!--HR-->") {
@@ -610,9 +633,10 @@ fn render_strikethrough<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> Str
 }
 
 fn render_link<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
-    let NodeValue::Link(NodeLink { ref url, .. }) = node.data.borrow().value else {
+    let NodeValue::Link(ref node_link) = node.data.borrow().value else {
         panic!()
     };
+    let url = &node_link.url;
 
     let content = collect(node, ctx);
     let cyan = ctx.theme.cyan.fg.clone();
@@ -632,9 +656,10 @@ fn render_link<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
 }
 
 fn render_image<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
-    let NodeValue::Image(NodeLink { ref url, .. }) = node.data.borrow().value else {
+    let NodeValue::Image(ref node_link) = node.data.borrow().value else {
         panic!()
     };
+    let url = &node_link.url;
 
     if let Some(img) = ctx.image_preprocessor.mapper.get(url) {
         if img.is_ok {
@@ -702,9 +727,10 @@ fn render_spoilered_text<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> St
 }
 
 fn render_alert<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
-    let NodeValue::Alert(NodeAlert { ref alert_type, .. }) = node.data.borrow().value else {
+    let NodeValue::Alert(ref node_alert) = node.data.borrow().value else {
         panic!()
     };
+    let alert_type = &node_alert.alert_type;
 
     let kind = alert_type;
     let blue = ctx.theme.blue.fg.clone();

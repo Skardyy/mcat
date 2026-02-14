@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs, io::Write, path::Path};
+use std::{collections::HashMap, fs, io::Write, ops::Deref, path::Path};
 
 use comrak::nodes::{AstNode, NodeValue};
 use image::{DynamicImage, GenericImageView, ImageFormat};
@@ -210,7 +210,7 @@ fn render_image(
     let dyn_img = if ext == "svg" {
         let buf = fs::read(tmp).ok()?;
         svg_to_image(buf.as_slice(), width.as_deref(), height.as_deref()).ok()?
-    } else if ImageFormat::from_extension(ext.as_ref()).is_some() {
+    } else if ImageFormat::from_extension(ext.deref()).is_some() {
         let buf = fs::read(tmp).ok()?;
         image::load_from_memory(&buf).ok()?
     } else {
