@@ -361,7 +361,7 @@ fn main() {
     let mut tmp_files = Vec::new(); //for lifetime
     let mut path_bufs = Vec::new();
     // if stdin is streamed into
-    if stdin_streamed {
+    if stdin_streamed && config.input.is_empty() {
         let mut buffer = Vec::new();
         std::io::stdin().read_to_end(&mut buffer).unwrap_or_exit();
 

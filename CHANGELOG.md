@@ -1,5 +1,6 @@
 ## Src
 
+- mcat now no longer reads from stdin if a file input already been specified
 - HTML to image now is slightly faster, and produces better images for small content
 - `--opts` flag now supports both scalex and scaley
 - fixed an issue where color would persist after a simple code block in the **markdown viewer**
