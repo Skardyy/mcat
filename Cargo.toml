@@ -48,7 +48,7 @@ indicatif = "0.18.3"
 regex = "1.12.3"
 
 thiserror = "2.0.18"
-zip = { version = "7.4.0", features = [ "deflate-flate2" ], default-features = false }
+zip = { version = "8.1.0", features = [ "deflate-flate2" ], default-features = false }
 tar = "0.4.44"
 flate2 = "1.1.9"
 xz2 = "0.1.7"
