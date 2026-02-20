@@ -475,12 +475,9 @@ fn render_heading<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
 
 fn render_thematic_break<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     let offset = node.data.borrow().sourcepos.start.column;
-    let offset = if ctx.should_wrap() {
-        offset
-    } else {
-        offset + ctx.indent()
-    };
-    format_tb(ctx, offset) + "\n"
+    // each level of blockquote adds 4 char prefix..
+    let extra_offset = ctx.force_simple_code_block * 4;
+    format_tb(ctx, offset + extra_offset) + "\n"
 }
 
 fn render_table<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {

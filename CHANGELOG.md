@@ -5,6 +5,7 @@
 - `--opts` flag now supports both scalex and scaley
 - fixed an issue where color would persist after a simple code block in the **markdown viewer**
 - fixed an issue causing colors to bleed into other lines when wrapped
+- fixed th break in markdown not wrapping correctly
 
 ## V0.4.6
 

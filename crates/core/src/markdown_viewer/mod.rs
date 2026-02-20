@@ -60,14 +60,7 @@ pub fn md_to_ansi(md: &str, config: &McatConfig, markdown_file_path: Option<&Pat
     output.push_str(&ctx.theme.foreground.fg);
     output.push_str(&parse_node(root, &mut ctx).trim_matches('\n'));
 
-    // making sure its wrapped to fit into the termianl size
-    let lines: Vec<String> = textwrap::wrap(&output, term_misc::get_wininfo().sc_width as usize)
-        .into_iter()
-        .map(|cow| cow.into_owned())
-        .collect();
-    let res = lines
-        .join("\n")
-        .replace(RESET, &format!("{RESET}{}", &ctx.theme.foreground.fg));
+    let res = output.replace(RESET, &format!("{RESET}{}", &ctx.theme.foreground.fg));
 
     // force at max 2 \n at a row (we're adding newlines based on sourcepos)
     let mut res = limit_newlines(&res).to_string();
