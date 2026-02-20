@@ -195,12 +195,13 @@ fn find_last_fg_color_sequence(text: &str) -> Option<String> {
     let re = ANSI_ESCAPE_REGEX.get_or_init(|| Regex::new(r"\x1b\[[0-9;]*m").unwrap());
     let mut last_fg_color = None;
 
+    // find last valid fg color. RESET returns ""
     for m in re.find_iter(text) {
         let seq = m.as_str();
         let codes_str = &seq[2..seq.len() - 1];
 
         if codes_str.is_empty() || codes_str == "0" {
-            last_fg_color = None;
+            last_fg_color = Some("".to_owned());
         } else {
             for code in codes_str.split(';') {
                 if let Ok(num) = code.parse::<u32>() {
@@ -345,8 +346,11 @@ pub fn wrap_highlighted_line(
         if i == 0 || line.trim().is_empty() {
             buf.push_str(line);
         } else {
-            buf.push_str(&format!("\n{sub_prefix}{padding}{pre_last_color}{line}"));
+            buf.push_str(&format!(
+                "\n{sub_prefix}{padding}{pre_last_color}{line}{RESET}"
+            ));
         }
+        // carry on colors
         match find_last_fg_color_sequence(line) {
             Some(color) => pre_last_color = color,
             None => {}

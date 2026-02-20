@@ -47,9 +47,12 @@ pub struct AnsiContext<'a> {
 }
 
 impl<'a> AnsiContext<'a> {
-    pub fn should_indent(&self) -> bool {
-        // root level element, and under an header
-        self.under_header && self.collecting_depth == 0
+    pub fn should_wrap(&self) -> bool {
+        // root level element
+        self.collecting_depth == 0
+    }
+    pub fn indent(&self) -> usize {
+        if self.under_header { 2 } else { 0 }
     }
 }
 
@@ -193,8 +196,9 @@ fn render_footnote_def<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> Stri
         content
             .lines()
             .map(|line| {
-                if ctx.should_indent() {
-                    wrap_lines(&line, false, INDENT, "", "")
+                let indent = ctx.indent();
+                if ctx.should_wrap() {
+                    wrap_lines(&line, false, indent, "", "")
                 } else {
                     line.into()
                 }
@@ -231,8 +235,9 @@ fn render_block_quote<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> Strin
         })
         .join("\n");
 
-    let content = if ctx.should_indent() {
-        wrap_char_based(&content, '▌', INDENT, "", "")
+    let indent = ctx.indent();
+    let content = if ctx.should_wrap() {
+        wrap_char_based(&content, '▌', indent, "", "")
     } else {
         content.to_owned()
     };
@@ -248,8 +253,9 @@ fn render_list<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     ctx.list_depth += 1;
     let content = collect(node, ctx);
     ctx.list_depth -= 1;
-    let content = if ctx.should_indent() {
-        wrap_lines(&content, true, INDENT, "", "  ") // 2 space extra because of the bullet
+    let indent = ctx.indent();
+    let content = if ctx.should_wrap() {
+        wrap_lines(&content, true, indent, "", "  ") // 2 space extra because of the bullet
     } else {
         content
     };
@@ -317,7 +323,7 @@ fn render_code_block<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String
         || ctx.force_simple_code_block > 0
         || ctx.hide_line_numbers
     {
-        let indent = if ctx.should_indent() { INDENT } else { 0 };
+        let indent = ctx.indent();
         format_code_simple(literal, info, ctx, indent)
     } else {
         format_code_full(literal, info, ctx)
@@ -406,8 +412,9 @@ fn render_paragraph<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String 
         lines
             .lines()
             .map(|line| {
-                if ctx.should_indent() {
-                    wrap_lines(&line, false, INDENT, "", "")
+                let indent = ctx.indent();
+                if ctx.should_wrap() {
+                    wrap_lines(&line, false, indent, "", "")
                 } else {
                     line.into()
                 }
@@ -468,10 +475,10 @@ fn render_heading<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
 
 fn render_thematic_break<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     let offset = node.data.borrow().sourcepos.start.column;
-    let offset = if ctx.should_indent() {
+    let offset = if ctx.should_wrap() {
         offset
     } else {
-        offset + INDENT
+        offset + ctx.indent()
     };
     format_tb(ctx, offset) + "\n"
 }
@@ -605,10 +612,11 @@ fn render_table<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
             .lines()
             .map(|line| format!("{}{line}", " ".repeat(offset)))
             .join("\n")
-    } else if ctx.should_indent() {
+    } else if ctx.should_wrap() {
+        let indent = ctx.indent();
         result
             .lines()
-            .map(|line| format!("{}{line}", " ".repeat(INDENT)))
+            .map(|line| format!("{}{line}", " ".repeat(indent)))
             .join("\n")
     } else {
         result
@@ -765,8 +773,9 @@ fn render_alert<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         .join("\n");
     result.push_str(&alert_content);
 
-    let content = if ctx.should_indent() {
-        wrap_char_based(&result, '▌', INDENT, "", "")
+    let indent = ctx.indent();
+    let content = if ctx.should_wrap() {
+        wrap_char_based(&result, '▌', indent, "", "")
     } else {
         result
     };
