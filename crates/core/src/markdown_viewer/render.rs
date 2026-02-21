@@ -1,11 +1,11 @@
 use comrak::nodes::{
-    AstNode, NodeAlert, NodeCode, NodeCodeBlock, NodeHeading, NodeHtmlBlock, NodeLink, NodeMath,
-    NodeValue, NodeWikiLink,
+    AstNode, NodeCode, NodeHeading, NodeHtmlBlock, NodeMath, NodeValue, NodeWikiLink,
 };
 use itertools::Itertools;
+use regex::Regex;
 use syntect::parsing::SyntaxSet;
 
-use crate::markdown_viewer::utils::{get_title_box, string_len, trim_ansi_string, wrap_lines};
+use crate::markdown_viewer::utils::{string_len, trim_ansi_string, wrap_lines};
 
 use super::{
     image_preprocessor::ImagePreprocessor,
@@ -47,9 +47,12 @@ pub struct AnsiContext<'a> {
 }
 
 impl<'a> AnsiContext<'a> {
-    pub fn should_indent(&self) -> bool {
-        // root level element, and under an header
-        self.under_header && self.collecting_depth == 0
+    pub fn should_wrap(&self) -> bool {
+        // root level element
+        self.collecting_depth == 0
+    }
+    pub fn indent(&self) -> usize {
+        if self.under_header { 2 } else { 0 }
     }
 }
 
@@ -106,12 +109,10 @@ pub fn parse_node<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         NodeValue::Alert(_) => render_alert(node, ctx),
         NodeValue::FootnoteDefinition(_) => render_footnote_def(node, ctx),
         NodeValue::FootnoteReference(_) => render_footnote_ref(node, ctx),
-        // leave as is
-        NodeValue::Text(literal) => literal.to_owned(),
+        NodeValue::Text(literal) => literal.to_string(),
         NodeValue::Raw(literal) => literal.to_owned(),
         NodeValue::Math(NodeMath { literal, .. }) => literal.to_owned(),
         NodeValue::SoftBreak => " ".to_owned(),
-        // Ignore
         NodeValue::LineBreak => String::new(),
         NodeValue::TableRow(_) => String::new(),
         NodeValue::TableCell => String::new(),
@@ -123,6 +124,11 @@ pub fn parse_node<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         NodeValue::EscapedTag(_) => String::new(),
         NodeValue::Underline => String::new(),
         NodeValue::Subscript => String::new(),
+        NodeValue::HeexBlock(_) => String::new(),
+        NodeValue::HeexInline(_) => String::new(),
+        NodeValue::Highlight => String::new(),
+        NodeValue::ShortCode(_) => String::new(),
+        NodeValue::Subtext => String::new(),
     };
     buffer.push_str(&content);
 
@@ -190,8 +196,9 @@ fn render_footnote_def<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> Stri
         content
             .lines()
             .map(|line| {
-                if ctx.should_indent() {
-                    wrap_lines(&line, false, INDENT, "", "")
+                let indent = ctx.indent();
+                if ctx.should_wrap() {
+                    wrap_lines(&line, false, indent, "", "")
                 } else {
                     line.into()
                 }
@@ -228,8 +235,9 @@ fn render_block_quote<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> Strin
         })
         .join("\n");
 
-    let content = if ctx.should_indent() {
-        wrap_char_based(&content, '▌', INDENT, "", "")
+    let indent = ctx.indent();
+    let content = if ctx.should_wrap() {
+        wrap_char_based(&content, '▌', indent, "", "")
     } else {
         content.to_owned()
     };
@@ -245,8 +253,9 @@ fn render_list<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     ctx.list_depth += 1;
     let content = collect(node, ctx);
     ctx.list_depth -= 1;
-    let content = if ctx.should_indent() {
-        wrap_lines(&content, true, INDENT, "", "  ") // 2 space extra because of the bullet
+    let indent = ctx.indent();
+    let content = if ctx.should_wrap() {
+        wrap_lines(&content, true, indent, "", "  ") // 2 space extra because of the bullet
     } else {
         content
     };
@@ -288,7 +297,7 @@ fn render_task_item<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String 
     let offset = " ".repeat(node.data.borrow().sourcepos.start.column - 1);
     let content = collect(node, ctx);
     let content = content.trim();
-    let (icon, colour) = match task.map(|c| c.to_ascii_lowercase()) {
+    let (icon, colour) = match task.symbol.map(|c| c.to_ascii_lowercase()) {
         Some('x') => ("󰱒", &ctx.theme.green.fg),
         Some('-') | Some('~') => ("󰛲", &ctx.theme.yellow.fg),
         Some('!') => ("󰳤", &ctx.theme.red.fg),
@@ -299,44 +308,64 @@ fn render_task_item<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String 
 }
 
 fn render_code_block<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
-    let NodeValue::CodeBlock(NodeCodeBlock {
-        ref literal,
-        ref info,
-        ..
-    }) = node.data.borrow().value
-    else {
+    let NodeValue::CodeBlock(ref node_code_block) = node.data.borrow().value else {
         panic!()
     };
+    let literal = &node_code_block.literal;
+    let info = &node_code_block.info;
 
     let info = if info.trim().is_empty() { "text" } else { info };
 
     // force_simple_code_block is a number because it may be recursive
-    if literal.lines().count() <= 10 || ctx.force_simple_code_block > 0 || ctx.hide_line_numbers {
-        let indent = if ctx.should_indent() { INDENT } else { 0 };
+    if info == "file-tree" {
+        render_file_tree(literal, ctx)
+    } else if literal.lines().count() <= 10
+        || ctx.force_simple_code_block > 0
+        || ctx.hide_line_numbers
+    {
+        let indent = ctx.indent();
         format_code_simple(literal, info, ctx, indent)
     } else {
         format_code_full(literal, info, ctx)
     }
 }
 
+fn render_file_tree(tree: &str, ctx: &mut AnsiContext) -> String {
+    let tree_chars = Regex::new(r"[│├└─]").unwrap();
+    let folders = Regex::new(r"([a-zA-Z0-9_\-]+/)").unwrap();
+    let files = Regex::new(r"([a-zA-Z0-9_\-]+\.[a-zA-Z0-9]+)").unwrap();
+
+    let tree_char_color = &ctx.theme.guide.fg;
+    let folder_color = &ctx.theme.blue.fg;
+    let file_color = &ctx.theme.foreground.fg;
+
+    let mut result = tree.to_string();
+
+    result = tree_chars
+        .replace_all(&result, |caps: &regex::Captures| {
+            format!("{tree_char_color}{}{RESET}", &caps[0])
+        })
+        .to_string();
+
+    result = folders
+        .replace_all(&result, |caps: &regex::Captures| {
+            format!("{folder_color}{}{RESET}", &caps[1])
+        })
+        .to_string();
+
+    result = files
+        .replace_all(&result, |caps: &regex::Captures| {
+            format!("{file_color}{}{RESET}", &caps[1])
+        })
+        .to_string();
+
+    result
+}
+
 fn render_html_block<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     let NodeValue::HtmlBlock(NodeHtmlBlock { ref literal, .. }) = node.data.borrow().value else {
         panic!()
     };
-
-    if let Some(title) = get_title_box(literal) {
-        let text_size = string_len(title);
-        let border_width = text_size + 4;
-        let center_padding = (ctx.term_width - border_width) / 2;
-
-        let fg_yellow = ctx.theme.yellow.fg.clone();
-        let border_line = "─".repeat(border_width);
-        let spaces = " ".repeat(center_padding);
-
-        return format!(
-            "{spaces}┌{border_line}┐\n{spaces}│  {fg_yellow}{BOLD}{title}{RESET}  │\n{spaces}└{border_line}┘\n"
-        );
-    }
 
     let sps = node.data.borrow().sourcepos;
     if literal.contains("<!--HR-->") {
@@ -383,8 +412,9 @@ fn render_paragraph<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String 
         lines
             .lines()
             .map(|line| {
-                if ctx.should_indent() {
-                    wrap_lines(&line, false, INDENT, "", "")
+                let indent = ctx.indent();
+                if ctx.should_wrap() {
+                    wrap_lines(&line, false, indent, "", "")
                 } else {
                     line.into()
                 }
@@ -445,12 +475,9 @@ fn render_heading<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
 
 fn render_thematic_break<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     let offset = node.data.borrow().sourcepos.start.column;
-    let offset = if ctx.should_indent() {
-        offset
-    } else {
-        offset + INDENT
-    };
-    format_tb(ctx, offset) + "\n"
+    // each level of blockquote adds 4 char prefix..
+    let extra_offset = ctx.force_simple_code_block * 4;
+    format_tb(ctx, offset + extra_offset) + "\n"
 }
 
 fn render_table<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
@@ -582,10 +609,11 @@ fn render_table<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
             .lines()
             .map(|line| format!("{}{line}", " ".repeat(offset)))
             .join("\n")
-    } else if ctx.should_indent() {
+    } else if ctx.should_wrap() {
+        let indent = ctx.indent();
         result
             .lines()
-            .map(|line| format!("{}{line}", " ".repeat(INDENT)))
+            .map(|line| format!("{}{line}", " ".repeat(indent)))
             .join("\n")
     } else {
         result
@@ -610,9 +638,10 @@ fn render_strikethrough<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> Str
 }
 
 fn render_link<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
-    let NodeValue::Link(NodeLink { ref url, .. }) = node.data.borrow().value else {
+    let NodeValue::Link(ref node_link) = node.data.borrow().value else {
         panic!()
     };
+    let url = &node_link.url;
 
     let content = collect(node, ctx);
     let cyan = ctx.theme.cyan.fg.clone();
@@ -632,9 +661,10 @@ fn render_link<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
 }
 
 fn render_image<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
-    let NodeValue::Image(NodeLink { ref url, .. }) = node.data.borrow().value else {
+    let NodeValue::Image(ref node_link) = node.data.borrow().value else {
         panic!()
     };
+    let url = &node_link.url;
 
     if let Some(img) = ctx.image_preprocessor.mapper.get(url) {
         if img.is_ok {
@@ -702,9 +732,10 @@ fn render_spoilered_text<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> St
 }
 
 fn render_alert<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
-    let NodeValue::Alert(NodeAlert { ref alert_type, .. }) = node.data.borrow().value else {
+    let NodeValue::Alert(ref node_alert) = node.data.borrow().value else {
         panic!()
     };
+    let alert_type = &node_alert.alert_type;
 
     let kind = alert_type;
     let blue = ctx.theme.blue.fg.clone();
@@ -739,8 +770,9 @@ fn render_alert<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         .join("\n");
     result.push_str(&alert_content);
 
-    let content = if ctx.should_indent() {
-        wrap_char_based(&result, '▌', INDENT, "", "")
+    let indent = ctx.indent();
+    let content = if ctx.should_wrap() {
+        wrap_char_based(&result, '▌', indent, "", "")
     } else {
         result
     };

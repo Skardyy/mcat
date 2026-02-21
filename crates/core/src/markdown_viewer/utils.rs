@@ -15,7 +15,6 @@ use super::render::{AnsiContext, BOLD, RESET};
 
 static NEWLINE_REGEX: OnceLock<Regex> = OnceLock::new();
 static ANSI_ESCAPE_REGEX: OnceLock<Regex> = OnceLock::new();
-static TITLE_REGEX: OnceLock<Regex> = OnceLock::new();
 
 pub fn get_lang_icon_and_color(lang: &str) -> Option<(&'static str, &'static str)> {
     let map: HashMap<&str, (&str, &str)> = [
@@ -192,29 +191,92 @@ pub fn string_len(str: &str) -> usize {
     strip_ansi_escapes::strip_str(&str).width()
 }
 
-fn find_last_fg_color_sequence(text: &str) -> Option<String> {
+fn find_last_format(text: &str) -> Option<String> {
     let re = ANSI_ESCAPE_REGEX.get_or_init(|| Regex::new(r"\x1b\[[0-9;]*m").unwrap());
-    let mut last_fg_color = None;
+
+    let mut fg: Option<String> = None;
+    let mut bold = false;
+    let mut faint = false;
+    let mut italic = false;
+    let mut underline = false;
+    let mut strikethrough = false;
+    let mut ever_set = false;
 
     for m in re.find_iter(text) {
         let seq = m.as_str();
         let codes_str = &seq[2..seq.len() - 1];
+        ever_set = true;
 
         if codes_str.is_empty() || codes_str == "0" {
-            last_fg_color = None;
-        } else {
-            for code in codes_str.split(';') {
-                if let Ok(num) = code.parse::<u32>() {
-                    if (30..=37).contains(&num) || (90..=97).contains(&num) || num == 38 {
-                        last_fg_color = Some(seq.to_string());
-                        break;
-                    }
+            fg = None;
+            bold = false;
+            faint = false;
+            italic = false;
+            underline = false;
+            strikethrough = false;
+            continue;
+        }
+
+        let parts: Vec<&str> = codes_str.split(';').collect();
+        let mut i = 0;
+        while i < parts.len() {
+            match parts[i].parse::<u32>().unwrap_or(999) {
+                1 => bold = true,
+                2 => faint = true,
+                3 => italic = true,
+                4 => underline = true,
+                9 => strikethrough = true,
+                22 => {
+                    bold = false;
+                    faint = false;
                 }
+                23 => italic = false,
+                24 => underline = false,
+                29 => strikethrough = false,
+                39 => fg = None,
+                38 => {
+                    let rest = parts[i..].join(";");
+                    fg = Some(rest);
+                    break;
+                }
+                n if (30..=37).contains(&n) || (90..=97).contains(&n) => {
+                    fg = Some(n.to_string());
+                }
+                _ => {}
             }
+            i += 1;
         }
     }
 
-    last_fg_color
+    if !ever_set {
+        return None;
+    }
+
+    let mut codes: Vec<String> = vec![];
+    if bold {
+        codes.push("1".into());
+    }
+    if faint {
+        codes.push("2".into());
+    }
+    if italic {
+        codes.push("3".into());
+    }
+    if underline {
+        codes.push("4".into());
+    }
+    if strikethrough {
+        codes.push("9".into());
+    }
+    if let Some(ref f) = fg {
+        codes.push(f.clone());
+    }
+
+    if codes.is_empty() {
+        Some(String::new())
+    } else {
+        Some(format!("\x1b[{}m", codes.join(";")))
+    }
 }
 
 pub fn wrap_char_based(
@@ -339,19 +401,25 @@ pub fn wrap_highlighted_line(
 
     let padding = " ".repeat(pre_padding);
     let mut buf = String::new();
-    let mut pre_last_color = "".to_owned();
+    let mut pre_format = "".to_owned();
 
     // add prefix and lost colors
     for (i, line) in lines.iter().enumerate() {
         if i == 0 || line.trim().is_empty() {
             buf.push_str(line);
         } else {
-            buf.push_str(&format!("\n{sub_prefix}{padding}{pre_last_color}{line}"));
+            buf.push_str(&format!("\n{sub_prefix}{padding}{pre_format}{line}"));
         }
-        match find_last_fg_color_sequence(line) {
-            Some(color) => pre_last_color = color,
+        // clear links..
+        if line.contains("\x1b]8;;") {
+            buf.push_str("\x1b]8;;\x1b\\");
+        }
+        // carry on formatting
+        match find_last_format(line) {
+            Some(ansi) => pre_format = ansi,
             None => {}
         }
+        buf.push_str(RESET);
     }
     buf.push_str(suffix);
 
@@ -556,11 +624,4 @@ pub fn format_tb(ctx: &AnsiContext, offset: usize) -> String {
 pub fn limit_newlines<'a>(original: &'a str) -> Cow<'a, str> {
     let re = NEWLINE_REGEX.get_or_init(|| Regex::new(r"\n([ \t]*\n){2,}").unwrap());
     re.replace_all(&original, "\n\n")
-}
-
-pub fn get_title_box<'a>(literal: &'a str) -> Option<&'a str> {
-    let re = TITLE_REGEX.get_or_init(|| Regex::new(r#"<!--\s*S-TITLE:\s*(.*?)\s*-->"#).unwrap());
-
-    let caps = re.captures(literal)?;
-    caps.get(1).map(|v| v.as_str())
 }

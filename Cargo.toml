@@ -11,3 +11,55 @@ resolver = "3"
 inherits = "release"
 codegen-units = 1
 lto = "fat"
+
+[workspace.dependencies]
+markdownify = { version = "0.3.0", path = "crates/markdownify" }
+rasteroid = { version = "0.1.9", path = "crates/rasteroid" }
+
+strip-ansi-escapes = "0.2.1"
+clap_complete = "4.5.66"
+which = "8.0.0"
+rayon = "1.11.0"
+itertools = "0.14.0"
+inquire = "0.9.3"
+shell-words = "1.1.1"
+ignore = "0.4.25"
+textwrap = "0.16.2"
+clap = "4.5.58"
+comrak = "0.50.0"
+crossterm = "0.29.0"
+pelite = { version = "0.10.0", default-features = false, features = ["std"] }
+image = { version = "0.25.9", default-features = false, features = ["bmp", "dds", "exr", "ff", "gif", "hdr", "ico", "jpeg", "png", "pnm", "qoi", "tga", "tiff", "webp"] }
+tempfile = "3.25.0"
+ffmpeg-sidecar = "2.4.0"
+syntect = "5.3.0"
+resvg = "0.47.0"
+fontdb = "0.23.0"
+serde_json = "1.0.149"
+base64 = "0.22.1"
+tokio = { version = "1.49.0", default-features = false, features = ["macros"] }
+tokio-tungstenite = "0.28.0"
+futures = "0.3.31"
+unicode-width = "0.2.2"
+dirs = "6.0.0"
+scraper = "0.25.0"
+reqwest = { version = "0.13.2", default-features = false, features = ["rustls", "stream"] }
+indicatif = "0.18.3"
+regex = "1.12.3"
+
+thiserror = "2.0.18"
+zip = { version = "8.1.0", features = [ "deflate-flate2" ], default-features = false }
+tar = "0.4.44"
+flate2 = "1.1.9"
+xz2 = "0.1.7"
+calamine = "0.33.0"
+csv = "1.4.0"
+quick-xml = "0.39.0"
+
+shared_memory = { git = "https://github.com/elast0ny/shared_memory", rev = "fda413410857e295fa7440691a79296e84bed525" }
+color_quant = "1.1.0"
+rand = "0.10.0"
+fast_image_resize = { version = "6.0.0", features = ["image"] }
+signal-hook = "0.4.3"
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+winreg = "0.55.0"

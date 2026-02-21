@@ -12,7 +12,6 @@ use crossterm::{
     tty::IsTty,
 };
 use image::{DynamicImage, ImageFormat};
-use markdownify::ConvertOptions;
 use rasteroid::{
     InlineEncoder,
     image_extended::{InlineImage, ZoomPanViewport},
@@ -320,10 +319,7 @@ pub fn load(
             return Ok((res, ext, to));
         }
         _ => {
-            let screen_size = term_misc::get_wininfo();
-            let opts = ConvertOptions::new(path)
-                .with_screen_size((screen_size.sc_width, screen_size.sc_height));
-            let f = markdownify::convert(opts)?;
+            let f = markdownify::convert(path)?;
 
             let res = LoadResult::Text(f);
             return Ok((res, "md".to_owned(), to));

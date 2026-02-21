@@ -1,6 +1,6 @@
 [package]
 name = "mcat"
-version = "0.4.7"
+version = "0.5.0"
 authors = ["Meron Bossin"]
 description = "a powerfull extended cat command, to cat all the things you couldn't before"
 keywords = ["cat", "inline", "markitdown", "terminal", "file-converter"]
@@ -24,39 +24,39 @@ license = false
 eula = false
 
 [dependencies]
-markdownify = { version = "0.2.1", path = "../markdownify" }
-rasteroid = { version = "0.1.9", path = "../rasteroid" }
-strip-ansi-escapes = "0.2.1"
-clap_complete = "4.5.50"
-which = "8.0.0"
-rayon = "1.10.0"
-itertools = "0.14.0"
-inquire = "0.7.5"
-shell-words = "1.1.0"
-ignore = "0.4.23"
-textwrap = "0.16.2"
-clap = "4.5.36"
-comrak = "0.39.0"
-crossterm = "0.29.0"
-pelite = { version = "0.10.0", default-features = false, features = ["std"] }
-image = { version = "0.25.6", default-features = false, features = ["bmp", "dds", "exr", "ff", "gif", "hdr", "ico", "jpeg", "png", "pnm", "qoi", "tga", "tiff", "webp"] }
-tempfile = "3.19.1"
-ffmpeg-sidecar = "2.0.5"
-syntect = "5.2.0"
-resvg = "0.45.1"
-fontdb = "0.23.0"
-serde_json = "1.0.140"
-base64 = "0.22.1"
-tokio = { version = "1.44.2", default-features = false, features = ["macros"] }
-tokio-tungstenite = "0.27.0"
-futures = "0.3.31"
-unicode-width = "0.2.1"
-dirs = "6.0.0"
-zip = "3.0.0"
-scraper = "0.23.1"
-reqwest = { version = "0.12.15", default-features = false, features = ["rustls-tls", "stream"] }
-indicatif = "0.17.11"
-regex = "1.11.1"
+markdownify.workspace = true
+rasteroid.workspace = true
+strip-ansi-escapes.workspace = true
+clap_complete.workspace = true
+which.workspace = true
+rayon.workspace = true
+itertools.workspace = true
+inquire.workspace = true
+shell-words.workspace = true
+ignore.workspace = true
+textwrap.workspace = true
+clap.workspace = true
+comrak.workspace = true
+crossterm.workspace = true
+pelite.workspace = true
+image.workspace = true
+tempfile.workspace = true
+ffmpeg-sidecar.workspace = true
+syntect.workspace = true
+resvg.workspace = true
+fontdb.workspace = true
+serde_json.workspace = true
+base64.workspace = true
+tokio.workspace = true
+tokio-tungstenite.workspace = true
+futures.workspace = true
+unicode-width.workspace = true
+dirs.workspace = true
+zip.workspace = true
+scraper.workspace = true
+reqwest.workspace = true
+indicatif.workspace = true
+regex.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-winreg = "0.55.0"
+winreg.workspace = true
