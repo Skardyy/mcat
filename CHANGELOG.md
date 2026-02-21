@@ -3,10 +3,9 @@
 - mcat now no longer reads from stdin if a file input already been specified
 - HTML to image now is slightly faster, and produces better images for small content
 - `--opts` flag now supports both scalex and scaley
+- improved the **markdown_viewer** wrapping logic, fixes #53
 - fixed an issue where color would persist after a simple code block in the **markdown viewer**
-- fixed an issue causing colors to bleed into other lines when wrapped in the **markdown_viewer**
 - fixed th break in markdown not wrapping correctly in the **markdown_viewer**
-- fixed an issue with how links would be wrapped in the **markdown_viewer**
 
 ## V0.4.6
 
