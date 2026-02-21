@@ -350,6 +350,11 @@ pub fn wrap_highlighted_line(
                 "\n{sub_prefix}{padding}{pre_last_color}{line}{RESET}"
             ));
         }
+        // clear links..
+        if line.contains("\x1b]8;;") {
+            buf.push_str("\x1b]8;;\x1b\\");
+            buf.push_str(RESET);
+        }
         // carry on colors
         match find_last_fg_color_sequence(line) {
             Some(color) => pre_last_color = color,
