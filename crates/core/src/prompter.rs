@@ -5,10 +5,7 @@ use std::path::{Path, PathBuf};
 
 use crate::markdown_viewer::utils::get_lang_icon_and_color;
 
-pub fn prompt_for_files(
-    dir: &Path,
-    hidden: bool,
-) -> Result<Vec<(PathBuf, Option<String>)>, String> {
+pub fn prompt_for_files(dir: &Path, hidden: bool) -> Result<Vec<PathBuf>, String> {
     let mut all_paths = collect_gitignored_paths(dir, hidden)?;
     all_paths.sort(); // Ensures folders come before contents
 
@@ -41,14 +38,14 @@ pub fn prompt_for_files(
                 .iter()
                 .any(|other| other.is_dir() && path.starts_with(other));
             if !covered {
-                final_files.insert((path.clone(), None));
+                final_files.insert(path.clone());
             }
         } else if path.is_dir() {
             for file in all_paths
                 .iter()
                 .filter(|p| p.is_file() && p.starts_with(path))
             {
-                final_files.insert((file.clone(), None));
+                final_files.insert(file.clone());
             }
         }
     }

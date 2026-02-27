@@ -1,34 +1,21 @@
+use crate::error::ParsingError;
+
 use super::sheets;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 use std::io::{Cursor, Read};
-use std::path::Path;
 use zip::ZipArchive;
 
+#[derive(Default)]
 struct Styles {
-    title: bool,     //w:pStyle empty w:val="includes title"
+    title: bool,     // w:pStyle empty w:val="includes title"
     header: bool,    // w:pStyle empty w:val="includes heading"
-    bold: bool,      //w:b empty
-    strike: bool,    //w:strike
-    underline: bool, //w:u
-    italics: bool,   //w:i
+    bold: bool,      // w:b empty
+    strike: bool,    // w:strike
+    underline: bool, // w:u
+    italics: bool,   // w:i
     indent: i8,      // w:ilvl w:val="0" (add 1 to it and -1 was indented)
-    table: bool,     //w:tbl
-}
-
-impl Styles {
-    pub fn default() -> Self {
-        Styles {
-            title: false,
-            header: false,
-            strike: false,
-            italics: false,
-            underline: false,
-            bold: false,
-            indent: 0,
-            table: false,
-        }
-    }
+    table: bool,     // w:tbl
 }
 
 fn get_attr(e: &quick_xml::events::BytesStart, key: &[u8]) -> Option<String> {
@@ -40,22 +27,15 @@ fn get_attr(e: &quick_xml::events::BytesStart, key: &[u8]) -> Option<String> {
     None
 }
 
-/// convert docx into markdown
-/// usuage:
-/// ```rs
-/// let path = Path::new("path/to/file.docx");
-/// let md = docx_convert(&path).unwrap();
-/// println!("{}", md);
-/// ```
-pub fn docx_convert(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
-    let data = std::fs::read(path)?;
-    let cursor = Cursor::new(data);
-
-    let mut archive = ZipArchive::new(cursor)?;
+pub fn parse_docx(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
+    let mut archive = ZipArchive::new(Cursor::new(content))
+        .map_err(|e| ParsingError::ArchiveError(e.to_string()))?;
     let mut xml_content = String::new();
 
     for i in 0..archive.len() {
-        let mut file = archive.by_index(i)?;
+        let mut file = archive
+            .by_index(i)
+            .map_err(|e| ParsingError::ArchiveError(e.to_string()))?;
         if file.name() == "word/document.xml" {
             file.read_to_string(&mut xml_content)?;
             break;
@@ -133,7 +113,8 @@ pub fn docx_convert(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
                 _ => {}
             },
             Ok(Event::Text(e)) => {
-                let mut text = e.unescape()?.into_owned();
+                let mut text = String::from_utf8_lossy(&e).to_string();
+
                 if styles.bold {
                     text = format!("**{}** ", text.trim());
                     styles.bold = false;
@@ -171,6 +152,7 @@ pub fn docx_convert(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
                     styles.indent = -1;
                     continue;
                 }
+
                 markdown.push_str(&text);
             }
             Ok(Event::End(e)) => match e.name().as_ref() {
@@ -204,52 +186,14 @@ pub fn docx_convert(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
             },
             Ok(Event::Eof) => break,
             Err(e) => {
-                return Err(
+                return Err(ParsingError::ParsingError(
                     format!("Error at position {}: {:?}", reader.buffer_position(), e).into(),
-                );
+                ));
             }
             _ => {}
         }
         buf.clear();
     }
 
-    Ok(format(&markdown))
-}
-
-fn format(input: &str) -> String {
-    let mut result = String::with_capacity(input.len());
-    let mut newline_count = 0;
-    let mut spaces_count = 0;
-
-    for line in input.lines() {
-        if line.trim() == "" {
-            result.push('\n');
-        } else {
-            result.push_str(&format!("{}\n", line));
-        }
-    }
-    let input = &result;
-    let mut result = String::with_capacity(input.len());
-
-    for c in input.chars() {
-        if c == ' ' {
-            spaces_count += 1;
-        }
-        if c == '\n' {
-            newline_count += 1;
-            if spaces_count >= 2 {
-                newline_count += 1;
-            }
-            spaces_count = 0;
-            if newline_count <= 2 {
-                result.push(c);
-            }
-        } else {
-            newline_count = 0;
-            spaces_count = 0;
-            result.push(c);
-        }
-    }
-
-    result
+    Ok(markdown)
 }

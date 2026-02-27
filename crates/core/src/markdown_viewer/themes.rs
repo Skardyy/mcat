@@ -423,12 +423,12 @@ impl CustomTheme {
             surface: "#1C2128".into(),
             border: "#30363D".into(),
 
-            red: "#F85149".into(),
+            red: "#FF7B72".into(),
             green: "#56D364".into(),
-            blue: "#58A6FF".into(),
-            cyan: "#39D0D6".into(),
-            magenta: "#BC8CFF".into(),
-            yellow: "#E3B341".into(),
+            blue: "#79C0FF".into(),
+            cyan: "#A5D6FF".into(),
+            magenta: "#D2A8FF".into(),
+            yellow: "#FFA657".into(),
             white: "#F0F6FC".into(),
             black: "#0D1117".into(),
         }

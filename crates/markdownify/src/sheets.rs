@@ -1,10 +1,8 @@
-use std::{
-    fs::File,
-    io::{self, BufRead},
-    path::Path,
-};
+use std::io::{BufRead, Cursor};
 
 use calamine::Reader;
+
+use crate::error::ParsingError;
 
 fn detect_delimiter(line: &str) -> u8 {
     let candidates = [',', ';', '\t', '|'];
@@ -13,22 +11,9 @@ fn detect_delimiter(line: &str) -> u8 {
         .map(|&c| (c, line.matches(c).count()))
         .max_by_key(|&(_, count)| count)
         .map(|(c, _)| c as u8)
-        .unwrap_or(b',') // fallback to comma
+        .unwrap_or(b',')
 }
 
-/// creates a markdown table
-/// # usage:
-/// ```
-/// use markdownify::sheets::to_markdown_table;
-///
-/// let headers = vec!["Names".to_string(), "Salary".to_string()];
-/// let rows = vec![
-///     vec!["Sarah".to_string(), "100".to_string()],
-///     vec!["Jeff".to_string(), "200".to_string()],
-/// ];
-/// let md = to_markdown_table(&headers, &rows);
-/// println!("{}", md);
-/// ```
 pub fn to_markdown_table(headers: &[String], rows: &[Vec<String>]) -> String {
     let mut output = String::new();
     output += &format!("| {} |\n", headers.join(" | "));
@@ -41,20 +26,10 @@ pub fn to_markdown_table(headers: &[String], rows: &[Vec<String>]) -> String {
     output
 }
 
-/// convert `xlsx` | `xls` | `xlsm` | `xlsb` | `xla` | `xlam` | `ods` files into markdown
-/// # usage:
-/// ```
-/// use std::path::Path;
-/// use markdownify::sheets::sheets_convert;
-///
-/// let path = Path::new("path/to/file.xlsx");
-/// match sheets_convert(&path) {
-///     Ok(md) => println!("{}", md),
-///     Err(e) => eprintln!("Error: {}", e)
-/// }
-/// ```
-pub fn sheets_convert(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
-    let mut workbook = calamine::open_workbook_auto(path)?;
+pub fn parse_sheets(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
+    let cursor = Cursor::new(content.as_ref());
+    let mut workbook = calamine::open_workbook_auto_from_rs(cursor)
+        .map_err(|e| ParsingError::ParsingError(e.to_string()))?;
     let mut output = String::new();
 
     for sheet_name in workbook.sheet_names() {
@@ -69,44 +44,31 @@ pub fn sheets_convert(path: &Path) -> Result<String, Box<dyn std::error::Error>>
                     .map(|r| r.iter().map(|cell| cell.to_string()).collect::<Vec<_>>())
                     .collect::<Vec<_>>();
 
-                output += &format!("# {}\n\n", sheet_name);
+                output += &format!("## {}\n\n", sheet_name);
                 output += &to_markdown_table(&headers, &body);
                 output += "\n";
             }
         }
     }
 
-    if output.is_empty() {
-        Err("No readable sheets found.".into())
-    } else {
-        Ok(output)
-    }
+    Ok(output)
 }
 
-/// convert `csv` into markdown
-/// # usage:
-/// ```
-/// use std::path::Path;
-/// use markdownify::sheets::csv_converter;
-///
-/// let path = Path::new("path/to/file.csv");
-/// match csv_converter(&path) {
-///     Ok(md) => println!("{}", md),
-///     Err(e) => eprintln!("Error: {}", e)
-/// }
-/// ```
-pub fn csv_converter(path: &Path) -> Result<String, Box<dyn std::error::Error>> {
-    let mut file = File::open(path)?;
+pub fn parse_csv(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
+    let mut cursor = Cursor::new(&content);
     let mut first_line = String::new();
-    let _ = io::BufReader::new(&mut file).read_line(&mut first_line)?;
+    cursor.read_line(&mut first_line)?;
 
     let delimiter = detect_delimiter(&first_line);
+    cursor.set_position(0);
+
     let mut reader = csv::ReaderBuilder::new()
         .delimiter(delimiter)
-        .from_path(path)?;
+        .from_reader(cursor);
 
     let headers = reader
-        .headers()?
+        .headers()
+        .map_err(|e| ParsingError::ParsingError(e.to_string()))?
         .iter()
         .map(|s| s.to_string())
         .collect::<Vec<_>>();
@@ -114,7 +76,8 @@ pub fn csv_converter(path: &Path) -> Result<String, Box<dyn std::error::Error>> 
     let rows = reader
         .records()
         .map(|r| r.map(|rec| rec.iter().map(|s| s.to_string()).collect::<Vec<_>>()))
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| ParsingError::ParsingError(e.to_string()))?;
 
     Ok(to_markdown_table(&headers, &rows))
 }

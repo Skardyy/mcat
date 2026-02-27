@@ -35,36 +35,15 @@ impl ChromeHeadless {
         let process = Command::new(path)
             .args(&[
                 // Core headless setup
-                "--headless",
-                "--disable-gpu",
+                "--headless=new",
                 &format!("--remote-debugging-port={}", port),
-                // Stability & crash prevention
-                "--disable-dev-shm-usage",
-                "--disable-breakpad",
-                "--disable-hang-monitor",
-                // Disable unnecessary features
-                "--disable-extensions",
-                "--disable-plugins",
-                "--disable-default-apps",
-                "--disable-sync",
-                "--disable-background-networking",
-                "--disable-features=TranslateUI",
-                "--disable-features=VizDisplayCompositor",
-                // UI/UX optimizations
+                "--disable-gpu",
                 "--hide-scrollbars",
-                "--no-first-run",
-                "--disable-popup-blocking",
-                "--disable-prompt-on-repost",
-                // Performance optimizations
-                "--disable-background-timer-throttling",
-                "--disable-renderer-backgrounding",
-                "--disable-backgrounding-occluded-windows",
-                "--disable-ipc-flooding-protection",
-                "--metrics-recording-only",
-                // Memory & rendering
-                "--memory-pressure-off",
-                "--max_old_space_size=4096",
                 "--force-color-profile=srgb",
+                "--disable-dev-shm-usage",
+                "--single-process",
+                "--no-zygote",
+                "--no-sandbox",
                 uri,
             ])
             .stdout(Stdio::null())
@@ -118,16 +97,29 @@ impl ChromeHeadless {
         let (mut ws_stream, _) = tokio_tungstenite::connect_async(&endpoint).await?;
 
         // Get the page ready
-        self.send_command(&mut ws_stream, 1, "Page.enable", None)
+        self.send_command(&mut ws_stream, 1, "Page.enable", None, false)
             .await?;
         self.wait_for_load_event(&mut ws_stream).await?;
 
         //  Get layout metrics
         let metrics = self
-            .send_command(&mut ws_stream, 2, "Page.getLayoutMetrics", None)
+            .send_command(&mut ws_stream, 2, "Page.getLayoutMetrics", None, true)
             .await?;
         let width = metrics["contentSize"]["width"].as_f64().unwrap();
         let height = metrics["contentSize"]["height"].as_f64().unwrap();
+        let desired_width = 1920.0;
+        let desired_height = 1080.0;
+        let scalex = if width > desired_width {
+            1.0
+        } else {
+            desired_width / width
+        };
+        let scaleh = if height > desired_height {
+            1.0
+        } else {
+            desired_height / height
+        };
+        let scale = scalex.min(scaleh).round() as u16;
 
         // Set viewport
         self.send_command(
@@ -138,8 +130,9 @@ impl ChromeHeadless {
                 "mobile": false,
                 "width": width,
                 "height": height,
-                "deviceScaleFactor": 1
+                "deviceScaleFactor": scale
             })),
+            false,
         )
         .await?;
 
@@ -156,6 +149,7 @@ impl ChromeHeadless {
                     "a": 0
                 }
             })),
+            false,
         )
         .await?;
 
@@ -167,7 +161,9 @@ impl ChromeHeadless {
                 "Page.captureScreenshot",
                 Some(json!({
                     "format": "png",
+                    "captureBeyondViewport": true,
                 })),
+                true,
             )
             .await?;
 
@@ -202,6 +198,7 @@ impl ChromeHeadless {
         id: u64,
         method: &str,
         params: Option<Value>,
+        wait: bool,
     ) -> Result<Value, Box<dyn std::error::Error>> {
         let command = match params {
             Some(params) => json!({
@@ -219,20 +216,24 @@ impl ChromeHeadless {
             .send(Message::Text(command.to_string().into()))
             .await?;
 
-        while let Some(msg) = ws_stream.next().await {
-            let msg = msg?;
-            if let Message::Text(text) = msg {
-                let response: Value = serde_json::from_str(&text)?;
-                if response["id"] == id {
-                    if let Some(error) = response.get("error") {
-                        return Err(format!("Chrome error: {}", error).into());
+        if wait {
+            while let Some(msg) = ws_stream.next().await {
+                let msg = msg?;
+                if let Message::Text(text) = msg {
+                    let response: Value = serde_json::from_str(&text)?;
+                    if response["id"] == id {
+                        if let Some(error) = response.get("error") {
+                            return Err(format!("Chrome error: {}", error).into());
+                        }
+                        return Ok(response["result"].to_owned());
                     }
-                    return Ok(response["result"].clone());
                 }
             }
-        }
 
-        Err("WebSocket connection closed unexpectedly".into())
+            Err("WebSocket connection closed unexpectedly".into())
+        } else {
+            Ok(Value::Null)
+        }
     }
 
     async fn wait_for_load_event(
@@ -248,6 +249,7 @@ impl ChromeHeadless {
                 Some(json!({
                 "expression": "document.readyState"
                 })),
+                true,
             )
             .await?;
         if let Some(state) = ready_state["result"]["value"].as_str() {
