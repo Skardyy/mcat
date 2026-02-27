@@ -314,33 +314,24 @@ impl ProcessingContext {
     }
 
     fn escape_unknown_elements(&self, markdown: &str) -> String {
-        // escape S-TITLE comments (special formating in mcat)
-        let comment_regex = Regex::new(r"<!--\s*S-TITLE:[^>]*-->").unwrap();
-        let markdown_with_escaped_comments = comment_regex
-            .replace_all(markdown, |caps: &regex::Captures| {
+        let escaped = markdown.replace('<', "&lt;").replace('>', "&gt;");
+
+        // unescape known tags
+        let known_tags = self
+            .rules
+            .keys()
+            .map(|k| k.as_str())
+            .collect::<Vec<_>>()
+            .join("|");
+        let tag_regex = Regex::new(&format!(r"&lt;(/?(?:{}))[^&]*&gt;", known_tags)).unwrap();
+
+        tag_regex
+            .replace_all(&escaped, |caps: &regex::Captures| {
                 caps.get(0)
                     .unwrap()
                     .as_str()
-                    .replace("<", "&lt;")
-                    .replace(">", "&gt;")
-            })
-            .to_string();
-
-        // escape tags we don't parse here (rather them staying)
-        let tag_regex = Regex::new(r"</?([a-zA-Z][a-zA-Z0-9]*)[^>]*>").unwrap();
-        tag_regex
-            .replace_all(&markdown_with_escaped_comments, |caps: &regex::Captures| {
-                let tag_name = caps.get(1).unwrap().as_str().to_lowercase();
-
-                if self.rules.contains_key(&tag_name) {
-                    caps.get(0).unwrap().as_str().to_string()
-                } else {
-                    caps.get(0)
-                        .unwrap()
-                        .as_str()
-                        .replace("<", "&lt;")
-                        .replace(">", "&gt;")
-                }
+                    .replace("&lt;", "<")
+                    .replace("&gt;", ">")
             })
             .to_string()
     }
