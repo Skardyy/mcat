@@ -1,44 +1,18 @@
-# Markdownify:
+# 1
 
-- fix the build tree to not include dups from the main cli, and also have a common root correctly, for instance:
-  tar:
+- [ ] make the markdown viewer only trim spaces and newlines, fixes #51 probbs #56 too
+- [ ] make better file type detection, for instance .ts file is treated as a video while it could be typescript file too. fixes #55
+- [ ] add a width and height flags, #49, probbs need to rewrite the entire flag parsing since it got kinda messy.
+- [ ] add musl build, probbs gonna make my own ci since i want more things in the artifacts. we'll add: license, bin, man, completions, checksum.
 
-├── sample-1/
-│ ├── sample-1.webp
-│ ├── sample-1_1.webp
-│ ├── sample-5 (1).jpg
-│ ├── sample-5.webp
+# 2
 
-and a zip:
+- [ ] add a better markdown formatter
+- [ ] add tracing.
+- [ ] use anyhow instead of dyn objs anywhere..
 
-├── \_\_MACOSX/
-│ ├── sample-1/
-│ │ ├── .\_sample-1.webp
-│ │ ├── .\_sample-1_1.webp
-│ │ ├── .\_sample-5 (1).jpg
-│ │ ├── .\_sample-5.webp
-├── sample-1/
-│ ├── sample-1.webp
-│ ├── sample-1_1.webp
-│ ├── sample-5 (1).jpg
-│ ├── sample-5.webp
+# 3
 
-the tar has the base root included, the zip does not.
-
-- add documention for the methods them selfs.
-- runs tests on all the types, everything has changed.
-- add a formatter in the lib method.
-
-# Rasteroid:
-
-- look at that.
-
-# Mcat:
-
-- make clap use the derive.
-- change the entire create to use anyhow and tracing.
-- make a seperate crate for viewing pdf, no longer apart of markdownify
-- break the markdown viewer into another seperate crate.
-- check overall code quality.
-- change all deps to live in the workspace, the others import from there.
-- solve all the github issues
+- [ ] make a github page doc, should include both mcat, markdownify and rasteroid.
+- [ ] break the markdown viewer into a separate crate.
+- [ ] make a new crate for pdf viewing, should not be treated as markdown.

@@ -170,8 +170,9 @@ mcat img.png README.md -o interactive  # view multiple files as images interacti
 #--------------------------#
 
 mcat ls                                # To find the image i was looking for
-mcat . | scb                           # Selects files, concat them, and copy to clipboard - for AI prompts
+mcat . | pbcopy                        # Selects files, concat them, and copy to clipboard
 mcat index.html -o image > save.png    # Render HTML into images
+mcat archive.zip                       # View the content of a zip file.
 ```
 
 ## Support

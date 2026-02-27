@@ -4,6 +4,9 @@
 - HTML to image now is slightly faster, and produces better images for small content
 - `--opts` flag now supports both scalex and scaley
 - improved the **markdown_viewer** wrapping logic, fixes #53
+- added support for viewing tar and zip archives with gz and xz compression.
+- added tree view for the **markdown viewer** when vewing multiple files
+- made the HTML to Image slightly faster and produce better images from small content
 - fixed an issue where color would persist after a simple code block in the **markdown viewer**
 - fixed th break in markdown not wrapping correctly in the **markdown_viewer**
 
