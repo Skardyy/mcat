@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::HashMap, sync::OnceLock, usize};
+use std::{collections::HashMap, sync::OnceLock, usize};
 
 use itertools::Itertools;
 use rasteroid::term_misc;
@@ -13,7 +13,6 @@ use unicode_width::UnicodeWidthStr;
 
 use super::render::{AnsiContext, BOLD, RESET};
 
-static NEWLINE_REGEX: OnceLock<Regex> = OnceLock::new();
 static ANSI_ESCAPE_REGEX: OnceLock<Regex> = OnceLock::new();
 
 pub fn get_lang_icon_and_color(lang: &str) -> Option<(&'static str, &'static str)> {
@@ -465,7 +464,7 @@ pub fn format_code_simple<'a>(code: &str, lang: &str, ctx: &AnsiContext, indent:
         })
         .join("\n");
 
-    format!("\n\n{indent}{header}\n{content}{RESET}\n\n")
+    format!("{indent}{header}\n{content}{RESET}")
 }
 
 pub fn format_code_full<'a>(code: &str, lang: &str, ctx: &AnsiContext) -> String {
@@ -533,7 +532,7 @@ pub fn format_code_full<'a>(code: &str, lang: &str, ctx: &AnsiContext) -> String
         "─".repeat(term_width as usize - num_width - 1)
     );
     buffer.push_str(&last_border);
-    format!("\n\n{buffer}\n\n")
+    format!("{buffer}")
 }
 
 pub fn format_code_box<'a>(code: &str, lang: &str, title: &str, ctx: &AnsiContext) -> String {
@@ -611,7 +610,7 @@ pub fn format_code_box<'a>(code: &str, lang: &str, title: &str, ctx: &AnsiContex
         "─".repeat(box_width.saturating_sub(2))
     ));
 
-    format!("\n{buffer}\n")
+    format!("{buffer}")
 }
 
 pub fn format_tb(ctx: &AnsiContext, offset: usize) -> String {
@@ -619,9 +618,4 @@ pub fn format_tb(ctx: &AnsiContext, offset: usize) -> String {
     let br = "━".repeat(w.saturating_sub(offset.saturating_sub(1)));
     let border = &ctx.theme.guide.fg;
     format!("{border}{br}{RESET}")
-}
-
-pub fn limit_newlines<'a>(original: &'a str) -> Cow<'a, str> {
-    let re = NEWLINE_REGEX.get_or_init(|| Regex::new(r"\n([ \t]*\n){2,}").unwrap());
-    re.replace_all(&original, "\n\n")
 }

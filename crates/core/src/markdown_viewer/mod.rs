@@ -12,7 +12,6 @@ use rasteroid::term_misc::{self, break_size_string};
 use render::{AnsiContext, RESET, parse_node};
 use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
 use themes::CustomTheme;
-use utils::limit_newlines;
 
 use crate::{UnwrapOrExit, config::McatConfig};
 use std::path::Path;
@@ -58,12 +57,9 @@ pub fn md_to_ansi(md: &str, config: &McatConfig, markdown_file_path: Option<&Pat
 
     let mut output = String::new();
     output.push_str(&ctx.theme.foreground.fg);
-    output.push_str(&parse_node(root, &mut ctx).trim_matches('\n'));
+    output.push_str(&parse_node(root, &mut ctx));
 
-    let res = output.replace(RESET, &format!("{RESET}{}", &ctx.theme.foreground.fg));
-
-    // force at max 2 \n at a row (we're adding newlines based on sourcepos)
-    let mut res = limit_newlines(&res).to_string();
+    let mut res = output.replace(RESET, &format!("{RESET}{}", &ctx.theme.foreground.fg));
 
     // replace images
     for (_, img) in image_preprocessor.mapper {

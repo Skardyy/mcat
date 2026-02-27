@@ -7,8 +7,10 @@
 - added support for viewing tar and zip archives with gz and xz compression.
 - added tree view for the **markdown viewer** when vewing multiple files
 - made the HTML to Image slightly faster and produce better images from small content
+- made the **markdown viewer** handle blocky elements better, result should feel better formatted.
 - fixed an issue where color would persist after a simple code block in the **markdown viewer**
 - fixed th break in markdown not wrapping correctly in the **markdown_viewer**
+- fixed an issue in the **html_preprocessor** that caused some tags to not be escaped correctly
 
 ## V0.4.6
 

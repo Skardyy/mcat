@@ -10,10 +10,7 @@ use crate::markdown_viewer::utils::{string_len, trim_ansi_string, wrap_lines};
 use super::{
     image_preprocessor::ImagePreprocessor,
     themes::CustomTheme,
-    utils::{
-        format_code_box, format_code_full, format_code_simple, format_tb, limit_newlines,
-        wrap_char_based,
-    },
+    utils::{format_code_box, format_code_full, format_code_simple, format_tb, wrap_char_based},
 };
 
 pub const RESET: &str = "\x1B[0m";
@@ -56,31 +53,19 @@ impl<'a> AnsiContext<'a> {
     }
 }
 
-fn collect<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
+fn collect<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext, sep: &str) -> String {
     ctx.collecting_depth += 1;
     let content = node
         .children()
         .map(|child| parse_node(child, ctx))
-        .collect();
+        .filter(|s| !s.is_empty())
+        .join(sep);
     ctx.collecting_depth -= 1;
-
     content
 }
 
 pub fn parse_node<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     let data = node.data.borrow();
-    let mut buffer = match ctx.paragraph_collecting_line {
-        Some(line) => {
-            if data.sourcepos.start.line != line {
-                ctx.paragraph_collecting_line = Some(data.sourcepos.start.line);
-                "\n"
-            } else {
-                ""
-            }
-        }
-        None => "",
-    }
-    .to_owned();
 
     let content = match &data.value {
         NodeValue::Document => render_document(node, ctx),
@@ -113,7 +98,7 @@ pub fn parse_node<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         NodeValue::Raw(literal) => literal.to_owned(),
         NodeValue::Math(NodeMath { literal, .. }) => literal.to_owned(),
         NodeValue::SoftBreak => " ".to_owned(),
-        NodeValue::LineBreak => String::new(),
+        NodeValue::LineBreak => "\n".to_owned(),
         NodeValue::TableRow(_) => String::new(),
         NodeValue::TableCell => String::new(),
         NodeValue::Escaped => String::new(),
@@ -130,15 +115,15 @@ pub fn parse_node<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         NodeValue::ShortCode(_) => String::new(),
         NodeValue::Subtext => String::new(),
     };
-    buffer.push_str(&content);
 
-    buffer
+    content
 }
 
 fn render_document<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     node.children()
         .map(|child| parse_node(child, ctx))
-        .collect()
+        .filter(|s| !s.is_empty())
+        .join("\n\n")
 }
 
 fn render_front_matter<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
@@ -166,46 +151,22 @@ fn render_footnote_def<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> Stri
         panic!()
     };
 
-    let content = collect(node, ctx);
+    let content = collect(node, ctx, "\n\n");
     let cyan = &ctx.theme.cyan.fg;
     let content = format!("{cyan}[{}]{RESET}: {content}", item.name);
-    let sps = node.data.borrow().sourcepos;
 
-    let suffix = if ctx.collecting_depth == 0 {
-        "\n\n"
-    } else {
-        "\n"
-    };
-
-    if ctx.centered_lines.contains(&sps.start.line) {
-        content
-            .lines()
-            .map(|line| {
-                let line = trim_ansi_string(line.into());
-                let le = string_len(&line);
-                // 1 based index
-                let offset = sps.start.column.saturating_sub(1);
-                let offset = (ctx.term_width - offset)
-                    .saturating_sub(le)
-                    .saturating_div(2);
-                format!("{}{line}", " ".repeat(offset))
-            })
-            .join("\n")
-            + suffix
-    } else {
-        content
-            .lines()
-            .map(|line| {
-                let indent = ctx.indent();
-                if ctx.should_wrap() {
-                    wrap_lines(&line, false, indent, "", "")
-                } else {
-                    line.into()
-                }
-            })
-            .join("\n")
-            + suffix
-    }
+    // not sure if this is possible to center a footnote ref.. leaving this non centered
+    content
+        .lines()
+        .map(|line| {
+            let indent = ctx.indent();
+            if ctx.should_wrap() {
+                wrap_lines(&line, false, indent, "", "")
+            } else {
+                line.into()
+            }
+        })
+        .join("\n")
 }
 
 fn render_footnote_ref<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
@@ -220,11 +181,10 @@ fn render_footnote_ref<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> Stri
 fn render_block_quote<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     let guide = ctx.theme.guide.fg.clone();
     let comment = ctx.theme.comment.fg.clone();
+
     ctx.force_simple_code_block += 1;
-    let content = collect(node, ctx).replace(RESET, &format!("{RESET}{comment}"));
-    let content = limit_newlines(&content);
+    let content = collect(node, ctx, "\n\n").replace(RESET, &format!("{RESET}{comment}"));
     ctx.force_simple_code_block -= 1;
-    let content = content.trim_matches('\n');
     let fence_offset = ctx.blockquote_fenced_offset.unwrap_or_default();
 
     let content = content
@@ -242,17 +202,19 @@ fn render_block_quote<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> Strin
         content.to_owned()
     };
 
-    format!("\n\n{content}\n\n")
+    content
 }
 
 fn render_list<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
-    let NodeValue::List(..) = node.data.borrow().value else {
+    let NodeValue::List(ref list) = node.data.borrow().value else {
         panic!()
     };
+    let sep = if list.tight { "\n" } else { "\n\n" };
 
     ctx.list_depth += 1;
-    let content = collect(node, ctx);
+    let content = collect(node, ctx, sep);
     ctx.list_depth -= 1;
+
     let indent = ctx.indent();
     let content = if ctx.should_wrap() {
         wrap_lines(&content, true, indent, "", "  ") // 2 space extra because of the bullet
@@ -260,11 +222,7 @@ fn render_list<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         content
     };
 
-    if ctx.is_multi_block_quote {
-        content
-    } else {
-        content + "\n"
-    }
+    content
 }
 
 fn render_item<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
@@ -273,7 +231,7 @@ fn render_item<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     };
 
     let yellow = ctx.theme.yellow.fg.clone();
-    let content = collect(node, ctx);
+    let content = collect(node, ctx, "");
     let content = content.trim();
     let depth = ctx.list_depth - 1;
 
@@ -283,10 +241,7 @@ fn render_item<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         comrak::nodes::ListType::Ordered => &format!("{}.", item.start),
     };
 
-    format!(
-        "{}{yellow}{bullet}{RESET} {content}\n",
-        " ".repeat(depth * 4)
-    )
+    format!("{}{yellow}{bullet}{RESET} {content}", " ".repeat(depth * 4))
 }
 
 fn render_task_item<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
@@ -295,7 +250,7 @@ fn render_task_item<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String 
     };
 
     let offset = " ".repeat(node.data.borrow().sourcepos.start.column - 1);
-    let content = collect(node, ctx);
+    let content = collect(node, ctx, "");
     let content = content.trim();
     let (icon, colour) = match task.symbol.map(|c| c.to_ascii_lowercase()) {
         Some('x') => ("󰱒", &ctx.theme.green.fg),
@@ -304,7 +259,7 @@ fn render_task_item<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String 
         _ => ("󰄱", &ctx.theme.red.fg),
     };
 
-    format!("{offset}{colour}{icon}{RESET}  {content}\n")
+    format!("{offset}{colour}{icon}{RESET}  {content}")
 }
 
 fn render_code_block<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
@@ -378,20 +333,15 @@ fn render_html_block<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String
         .map(|line| format!("{comment}{line}{RESET}"))
         .join("\n");
     let result = wrap_lines(&result, true, INDENT, "", "");
-    format!("\n\n{result}\n\n")
+
+    result
 }
 
 fn render_paragraph<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     let sps = node.data.borrow().sourcepos;
     ctx.paragraph_collecting_line = Some(sps.start.line);
-    let lines = collect(node, ctx);
+    let lines = collect(node, ctx, "");
     ctx.paragraph_collecting_line = None;
-
-    let suffix = if ctx.collecting_depth == 0 {
-        "\n\n"
-    } else {
-        "\n"
-    };
 
     if ctx.centered_lines.contains(&sps.start.line) {
         lines
@@ -407,7 +357,6 @@ fn render_paragraph<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String 
                 format!("{}{line}", " ".repeat(offset))
             })
             .join("\n")
-            + suffix
     } else {
         lines
             .lines()
@@ -420,7 +369,6 @@ fn render_paragraph<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String 
                 }
             })
             .join("\n")
-            + suffix
     }
 }
 
@@ -430,7 +378,7 @@ fn render_heading<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     };
 
     ctx.under_header = true;
-    let content = collect(node, ctx);
+    let content = collect(node, ctx, "");
     let content = content.trim();
     let content = match level {
         1 => format!(" 󰎤 {content}"),
@@ -446,7 +394,7 @@ fn render_heading<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     let content = content.replace(RESET, &format!("{RESET}{bg}"));
     let sps = &node.data.borrow().sourcepos;
 
-    let mut header = if !ctx.centered_lines.contains(&sps.start.line) {
+    let header = if !ctx.centered_lines.contains(&sps.start.line) {
         let padding = " ".repeat(
             ctx.term_width
                 .saturating_sub(string_len(&content) as usize)
@@ -465,19 +413,15 @@ fn render_heading<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
             " ".repeat(padding_rigth)
         )
     };
-    header.push_str("\n\n");
-    if sps.start.line != 1 {
-        format!("\n\n{header}")
-    } else {
-        header
-    }
+
+    header
 }
 
 fn render_thematic_break<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     let offset = node.data.borrow().sourcepos.start.column;
     // each level of blockquote adds 4 char prefix..
     let extra_offset = ctx.force_simple_code_block * 4;
-    format_tb(ctx, offset + extra_offset) + "\n"
+    format_tb(ctx, offset + extra_offset)
 }
 
 fn render_table<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
@@ -495,7 +439,7 @@ fn render_table<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         let mut max_lines_in_row = 1;
 
         for cell_node in child.children() {
-            let cell_content = collect(cell_node, ctx);
+            let cell_content = collect(cell_node, ctx, "");
             let cell_lines: Vec<String> =
                 cell_content.lines().map(|s| s.trim().to_string()).collect();
             max_lines_in_row = max_lines_in_row.max(cell_lines.len());
@@ -594,6 +538,8 @@ fn render_table<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
 
         if !is_only_headers {
             result.push_str(&bottom_border);
+        } else {
+            result = result.trim_end_matches("\n").to_owned();
         }
     }
 
@@ -619,21 +565,21 @@ fn render_table<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         result
     };
 
-    format!("\n\n{result}\n\n")
+    result
 }
 
 fn render_strong<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
-    let content = collect(node, ctx);
+    let content = collect(node, ctx, "");
     format!("{BOLD}{content}{NORMAL}")
 }
 
 fn render_emph<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
-    let content = collect(node, ctx);
+    let content = collect(node, ctx, "");
     format!("{ITALIC}{content}{ITALIC_OFF}")
 }
 
 fn render_strikethrough<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
-    let content = collect(node, ctx);
+    let content = collect(node, ctx, "");
     format!("{STRIKETHROUGH}{content}{STRIKETHROUGH_OFF}")
 }
 
@@ -643,7 +589,7 @@ fn render_link<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     };
     let url = &node_link.url;
 
-    let content = collect(node, ctx);
+    let content = collect(node, ctx, "");
     let cyan = ctx.theme.cyan.fg.clone();
     let osc8_start = format!("\x1b]8;;{}\x1b\\", url);
     let osc8_end = "\x1b]8;;\x1b\\";
@@ -672,7 +618,7 @@ fn render_image<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         }
     }
 
-    let content = collect(node, ctx);
+    let content = collect(node, ctx, "");
     let cyan = ctx.theme.cyan.fg.clone();
     format!("{UNDERLINE}{cyan}\u{f0976} {}{RESET}", content)
 }
@@ -697,7 +643,7 @@ fn render_html_inline<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> Strin
 
 fn render_superscript<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     // no real thing I can do
-    collect(node, ctx)
+    collect(node, ctx, "")
 }
 
 fn render_multiline_block_quote<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
@@ -720,13 +666,13 @@ fn render_wiki_link<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String 
         panic!()
     };
 
-    let content = collect(node, ctx);
+    let content = collect(node, ctx, "");
     let cyan = &ctx.theme.cyan.fg;
     format!("{cyan}\u{f15d6} {}{RESET}", content)
 }
 
 fn render_spoilered_text<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
-    let content = collect(node, ctx);
+    let content = collect(node, ctx, "");
     let comment = &ctx.theme.comment.fg;
     format!("{FAINT}{comment}{content}{RESET}")
 }
@@ -755,13 +701,8 @@ fn render_alert<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     let mut result = format!("\n\n{}▌ {BOLD}{}{RESET}", color, prefix);
 
     ctx.force_simple_code_block += 1;
-    let alert_content = collect(node, ctx);
-    let alert_content = limit_newlines(&alert_content);
+    let alert_content = collect(node, ctx, "\n");
     ctx.force_simple_code_block -= 1;
-    let alert_content = alert_content.trim();
-    if alert_content.is_empty() {
-        return result;
-    }
 
     result.push('\n');
     let alert_content = alert_content
@@ -777,5 +718,5 @@ fn render_alert<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         result
     };
 
-    content + "\n\n"
+    content
 }
