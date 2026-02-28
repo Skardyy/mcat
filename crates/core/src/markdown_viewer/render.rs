@@ -30,7 +30,7 @@ pub struct AnsiContext<'a> {
     pub theme: CustomTheme,
     pub hide_line_numbers: bool,
     pub show_frontmatter: bool,
-    pub centered_lines: &'a [usize],
+    pub center: bool,
     pub term_width: usize,
     pub image_preprocessor: &'a ImagePreprocessor,
 
@@ -322,9 +322,13 @@ fn render_html_block<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String
         panic!()
     };
 
-    let sps = node.data.borrow().sourcepos;
-    if literal.contains("<!--HR-->") {
-        return format_tb(ctx, sps.start.column);
+    if literal.contains("<!--CENTER_ON-->") {
+        ctx.center = true;
+        return String::new();
+    }
+    if literal.contains("<!--CENTER_OFF-->") {
+        ctx.center = false;
+        return String::new();
     }
 
     let comment = &ctx.theme.comment.fg;
@@ -343,7 +347,7 @@ fn render_paragraph<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String 
     let lines = collect(node, ctx, "");
     ctx.paragraph_collecting_line = None;
 
-    if ctx.centered_lines.contains(&sps.start.line) {
+    if ctx.center {
         lines
             .lines()
             .map(|line| {
@@ -392,9 +396,8 @@ fn render_heading<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     let bg = &ctx.theme.keyword_bg.bg;
     let main_color = &ctx.theme.keyword.fg;
     let content = content.replace(RESET, &format!("{RESET}{bg}"));
-    let sps = &node.data.borrow().sourcepos;
 
-    let header = if !ctx.centered_lines.contains(&sps.start.line) {
+    let header = if !ctx.center {
         let padding = " ".repeat(
             ctx.term_width
                 .saturating_sub(string_len(&content) as usize)
@@ -544,7 +547,7 @@ fn render_table<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     }
 
     let sps = node.data.borrow().sourcepos;
-    let result = if ctx.centered_lines.contains(&sps.start.line) {
+    let result = if ctx.center {
         let le = string_len(result.lines().nth(1).unwrap_or_default());
         let offset = sps.start.column.saturating_sub(1);
         let offset = (ctx.term_width - offset)

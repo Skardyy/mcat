@@ -17,12 +17,11 @@ use crate::{UnwrapOrExit, config::McatConfig};
 use std::path::Path;
 
 pub fn md_to_ansi(md: &str, config: &McatConfig, markdown_file_path: Option<&Path>) -> String {
-    let res = &html_preprocessor::process(md);
-    let md = &res.content;
+    let md = html_preprocessor::process(md);
 
     let arena = Arena::new();
     let opts = comrak_options();
-    let root = comrak::parse_document(&arena, md, &opts);
+    let root = comrak::parse_document(&arena, &md, &opts);
 
     // changing to forced inline in case of images rendered
     let _ = term_misc::init_wininfo(
@@ -41,8 +40,8 @@ pub fn md_to_ansi(md: &str, config: &McatConfig, markdown_file_path: Option<&Pat
         ps,
         theme,
         hide_line_numbers: config.no_linenumbers,
-        centered_lines: &res.centered_lines,
         term_width: term_misc::get_wininfo().sc_width as usize,
+        center: false,
         image_preprocessor: &image_preprocessor,
         show_frontmatter: config.yaml_header,
 
