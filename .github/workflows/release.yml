@@ -68,11 +68,13 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install cargo-zigbuild and Zig
+      - name: Install cargo-zigbuild
         if: matrix.use_zigbuild
-        run: |
-          cargo install cargo-zigbuild
-          pip install ziglang --break-system-packages
+        run: cargo install cargo-zigbuild
+
+      - name: Install Zig
+        if: matrix.use_zigbuild
+        uses: goto-bus-stop/setup-zig@v2
 
       - name: Download completions
         uses: actions/download-artifact@v4
