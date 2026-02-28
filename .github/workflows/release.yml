@@ -93,8 +93,8 @@ jobs:
           cp CHANGELOG.md $PKG/
           cp -r completions $PKG/
           # TODO: add man page
-          sha256sum $PKG/mcat > $PKG/mcat.sha256
           tar cJf $PKG.tar.xz $PKG
+          sha256sum $PKG.tar.xz > $PKG.tar.xz.sha256
 
       - name: Package (Windows)
         if: matrix.archive == 'zip'
@@ -108,8 +108,8 @@ jobs:
           cp CHANGELOG.md $PKG/
           cp -r completions $PKG/
           # TODO: add man page
-          sha256sum $PKG/mcat.exe > $PKG/mcat.sha256
           zip -r $PKG.zip $PKG
+          sha256sum $PKG.zip > $PKG.zip.sha256
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -117,6 +117,7 @@ jobs:
           name: artifact-${{ matrix.target }}
           path: |
             mcat-${{ matrix.target }}.${{ matrix.archive != 'zip' && 'tar.xz' || 'zip' }}
+            mcat-${{ matrix.target }}.${{ matrix.archive != 'zip' && 'tar.xz' || 'zip' }}.sha256
 
   release:
     needs: build
@@ -131,6 +132,104 @@ jobs:
           path: artifacts/
           merge-multiple: true
 
+      - name: Generate release notes
+        env:
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
+
+          cat > notes.md << EOF
+          ## Install
+
+          \`\`\`bash
+          curl -fsSL https://github.com/${REPO}/releases/download/${TAG}/install.sh | sh
+          \`\`\`
+
+          **PowerShell (Windows)**
+          \`\`\`powershell
+          irm https://github.com/${REPO}/releases/download/${TAG}/install.ps1 | iex
+          \`\`\`
+
+          ## Download
+
+          | File | Platform | Checksum |
+          |------|----------|----------|
+          | [mcat-x86_64-apple-darwin.tar.xz](${BASE_URL}/mcat-x86_64-apple-darwin.tar.xz) | Intel macOS | [checksum](${BASE_URL}/mcat-x86_64-apple-darwin.tar.xz.sha256) |
+          | [mcat-aarch64-apple-darwin.tar.xz](${BASE_URL}/mcat-aarch64-apple-darwin.tar.xz) | Apple Silicon macOS | [checksum](${BASE_URL}/mcat-aarch64-apple-darwin.tar.xz.sha256) |
+          | [mcat-x86_64-unknown-linux-gnu.tar.xz](${BASE_URL}/mcat-x86_64-unknown-linux-gnu.tar.xz) | x64 Linux (gnu) | [checksum](${BASE_URL}/mcat-x86_64-unknown-linux-gnu.tar.xz.sha256) |
+          | [mcat-aarch64-unknown-linux-gnu.tar.xz](${BASE_URL}/mcat-aarch64-unknown-linux-gnu.tar.xz) | ARM64 Linux (gnu) | [checksum](${BASE_URL}/mcat-aarch64-unknown-linux-gnu.tar.xz.sha256) |
+          | [mcat-x86_64-unknown-linux-musl.tar.xz](${BASE_URL}/mcat-x86_64-unknown-linux-musl.tar.xz) | x64 Linux (musl) | [checksum](${BASE_URL}/mcat-x86_64-unknown-linux-musl.tar.xz.sha256) |
+          | [mcat-aarch64-unknown-linux-musl.tar.xz](${BASE_URL}/mcat-aarch64-unknown-linux-musl.tar.xz) | ARM64 Linux (musl) | [checksum](${BASE_URL}/mcat-aarch64-unknown-linux-musl.tar.xz.sha256) |
+          | [mcat-x86_64-pc-windows-gnu.zip](${BASE_URL}/mcat-x86_64-pc-windows-gnu.zip) | x64 Windows | [checksum](${BASE_URL}/mcat-x86_64-pc-windows-gnu.zip.sha256) |
+          EOF
+
+      - name: Generate install scripts
+        env:
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
+
+          cat > artifacts/install.sh << EOF
+          #!/usr/bin/env bash
+          set -e
+
+          TAG="${TAG}"
+          BASE_URL="${BASE_URL}"
+          BIN_DIR="\$HOME/.local/bin"
+          mkdir -p "\$BIN_DIR"
+
+          OS=\$(uname -s)
+          ARCH=\$(uname -m)
+
+          case "\$OS" in
+            Linux)
+              case "\$ARCH" in
+                x86_64)  TARGET="x86_64-unknown-linux-musl" ;;
+                aarch64) TARGET="aarch64-unknown-linux-musl" ;;
+                *) echo "Unsupported architecture: \$ARCH"; exit 1 ;;
+              esac
+              ;;
+            Darwin)
+              case "\$ARCH" in
+                x86_64)  TARGET="x86_64-apple-darwin" ;;
+                arm64)   TARGET="aarch64-apple-darwin" ;;
+                *) echo "Unsupported architecture: \$ARCH"; exit 1 ;;
+              esac
+              ;;
+            *) echo "Unsupported OS: \$OS"; exit 1 ;;
+          esac
+
+          URL="\${BASE_URL}/mcat-\${TARGET}.tar.xz"
+          echo "Downloading mcat \${TAG} for \${TARGET}..."
+          curl -fsSL "\$URL" | tar -xJ --strip-components=1 -C "\$BIN_DIR" --wildcards "*/mcat"
+          chmod +x "\$BIN_DIR/mcat"
+          echo "Installed mcat to \$BIN_DIR/mcat"
+          echo "Make sure \$BIN_DIR is in your PATH"
+          EOF
+          chmod +x artifacts/install.sh
+
+          cat > artifacts/install.ps1 << EOF
+          \$ErrorActionPreference = "Stop"
+
+          \$Tag = "${TAG}"
+          \$BaseUrl = "${BASE_URL}"
+          \$BinDir = "\$env:USERPROFILE\.local\bin"
+          New-Item -ItemType Directory -Force -Path \$BinDir | Out-Null
+
+          \$Url = "\$BaseUrl/mcat-x86_64-pc-windows-gnu.zip"
+          \$Tmp = "\$env:TEMP\mcat.zip"
+          Write-Host "Downloading mcat \$Tag..."
+          Invoke-WebRequest -Uri \$Url -OutFile \$Tmp
+          Expand-Archive -Path \$Tmp -DestinationPath "\$env:TEMP\mcat-extracted" -Force
+          Copy-Item "\$env:TEMP\mcat-extracted\mcat-x86_64-pc-windows-gnu\mcat.exe" "\$BinDir\mcat.exe" -Force
+          Remove-Item \$Tmp
+          Remove-Item "\$env:TEMP\mcat-extracted" -Recurse
+          Write-Host "Installed mcat to \$BinDir\mcat.exe"
+          Write-Host "Make sure \$BinDir is in your PATH"
+          EOF
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -140,6 +239,6 @@ jobs:
           fi
           gh release create "${{ github.ref_name }}" \
             --title "${{ github.ref_name }}" \
-            --generate-notes \
+            --notes-file notes.md \
             $PRERELEASE \
             artifacts/*
