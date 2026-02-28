@@ -118,7 +118,7 @@ jobs:
           cp CHANGELOG.md $PKG/
           cp -r completions $PKG/
           # TODO: add man page
-          zip -r $PKG.zip $PKG
+          7z a $PKG.zip $PKG
           sha256sum $PKG.zip > $PKG.zip.sha256
 
       - name: Upload artifacts
