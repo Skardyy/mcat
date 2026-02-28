@@ -701,7 +701,7 @@ fn render_alert<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         comrak::nodes::AlertType::Caution => ("\u{f0ce6} DANGER", red),
     };
 
-    let mut result = format!("\n\n{}▌ {BOLD}{}{RESET}", color, prefix);
+    let mut result = format!("{}▌ {BOLD}{}{RESET}", color, prefix);
 
     ctx.force_simple_code_block += 1;
     let alert_content = collect(node, ctx, "\n");
