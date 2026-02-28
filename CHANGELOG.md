@@ -3,6 +3,7 @@
 - mcat now no longer reads from stdin if a file input already been specified
 - HTML to image now is slightly faster, and produces better images for small content
 - `--opts` flag now supports both scalex and scaley
+- added musl build to the CI, #57
 - improved the **markdown_viewer** wrapping logic, fixes #53
 - added support for viewing tar and zip archives with gz and xz compression.
 - added tree view for the **markdown viewer** when vewing multiple files
