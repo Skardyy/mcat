@@ -294,7 +294,7 @@ fn render_file_tree(tree: &str, ctx: &mut AnsiContext) -> String {
     let folder_color = &ctx.theme.blue.fg;
     let file_color = &ctx.theme.foreground.fg;
 
-    let mut result = tree.to_string();
+    let mut result = tree.trim().to_string();
 
     result = tree_chars
         .replace_all(&result, |caps: &regex::Captures| {
