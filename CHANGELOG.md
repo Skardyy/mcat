@@ -1,14 +1,12 @@
 ## Src
 
-- mcat now no longer reads from stdin if a file input already been specified
-- HTML to image now is slightly faster, and produces better images for small content
-- `--opts` flag now supports both scalex and scaley
+- added `scalex` and `scaley` options, for the `--opts` flag
 - added musl build to the CI, #57
-- improved the **markdown_viewer** wrapping logic, fixes #53
 - added support for viewing tar and zip archives with gz and xz compression.
-- added tree view for the **markdown viewer** when vewing multiple files
-- made the HTML to Image slightly faster and produce better images from small content
-- made the **markdown viewer** handle blocky elements better, result should feel better formatted. fixes #56, #51
+- added tree view for the **markdown viewer** when viewing multiple files
+- improved the HTML to image, its now is slightly faster, and produces better images for small content
+- improved the **markdown viewer** rendering, result should feel better formatted. fixes #56, #51
+- improved the **markdown_viewer** wrapping logic, fixes #53
 - improved the **html_preprocessor** for the **markdown_viewer**, now produces well formatted markdown. fixes #51
 - fixed an issue where color would persist after a simple code block in the **markdown viewer**
 - fixed th break in markdown not wrapping correctly in the **markdown_viewer**
@@ -17,11 +15,11 @@
 ## V0.4.6
 
 - **markdown viewer** now renders YAML headers in a box, but now disabled by default - to show the header you supply the `--header` flag
-- now **.url** files are also supported for image preview
-- now **.exe** files are also supported for image preview
-- now **.lnk** files are also supported for image preview
-- the **ls command** now supports hyprlinks when supplied with the `--hyprlink` flag, or when the `MCAT_HYPRLINK` env var is set to either true or 1
-- **ls command** now supports different sorting methods via the `--sort` flag, also with the `--reverse` flag
+- now `.url` files are also supported for image preview
+- now `.exe` files are also supported for image preview
+- now `.lnk` files are also supported for image preview
+- the `ls` command now supports hyprlinks when supplied with the `--hyprlink` flag, or when the `MCAT_HYPRLINK` env var is set to either true or 1
+- `ls` command now supports different sorting methods via the `--sort` flag, also with the `--reverse` flag
 
 ## V0.4.5
 
