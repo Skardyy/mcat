@@ -9,7 +9,6 @@ mod inspector;
 mod markdown_viewer;
 mod prompter;
 mod scrapy;
-mod terminal_theme;
 
 use clap::{
     Arg, ColorChoice, Command,
@@ -24,7 +23,11 @@ use scrapy::MediaScrapeOptions;
 use std::{
     io::{BufWriter, Read, Write},
     path::Path,
+    time::Duration,
 };
+
+/// Maximum time spent probing the terminal background before falling back.
+const DETECTION_TIMEOUT: Duration = Duration::from_millis(75);
 
 fn print_completions<G: Generator>(gene: G, cmd: &mut Command) {
     generate(
@@ -360,7 +363,10 @@ fn main() {
     }
 
     if config.theme_source == ThemeSource::Default && stdout_is_tty {
-        config.apply_terminal_theme(terminal_theme::detect_terminal_background());
+        let thm = termbg::theme(DETECTION_TIMEOUT).ok();
+        if thm == Some(termbg::Theme::Light) {
+            config.theme = "makurai_light".into();
+        }
     }
 
     // gathering all the inputs
