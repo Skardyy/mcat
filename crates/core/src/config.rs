@@ -174,12 +174,12 @@ pub struct McatConfig {
     pub pager: String,
     pub color: AlwaysOrNever,
     pub paging: AlwaysOrNever,
+    pub theme_source: ThemeSource,
     encoder_force: String,
-    theme_source: ThemeSource,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum ThemeSource {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ThemeSource {
     Default,
     Environment,
     Arg,
@@ -519,5 +519,17 @@ mod tests {
         config.apply_terminal_theme(Some(termbg::Theme::Light));
 
         assert_eq!(config.theme, "github");
+    }
+
+    #[test]
+    fn tracks_theme_source_precedence() {
+        let mut config = McatConfig::default();
+        assert_eq!(config.theme_source, super::ThemeSource::Default);
+
+        config.theme_source = super::ThemeSource::Environment;
+        assert_eq!(config.theme_source, super::ThemeSource::Environment);
+
+        config.theme_source = super::ThemeSource::Arg;
+        assert_eq!(config.theme_source, super::ThemeSource::Arg);
     }
 }

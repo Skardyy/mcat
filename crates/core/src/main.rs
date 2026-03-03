@@ -16,7 +16,7 @@ use clap::{
     builder::{Styles, styling::AnsiColor},
 };
 use clap_complete::{Generator, Shell, generate};
-use config::McatConfig;
+use config::{McatConfig, ThemeSource};
 use crossterm::tty::IsTty;
 use dirs::home_dir;
 use rasteroid::term_misc;
@@ -359,9 +359,9 @@ fn main() {
         return;
     }
 
-    config.apply_terminal_theme(terminal_theme::detect_terminal_background_if_tty(
-        stdout_is_tty,
-    ));
+    if config.theme_source == ThemeSource::Default && stdout_is_tty {
+        config.apply_terminal_theme(terminal_theme::detect_terminal_background());
+    }
 
     // gathering all the inputs
     let mut tmp_files = Vec::new(); //for lifetime
