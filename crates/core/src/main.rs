@@ -9,6 +9,7 @@ mod inspector;
 mod markdown_viewer;
 mod prompter;
 mod scrapy;
+mod terminal_theme;
 
 use clap::{
     Arg, ColorChoice, Command,
@@ -45,7 +46,7 @@ fn build_core_args() -> Vec<Arg> {
         Arg::new("theme")
             .long("theme")
             .short('t')
-            .help("Color theme [default: github]")
+            .help("Color theme [default: auto-detected]")
             .value_parser([
                 "catppuccin",
                 "nord",
@@ -308,6 +309,7 @@ fn main() {
     let mut config = McatConfig::default();
     config.extend_from_env();
     config.extend_from_args(&opts);
+    config.apply_terminal_theme(terminal_theme::detect_terminal_background());
 
     // setting the winsize
     let spx = term_misc::break_size_string(config.inline_options.spx.as_ref()).unwrap_or_exit();

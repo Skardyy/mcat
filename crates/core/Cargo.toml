@@ -57,6 +57,7 @@ scraper.workspace = true
 reqwest.workspace = true
 indicatif.workspace = true
 regex.workspace = true
+termbg.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 winreg.workspace = true

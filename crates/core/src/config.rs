@@ -175,6 +175,14 @@ pub struct McatConfig {
     pub color: AlwaysOrNever,
     pub paging: AlwaysOrNever,
     encoder_force: String,
+    theme_source: ThemeSource,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ThemeSource {
+    Default,
+    Environment,
+    Arg,
 }
 
 #[derive(Clone)]
@@ -262,6 +270,7 @@ impl Default for McatConfig {
             pager: "less -r".into(),
             color: AlwaysOrNever::Auto,
             paging: AlwaysOrNever::Auto,
+            theme_source: ThemeSource::Default,
         }
     }
 }
@@ -366,6 +375,7 @@ impl McatConfig {
         }
         if let Some(theme) = opts.get_one::<String>("theme") {
             self.theme = theme.clone();
+            self.theme_source = ThemeSource::Arg;
         }
         // paging
         if let Some(pager) = opts.get_one::<String>("pager") {
@@ -427,6 +437,7 @@ impl McatConfig {
         }
         if let Ok(v) = env::var("MCAT_THEME") {
             self.theme = v;
+            self.theme_source = ThemeSource::Environment;
         }
         if let Ok(v) = env::var("MCAT_INLINE_OPTS") {
             self.inline_options.extend_from_string(&v);
@@ -454,5 +465,49 @@ impl McatConfig {
         }
 
         self
+    }
+
+    pub fn apply_terminal_theme(
+        &mut self,
+        terminal_background: Option<termbg::Theme>,
+    ) -> &mut Self {
+        if self.theme_source == ThemeSource::Default
+            && terminal_background == Some(termbg::Theme::Light)
+        {
+            self.theme = "makurai_light".into();
+        }
+
+        self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::McatConfig;
+
+    #[test]
+    fn applies_light_theme_only_for_default_theme_source() {
+        let mut config = McatConfig::default();
+        config.apply_terminal_theme(Some(termbg::Theme::Light));
+
+        assert_eq!(config.theme, "makurai_light");
+    }
+
+    #[test]
+    fn keeps_existing_dark_default_for_dark_terminals() {
+        let mut config = McatConfig::default();
+        config.apply_terminal_theme(Some(termbg::Theme::Dark));
+
+        assert_eq!(config.theme, "dark");
+    }
+
+    #[test]
+    fn preserves_explicit_theme_when_auto_detection_runs() {
+        let mut config = McatConfig::default();
+        config.theme = "github".into();
+        config.theme_source = super::ThemeSource::Environment;
+        config.apply_terminal_theme(Some(termbg::Theme::Light));
+
+        assert_eq!(config.theme, "github");
     }
 }
