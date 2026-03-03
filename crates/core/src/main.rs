@@ -302,6 +302,7 @@ fn build_cli(stdin_streamed: bool) -> Command {
 
 fn main() {
     let stdin_streamed = !std::io::stdin().is_tty();
+    let stdout_is_tty = std::io::stdout().is_tty();
     let stdout = std::io::stdout().lock();
     let mut out = BufWriter::new(stdout);
     let opts = build_cli(stdin_streamed).get_matches();
@@ -358,7 +359,9 @@ fn main() {
         return;
     }
 
-    config.apply_terminal_theme(terminal_theme::detect_terminal_background());
+    config.apply_terminal_theme(terminal_theme::detect_terminal_background_if_tty(
+        stdout_is_tty,
+    ));
 
     // gathering all the inputs
     let mut tmp_files = Vec::new(); //for lifetime
