@@ -1,7 +1,10 @@
 use std::time::Duration;
 
+/// Maximum time spent probing the terminal background before falling back.
+const DETECTION_TIMEOUT: Duration = Duration::from_millis(250);
+
 pub fn detect_terminal_background() -> Option<termbg::Theme> {
-    termbg::theme(Duration::from_millis(250)).ok()
+    termbg::theme(DETECTION_TIMEOUT).ok()
 }
 
 #[cfg(test)]

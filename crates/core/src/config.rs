@@ -510,4 +510,14 @@ mod tests {
 
         assert_eq!(config.theme, "github");
     }
+
+    #[test]
+    fn preserves_explicit_theme_when_arg_overrides_auto() {
+        let mut config = McatConfig::default();
+        config.theme = "github".into();
+        config.theme_source = super::ThemeSource::Arg;
+        config.apply_terminal_theme(Some(termbg::Theme::Light));
+
+        assert_eq!(config.theme, "github");
+    }
 }

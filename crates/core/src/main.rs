@@ -309,7 +309,6 @@ fn main() {
     let mut config = McatConfig::default();
     config.extend_from_env();
     config.extend_from_args(&opts);
-    config.apply_terminal_theme(terminal_theme::detect_terminal_background());
 
     // setting the winsize
     let spx = term_misc::break_size_string(config.inline_options.spx.as_ref()).unwrap_or_exit();
@@ -358,6 +357,8 @@ fn main() {
             .unwrap_or_exit();
         return;
     }
+
+    config.apply_terminal_theme(terminal_theme::detect_terminal_background());
 
     // gathering all the inputs
     let mut tmp_files = Vec::new(); //for lifetime
