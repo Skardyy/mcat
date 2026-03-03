@@ -27,7 +27,7 @@ use std::{
 };
 
 /// Maximum time spent probing the terminal background before falling back.
-const DETECTION_TIMEOUT: Duration = Duration::from_millis(75);
+const DETECTION_TIMEOUT: Duration = Duration::from_millis(100);
 
 fn print_completions<G: Generator>(gene: G, cmd: &mut Command) {
     generate(
