@@ -19,7 +19,7 @@ zip.workspace = true
 tar.workspace = true
 
 flate2.workspace = true
-xz2.workspace = true
+lzma-rust2.workspace = true
 
 calamine.workspace = true
 csv.workspace = true
