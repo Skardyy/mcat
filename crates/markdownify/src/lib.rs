@@ -12,7 +12,7 @@ use std::{
 };
 
 use flate2::read::GzDecoder;
-use xz2::read::XzDecoder;
+use lzma_rust2::XzReader;
 
 use crate::{archives::FileTree, error::ParsingError};
 
@@ -152,7 +152,7 @@ pub fn convert(path: &Path) -> Result<String, ParsingError> {
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_lowercase();
-            XzDecoder::new(file)
+            XzReader::new(file, true)
                 .read_to_end(&mut content)
                 .map_err(ParsingError::UnreadableFile)?;
         }
