@@ -174,7 +174,15 @@ pub struct McatConfig {
     pub pager: String,
     pub color: AlwaysOrNever,
     pub paging: AlwaysOrNever,
+    pub theme_source: ThemeSource,
     encoder_force: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ThemeSource {
+    Default,
+    Environment,
+    Arg,
 }
 
 #[derive(Clone)]
@@ -262,6 +270,7 @@ impl Default for McatConfig {
             pager: "less -r".into(),
             color: AlwaysOrNever::Auto,
             paging: AlwaysOrNever::Auto,
+            theme_source: ThemeSource::Default,
         }
     }
 }
@@ -366,6 +375,7 @@ impl McatConfig {
         }
         if let Some(theme) = opts.get_one::<String>("theme") {
             self.theme = theme.clone();
+            self.theme_source = ThemeSource::Arg;
         }
         // paging
         if let Some(pager) = opts.get_one::<String>("pager") {
@@ -427,6 +437,7 @@ impl McatConfig {
         }
         if let Ok(v) = env::var("MCAT_THEME") {
             self.theme = v;
+            self.theme_source = ThemeSource::Environment;
         }
         if let Ok(v) = env::var("MCAT_INLINE_OPTS") {
             self.inline_options.extend_from_string(&v);

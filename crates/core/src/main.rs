@@ -15,7 +15,7 @@ use clap::{
     builder::{Styles, styling::AnsiColor},
 };
 use clap_complete::{Generator, Shell, generate};
-use config::McatConfig;
+use config::{McatConfig, ThemeSource};
 use crossterm::tty::IsTty;
 use dirs::home_dir;
 use rasteroid::term_misc;
@@ -23,7 +23,11 @@ use scrapy::MediaScrapeOptions;
 use std::{
     io::{BufWriter, Read, Write},
     path::Path,
+    time::Duration,
 };
+
+/// Maximum time spent probing the terminal background before falling back.
+const DETECTION_TIMEOUT: Duration = Duration::from_millis(100);
 
 fn print_completions<G: Generator>(gene: G, cmd: &mut Command) {
     generate(
@@ -45,7 +49,7 @@ fn build_core_args() -> Vec<Arg> {
         Arg::new("theme")
             .long("theme")
             .short('t')
-            .help("Color theme [default: github]")
+            .help("Color theme [default: auto-detected]")
             .value_parser([
                 "catppuccin",
                 "nord",
@@ -301,6 +305,7 @@ fn build_cli(stdin_streamed: bool) -> Command {
 
 fn main() {
     let stdin_streamed = !std::io::stdin().is_tty();
+    let stdout_is_tty = std::io::stdout().is_tty();
     let stdout = std::io::stdout().lock();
     let mut out = BufWriter::new(stdout);
     let opts = build_cli(stdin_streamed).get_matches();
@@ -355,6 +360,13 @@ fn main() {
         converter::lsix(input, &mut out, &config.ls_options, &config.inline_encoder)
             .unwrap_or_exit();
         return;
+    }
+
+    if config.theme_source == ThemeSource::Default && stdout_is_tty {
+        let thm = termbg::theme(DETECTION_TIMEOUT).ok();
+        if thm == Some(termbg::Theme::Light) {
+            config.theme = "makurai_light".into();
+        }
     }
 
     // gathering all the inputs
