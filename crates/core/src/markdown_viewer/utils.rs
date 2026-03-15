@@ -14,6 +14,7 @@ use unicode_width::UnicodeWidthStr;
 use super::render::{AnsiContext, BOLD, RESET};
 
 static ANSI_ESCAPE_REGEX: OnceLock<Regex> = OnceLock::new();
+static HYPERLINK_REGEX: OnceLock<Regex> = OnceLock::new();
 
 pub fn get_lang_icon_and_color(lang: &str) -> Option<(&'static str, &'static str)> {
     let map: HashMap<&str, (&str, &str)> = [
@@ -275,6 +276,145 @@ fn find_last_format(text: &str) -> Option<String> {
         Some(String::new())
     } else {
         Some(format!("\x1b[{}m", codes.join(";")))
+    }
+}
+
+/// Wraps a single line of cell text to fit within `width` display columns.
+/// Handles ANSI escape codes: strips them for width calculation, then maps
+/// break positions back onto the original text and carries formatting across
+/// wrapped lines.
+pub fn wrap_cell_text(text: &str, width: usize) -> Vec<String> {
+    if width == 0 {
+        return vec![text.to_string()];
+    }
+
+    // If it already fits, return as-is
+    if string_len(text) <= width {
+        return vec![text.to_string()];
+    }
+
+    let stripped = strip_ansi_escapes::strip_str(text).to_string();
+
+    // Use textwrap to find break positions on the plain text
+    let options = textwrap::Options::new(width)
+        .break_words(true)
+        .word_splitter(textwrap::WordSplitter::NoHyphenation);
+    let wrapped_plain: Vec<String> = textwrap::wrap(&stripped, options)
+        .into_iter()
+        .map(|cow| cow.into_owned())
+        .collect();
+
+    // Collect all ANSI escape spans (both SGR and hyperlink OSC sequences)
+    let ansi_re = ANSI_ESCAPE_REGEX.get_or_init(|| Regex::new(r"\x1b\[[0-9;]*m").unwrap());
+    let link_re =
+        HYPERLINK_REGEX.get_or_init(|| Regex::new(r"\x1b\]8;;[^\x1b]*\x1b\\").unwrap());
+
+    let mut ansi_spans: Vec<(usize, usize)> = Vec::new();
+    for m in ansi_re.find_iter(text) {
+        ansi_spans.push((m.start(), m.end()));
+    }
+    for m in link_re.find_iter(text) {
+        ansi_spans.push((m.start(), m.end()));
+    }
+    ansi_spans.sort_by_key(|&(start, _)| start);
+
+    // Map each visible character to its byte offset in the original text.
+    // Walk the original text, skipping over ANSI escape sequences using a
+    // span cursor to avoid O(n*m) repeated scans.
+    let mut visible_to_byte: Vec<usize> = Vec::new();
+    let mut byte_idx = 0;
+    let mut span_idx = 0;
+
+    while byte_idx < text.len() {
+        // Skip any ANSI spans starting at this position
+        while span_idx < ansi_spans.len() && ansi_spans[span_idx].0 == byte_idx {
+            byte_idx = ansi_spans[span_idx].1;
+            span_idx += 1;
+        }
+        if byte_idx >= text.len() {
+            break;
+        }
+
+        visible_to_byte.push(byte_idx);
+
+        // Advance past this UTF-8 character
+        let ch_len = text[byte_idx..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
+        byte_idx += ch_len;
+    }
+    // Sentinel for slicing the last segment
+    visible_to_byte.push(text.len());
+
+    // Map the wrapped plain-text lines back to original-text slices
+    let mut lines: Vec<String> = Vec::new();
+    let mut visible_pos = 0;
+
+    for plain_line in &wrapped_plain {
+        let line_char_count = plain_line.chars().count();
+        if line_char_count == 0 {
+            lines.push(String::new());
+            continue;
+        }
+
+        let start_byte = visible_to_byte[visible_pos];
+        let end_visible = visible_pos + line_char_count;
+        let end_byte = if end_visible < visible_to_byte.len() {
+            visible_to_byte[end_visible]
+        } else {
+            text.len()
+        };
+
+        // Include any trailing ANSI escapes contiguous after end_byte
+        let mut adjusted_end = end_byte;
+        for &(s, e) in &ansi_spans {
+            if s == adjusted_end {
+                adjusted_end = e;
+            }
+        }
+
+        let segment = &text[start_byte..adjusted_end];
+        lines.push(segment.trim_end().to_string());
+
+        // textwrap removes the space at the break point, so skip it
+        visible_pos = end_visible;
+        if visible_pos < visible_to_byte.len().saturating_sub(1) {
+            let next_byte = visible_to_byte[visible_pos];
+            if next_byte < text.len() {
+                if let Some(c) = text[next_byte..].chars().next() {
+                    if c == ' ' {
+                        visible_pos += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    // Apply ANSI format carryover: if a line ends mid-format, prepend
+    // that format to the next line
+    let mut result: Vec<String> = Vec::new();
+    let mut carry_format: Option<String> = None;
+
+    for (i, line) in lines.iter().enumerate() {
+        let mut final_line = String::new();
+
+        if let Some(ref fmt) = carry_format {
+            if !fmt.is_empty() {
+                final_line.push_str(fmt);
+            }
+        }
+        final_line.push_str(line);
+
+        if i < lines.len() - 1 {
+            final_line.push_str(RESET);
+        }
+
+        carry_format = find_last_format(&final_line);
+        result.push(final_line);
+    }
+
+    if result.is_empty() {
+        vec![text.to_string()]
+    } else {
+        result
     }
 }
 
@@ -618,4 +758,89 @@ pub fn format_tb(ctx: &AnsiContext, offset: usize) -> String {
     let br = "━".repeat(w.saturating_sub(offset.saturating_sub(1)));
     let border = &ctx.theme.guide.fg;
     format!("{border}{br}{RESET}")
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── wrap_cell_text ──────────────────────────────────────────────────────
+
+    #[test]
+    fn wrap_cell_text_no_wrap_needed() {
+        let result = wrap_cell_text("short", 20);
+        assert_eq!(result, vec!["short"]);
+    }
+
+    #[test]
+    fn wrap_cell_text_width_zero() {
+        let result = wrap_cell_text("hello", 0);
+        assert_eq!(result, vec!["hello"]);
+    }
+
+    #[test]
+    fn wrap_cell_text_plain_text() {
+        let result = wrap_cell_text("hello world foo bar", 11);
+        assert_eq!(result.len(), 2);
+        assert_eq!(string_len(&result[0]), 11);
+        let plain: Vec<String> = result.iter()
+            .map(|l| strip_ansi_escapes::strip_str(l).to_string())
+            .collect();
+        assert_eq!(plain[0], "hello world");
+        assert_eq!(plain[1], "foo bar");
+    }
+
+    #[test]
+    fn wrap_cell_text_breaks_long_word() {
+        let result = wrap_cell_text("abcdefghij", 5);
+        assert!(result.len() >= 2, "should break the word");
+        for line in &result {
+            assert!(string_len(line) <= 5, "line {:?} exceeds width 5", line);
+        }
+    }
+
+    #[test]
+    fn wrap_cell_text_preserves_ansi_mid_text() {
+        // ANSI color in the middle of text: "hello [32mgreen[0m world here"
+        let text = format!("hello {}green{} world here",
+            "[32m", "[0m");
+        let result = wrap_cell_text(&text, 17);
+        // "hello green world" = 17 visible chars, "here" wraps to next line
+        assert_eq!(result.len(), 2,
+            "expected 2 lines, got {:?}", result);
+        // First line should contain the color code
+        assert!(result[0].contains("[32m"),
+            "first line should preserve color code: {:?}", result[0]);
+        // Plain text of first line should be correct
+        let plain0 = strip_ansi_escapes::strip_str(&result[0]).to_string();
+        assert!(plain0.contains("green"),
+            "first line plain text wrong: {:?}", plain0);
+    }
+
+    #[test]
+    fn wrap_cell_text_carries_format_across_lines() {
+        // Color starts mid-text and spans across a wrap boundary:
+        // "aaa [32mbbb ccc ddd[0m"
+        // At width 7: first line "aaa bbb", second line "ccc ddd"
+        // The green color starts on line 1 and should carry to line 2
+        let text = format!("aaa {}bbb ccc ddd{}",
+            "[32m", "[0m");
+        let result = wrap_cell_text(&text, 7);
+        assert!(result.len() >= 2,
+            "should have at least 2 lines: {:?}", result);
+        // Second line should have format carryover (the green color)
+        assert!(result[1].contains("["),
+            "second line should have format carryover: {:?}", result[1]);
+    }
+
+    #[test]
+    fn wrap_cell_text_each_line_fits_width() {
+        let text = "For cases where your change allows new checker support for a spec feature";
+        let result = wrap_cell_text(text, 30);
+        for line in &result {
+            let w = string_len(line);
+            assert!(w <= 30, "line {:?} has width {} > 30", line, w);
+        }
+    }
 }

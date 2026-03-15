@@ -135,7 +135,6 @@ fn comrak_options<'a>() -> options::Options<'a> {
     options
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -157,7 +156,7 @@ mod tests {
         // block-level children with no separator, so "Step one:" and the code
         // block header ended up on one line.
         let step_line = output.lines().find(|l| l.contains("Step one"));
-        assert!(step_line.is_some(), "should contain \'Step one\'");
+        assert!(step_line.is_some(), "should contain 'Step one'");
         let step_line = step_line.unwrap();
 
         // \u{f15c} is the file icon used in code block headers
@@ -165,6 +164,53 @@ mod tests {
             !step_line.contains("\u{f15c}") && !step_line.contains("text"),
             "code block header should not be on the same line as list item text, got: {:?}",
             step_line,
+        );
+    }
+
+    #[test]
+    fn table_that_fits_is_not_modified() {
+        let md = "| A | B |\n| - | - |\n| x | y |\n";
+        let output = render(md);
+        // Both cells on one line, no wrapping
+        let data_line = output.lines().find(|l| l.contains("x") && l.contains("y"));
+        assert!(data_line.is_some(), "should have a line with both x and y");
+    }
+
+    #[test]
+    fn table_wraps_long_cell() {
+        // The cell must exceed the actual terminal width to trigger wrapping,
+        // so use a very long string that exceeds any reasonable terminal.
+        let long = "word ".repeat(100); // 500 chars
+        let md = format!("| A | B |\n| - | - |\n| short | {} |\n", long);
+        let output = render(&md);
+        // "short" and all 500 chars of the long text should NOT be on one line
+        let short_line = output.lines().find(|l| l.contains("short"));
+        assert!(short_line.is_some());
+        let short_line = short_line.unwrap();
+        assert!(
+            short_line.len() < 500,
+            "long cell should be wrapped, not all on one line (len={})",
+            short_line.len(),
+        );
+    }
+
+    #[test]
+    fn table_narrow_columns_keep_natural_width() {
+        // The "Type" column is narrow (max 6 chars). It should not be shrunk
+        // to the point where "build:" wraps.
+        let md = concat!(
+            "| Type | Purpose |\n",
+            "| - | - |\n",
+            "| fix: | Short description |\n",
+            "| build: | For cases where your change is to sources in the build directory or to the checker script |\n",
+        );
+        let output = render(md);
+        // "build:" must appear as a complete string on one line, not split
+        let has_intact_build = output.lines().any(|l| l.contains("build:"));
+        assert!(
+            has_intact_build,
+            "build: should appear intact on a single line, not split across lines.\nOutput:\n{}",
+            output,
         );
     }
 }
