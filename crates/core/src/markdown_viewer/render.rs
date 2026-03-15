@@ -231,7 +231,7 @@ fn render_item<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     };
 
     let yellow = ctx.theme.yellow.fg.clone();
-    let content = collect(node, ctx, "");
+    let content = collect(node, ctx, "\n\n");
     let content = content.trim();
     let depth = ctx.list_depth - 1;
 
@@ -250,7 +250,7 @@ fn render_task_item<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String 
     };
 
     let offset = " ".repeat(node.data.borrow().sourcepos.start.column - 1);
-    let content = collect(node, ctx, "");
+    let content = collect(node, ctx, "\n\n");
     let content = content.trim();
     let (icon, colour) = match task.symbol.map(|c| c.to_ascii_lowercase()) {
         Some('x') => ("󰱒", &ctx.theme.green.fg),
