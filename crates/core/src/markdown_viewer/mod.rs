@@ -134,3 +134,37 @@ fn comrak_options<'a>() -> options::Options<'a> {
 
     options
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::McatConfig;
+
+    fn render(md: &str) -> String {
+        let config = McatConfig::default();
+        let result = md_to_ansi(md, &config, None);
+        strip_ansi_escapes::strip_str(&result).to_string()
+    }
+
+    #[test]
+    fn list_item_with_code_block_on_separate_lines() {
+        let md = "1. Step one:\n\n        echo hello\n";
+        let output = render(md);
+
+        // The code block header (file icon + "text") must not appear on the
+        // same line as the list item text. Before the fix, collect() joined
+        // block-level children with no separator, so "Step one:" and the code
+        // block header ended up on one line.
+        let step_line = output.lines().find(|l| l.contains("Step one"));
+        assert!(step_line.is_some(), "should contain \'Step one\'");
+        let step_line = step_line.unwrap();
+
+        // \u{f15c} is the file icon used in code block headers
+        assert!(
+            !step_line.contains("\u{f15c}") && !step_line.contains("text"),
+            "code block header should not be on the same line as list item text, got: {:?}",
+            step_line,
+        );
+    }
+}
