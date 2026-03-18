@@ -54,7 +54,7 @@ pub fn encode_image(
 /// let is_capable = is_sixel_capable(&mut env);
 /// println!("Sixel: {}", is_capable);
 /// ```
-pub fn is_sixel_capable(env: &mut EnvIdentifiers) -> bool {
+pub fn is_sixel_capable(env: &EnvIdentifiers) -> bool {
     // has way more support, i just think sixel is bad
     env.term_contains("foot") 
         || env.has_key("WT_PROFILE_ID") // windows-terminal

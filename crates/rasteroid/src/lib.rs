@@ -66,36 +66,17 @@ pub fn inline_an_image(
     Ok(())
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Default)]
 pub enum InlineEncoder {
     Kitty,
     Iterm,
     Sixel,
+    #[default]
     Ascii,
 }
 impl InlineEncoder {
     /// auto detect which Encoder works for the current terminal
-    /// allows forcing certain encoders (sort of a fallback).
-    pub fn auto_detect(
-        force_kitty: bool,
-        force_iterm: bool,
-        force_sixel: bool,
-        force_ascii: bool,
-        env: &mut EnvIdentifiers,
-    ) -> Self {
-        if force_kitty {
-            return Self::Kitty;
-        }
-        if force_iterm {
-            return Self::Iterm;
-        }
-        if force_sixel {
-            return Self::Sixel;
-        }
-        if force_ascii {
-            return Self::Ascii;
-        }
-
+    pub fn auto_detect(env: &EnvIdentifiers) -> Self {
         if kitty_encoder::is_kitty_capable(env) {
             return Self::Kitty;
         }

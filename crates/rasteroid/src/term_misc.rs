@@ -46,8 +46,8 @@ pub fn loc_to_terminal(at: Option<(u16, u16)>) -> String {
 struct WininfoParams {
     spx: Size,
     sc: Size,
-    scalex: Option<f32>,
-    scaley: Option<f32>,
+    scalex: f32,
+    scaley: f32,
     is_tmux: bool,
     needs_inline: bool,
 }
@@ -138,8 +138,8 @@ impl Wininfo {
 pub fn init_wininfo(
     spx: &Size,
     sc: &Size,
-    scalex: Option<f32>,
-    scaley: Option<f32>,
+    scalex: f32,
+    scaley: f32,
     is_tmux: bool,
     needs_inline: bool,
 ) -> Result<(), &'static str> {
@@ -409,7 +409,7 @@ impl EnvIdentifiers {
 
     /// all values are normalized into lowercase
     /// pass the term as lowercase
-    pub fn term_contains(&mut self, term: &str) -> bool {
+    pub fn term_contains(&self, term: &str) -> bool {
         [
             "TERM_PROGRAM",
             "TERM",
@@ -422,7 +422,7 @@ impl EnvIdentifiers {
     }
 
     /// checks if the current terminal is a tmux terminal
-    pub fn is_tmux(&mut self) -> bool {
+    pub fn is_tmux(&self) -> bool {
         self.term_contains("tmux") || self.has_key("TMUX")
     }
 }

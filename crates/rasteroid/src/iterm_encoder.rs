@@ -57,7 +57,7 @@ pub fn encode_image(
 /// let is_capable = is_iterm_capable(&mut env);
 /// println!("Iterm: {}", is_capable);
 /// ```
-pub fn is_iterm_capable(env: &mut EnvIdentifiers) -> bool {
+pub fn is_iterm_capable(env: &EnvIdentifiers) -> bool {
     env.term_contains("mintty")
         || env.term_contains("wezterm")
         || env.term_contains("iterm2")

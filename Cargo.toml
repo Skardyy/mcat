@@ -16,8 +16,13 @@ lto = "fat"
 markdownify = { version = "0.3.0", path = "crates/markdownify" }
 rasteroid = { version = "0.1.9", path = "crates/rasteroid" }
 
-strip-ansi-escapes = "0.2.1"
+clap = { version = "4.5.58", features = ["derive", "env"] }
 clap_complete = "4.5.66"
+tracing = "0.1.44"
+tracing-subscriber = "0.3.23"
+anyhow = "1.0.102"
+
+strip-ansi-escapes = "0.2.1"
 which = "8.0.0"
 rayon = "1.11.0"
 itertools = "0.14.0"
@@ -25,7 +30,6 @@ inquire = "0.9.3"
 shell-words = "1.1.1"
 ignore = "0.4.25"
 textwrap = "0.16.2"
-clap = "4.5.58"
 comrak = "0.50.0"
 crossterm = "0.29.0"
 pelite = { version = "0.10.0", default-features = false, features = ["std"] }
