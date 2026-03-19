@@ -253,7 +253,7 @@ impl ChromeRevision {
                 .await
                 .map_err(|_| "Failed to read response chunk")?
             {
-                file.write(&chunk)
+                file.write_all(&chunk)
                     .map_err(|_| "Failed to write to archive file")?;
             }
             file.flush().map_err(|_| "Failed to flush to disk")?;
