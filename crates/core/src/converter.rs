@@ -58,7 +58,7 @@ fn get_lnk_target(path: impl AsRef<Path>) -> Option<String> {
     let mut buf = vec![0u8; 1024];
 
     // magick
-    file.read(&mut buf).ok()?;
+    file.read_exact(&mut buf).ok()?;
     if &buf[0..4] != &[0x4C, 0x00, 0x00, 0x00] {
         return None;
     }
@@ -82,7 +82,7 @@ fn get_lnk_target(path: impl AsRef<Path>) -> Option<String> {
     if offset + 28 > buf.len() {
         file.seek(SeekFrom::Start(0)).ok()?;
         buf.resize(offset + 1024, 0);
-        file.read(&mut buf).ok()?;
+        file.read_exact(&mut buf).ok()?;
     }
 
     // Read LocalBasePath offset (at LinkInfo + 0x10)
@@ -104,7 +104,7 @@ fn get_lnk_target(path: impl AsRef<Path>) -> Option<String> {
     if path_offset + 260 > buf.len() {
         file.seek(SeekFrom::Start(0)).ok()?;
         buf.resize(path_offset + 1024, 0);
-        file.read(&mut buf).ok()?;
+        file.read_exact(&mut buf).ok()?;
     }
 
     // Read to null char
