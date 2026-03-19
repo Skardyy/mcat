@@ -433,7 +433,7 @@ fn main() {
         // only videos
         (true, false, false, _) => {
             match config.inline_encoder {
-                rasteroid::InlineEncoder::Ascii | rasteroid::InlineEncoder::Sixel => {}
+                rasteroid::RasterEncoder::Ascii | rasteroid::RasterEncoder::Sixel => {}
                 _ => {
                     if config.is_tmux {
                         rasteroid::set_tmux_passthrough(true);
@@ -451,7 +451,7 @@ fn main() {
         // only images
         (false, true, false, _) => {
             match config.inline_encoder {
-                rasteroid::InlineEncoder::Ascii => {}
+                rasteroid::RasterEncoder::Ascii => {}
                 _ => {
                     if config.is_tmux {
                         rasteroid::set_tmux_passthrough(true);

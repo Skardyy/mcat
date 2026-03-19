@@ -594,7 +594,7 @@ pub fn lsix(
     input: impl AsRef<str>,
     out: &mut impl Write,
     ctx: &LsixOptions,
-    inline_encoder: &rasteroid::InlineEncoder,
+    inline_encoder: &rasteroid::RasterEncoder,
 ) -> Result<(), Box<dyn error::Error>> {
     let dir_path = Path::new(input.as_ref());
     let walker = WalkBuilder::new(dir_path)
@@ -603,7 +603,7 @@ pub fn lsix(
         .max_depth(Some(1))
         .follow_links(true)
         .build();
-    let resize_for_ascii = matches!(inline_encoder, rasteroid::InlineEncoder::Ascii);
+    let resize_for_ascii = matches!(inline_encoder, rasteroid::RasterEncoder::Ascii);
     let ts = rasteroid::term_misc::get_wininfo();
     let items_per_row = calculate_items_per_row(ts.sc_width, &ctx)?;
     let x_padding = term_misc::dim_to_cells(&ctx.x_padding, SizeDirection::Width)? as u16;
@@ -817,14 +817,14 @@ fn combine_images_into_row(
 pub fn inline_a_video(
     input: impl AsRef<str>,
     out: &mut impl Write,
-    inline_encoder: &rasteroid::InlineEncoder,
+    inline_encoder: &rasteroid::RasterEncoder,
     width: Option<&str>,
     height: Option<&str>,
     center: bool,
     silent: bool,
 ) -> Result<(), Box<dyn error::Error>> {
     match inline_encoder {
-        rasteroid::InlineEncoder::Kitty => {
+        rasteroid::RasterEncoder::Kitty => {
             let frames = video_to_frames(input)?;
             let mut kitty_frames = frames.map(|f| VideoFrames {
                 width: f.width as u16,
@@ -841,7 +841,7 @@ pub fn inline_a_video(
             }
             Ok(())
         }
-        rasteroid::InlineEncoder::Iterm => {
+        rasteroid::RasterEncoder::Iterm => {
             let gif = video_to_gif(input, silent)?;
             let dyn_img = image::load_from_memory_with_format(&gif, image::ImageFormat::Gif)?;
             let offset = match center {
@@ -854,7 +854,7 @@ pub fn inline_a_video(
             rasteroid::iterm_encoder::encode_image(&gif, out, offset, None)?;
             Ok(())
         }
-        rasteroid::InlineEncoder::Ascii | rasteroid::InlineEncoder::Sixel => {
+        rasteroid::RasterEncoder::Ascii | rasteroid::RasterEncoder::Sixel => {
             let frames = video_to_frames(input)?;
             let mut ascii_frames = frames.map(|f| {
                 let rgb_image = image::RgbImage::from_raw(f.width, f.height, f.data.clone())

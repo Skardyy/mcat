@@ -1,33 +1,17 @@
-use crate::term_misc::{self, EnvIdentifiers};
-use std::io::Write;
+use crate::{
+    Frame,
+    error::RasterError,
+    term_misc::{self, EnvIdentifiers, Wininfo},
+};
+use std::{io::Write, sync::atomic::Ordering, time::Duration};
 
-/// encode an image bytes into inline image
-/// should work with all formats Iterm, which include but not limited to GIF,PNG,JPEG..
-/// # example:
-/// ```
-/// use std::path::Path;
-/// use rasteroid::InlineEncoder;
-/// use rasteroid::inline_an_image;
-/// use rasteroid::iterm_encoder::encode_image;
-/// use std::io::Write;
-///
-/// let path = Path::new("image.png");
-/// let bytes = match std::fs::read(path) {
-///     Ok(bytes) => bytes,
-///     Err(e) => return,
-/// };
-/// let mut stdout = std::io::stdout();
-/// encode_image(&bytes, &mut stdout, None, None).unwrap();
-/// stdout.flush().unwrap();
-/// ```
-/// the option offset just offsets the image to the right by the amount of cells you specify
-/// the print at is the same just absolute position
 pub fn encode_image(
     img: &[u8],
     out: &mut impl Write,
     offset: Option<u16>,
     print_at: Option<(u16, u16)>,
-) -> Result<(), Box<dyn std::error::Error>> {
+    wininfo: &Wininfo,
+) -> Result<(), RasterError> {
     let base64_encoded = term_misc::image_to_base64(img);
 
     let center = term_misc::offset_to_terminal(offset);
@@ -35,9 +19,16 @@ pub fn encode_image(
     out.write_all(at.as_ref())?;
     out.write_all(center.as_ref())?;
 
-    let tmux = term_misc::get_wininfo().is_tmux;
-    let prefix = if tmux { "\x1bPtmux;\x1b\x1b" } else { "\x1b" };
-    let suffix = if tmux { "\x1b\x07\x1b\\" } else { "\x07" };
+    let prefix = if wininfo.is_tmux {
+        "\x1bPtmux;\x1b\x1b"
+    } else {
+        "\x1b"
+    };
+    let suffix = if wininfo.is_tmux {
+        "\x1b\x07\x1b\\"
+    } else {
+        "\x07"
+    };
 
     write!(
         out,
@@ -48,20 +39,74 @@ pub fn encode_image(
     Ok(())
 }
 
-/// checks if the current terminal supports Iterm graphic protocol
-/// # example:
-/// ```
-/// use rasteroid::iterm_encoder::is_iterm_capable;
-///
-/// let mut env = rasteroid::term_misc::EnvIdentifiers::new();
-/// let is_capable = is_iterm_capable(&mut env);
-/// println!("Iterm: {}", is_capable);
-/// ```
-pub fn is_iterm_capable(env: &mut EnvIdentifiers) -> bool {
+pub fn is_iterm_capable(env: &EnvIdentifiers) -> bool {
     env.term_contains("mintty")
         || env.term_contains("wezterm")
         || env.term_contains("iterm2")
         || env.term_contains("rio")
         || (env.term_contains("warp") && !env.contains("OS", "windows"))
         || env.has_key("KONSOLE_VERSION")
+}
+
+pub fn encode_frames(
+    frames: &mut dyn Iterator<Item = impl Frame>,
+    out: &mut impl Write,
+    wininfo: &Wininfo,
+    offset: Option<u16>,
+    print_at: Option<(u16, u16)>,
+) -> Result<(), RasterError> {
+    let shutdown = term_misc::setup_signal_handler();
+    let mut last_timestamp: Option<f32> = None;
+    let mut frame_cache: Vec<(Vec<u8>, Duration)> = Vec::new();
+    let mut first = true;
+
+    for frame in frames {
+        if shutdown.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+
+        let data = frame.data();
+        if data.is_empty() {
+            continue;
+        }
+
+        let delay = match (frame.timestamp(), last_timestamp) {
+            (ts, Some(last)) if ts > last => Duration::from_secs_f32(ts - last),
+            _ => Duration::from_millis(33),
+        };
+        last_timestamp = Some(frame.timestamp());
+
+        let mut buf = Vec::new();
+        encode_image(data, &mut buf, offset, print_at, wininfo)?;
+
+        if first {
+            term_misc::ensure_space(out, frame.height() as u16)?;
+            write!(out, "\x1b[s")?;
+            first = false;
+        } else {
+            write!(out, "\x1b[u\x1b[s")?;
+        }
+
+        out.write_all(&buf)?;
+        out.flush()?;
+        frame_cache.push((buf, delay));
+        std::thread::sleep(delay);
+    }
+
+    if frame_cache.is_empty() {
+        return Err(RasterError::EmptyVideo);
+    }
+
+    // loop cached frames
+    loop {
+        for (buf, delay) in &frame_cache {
+            if shutdown.load(Ordering::SeqCst) {
+                return Ok(());
+            }
+            write!(out, "\x1b[u\x1b[s")?;
+            out.write_all(buf)?;
+            out.flush()?;
+            std::thread::sleep(*delay);
+        }
+    }
 }

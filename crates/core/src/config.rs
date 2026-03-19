@@ -1,7 +1,7 @@
 use std::{collections::HashMap, env};
 
 use clap::ArgMatches;
-use rasteroid::{InlineEncoder, term_misc};
+use rasteroid::{RasterEncoder, term_misc};
 
 #[derive(Debug, Clone)]
 pub struct InlineOptions {
@@ -157,7 +157,7 @@ pub struct McatConfig {
     pub input: Vec<String>,
     pub output: Option<String>,
     pub is_ls: bool,
-    pub inline_encoder: InlineEncoder,
+    pub inline_encoder: RasterEncoder,
     pub ls_options: LsixOptions,
     pub inline_options: InlineOptions,
     pub is_tmux: bool,
@@ -244,7 +244,7 @@ impl Default for McatConfig {
             input: Vec::new(),
             output: None,
             is_ls: false,
-            inline_encoder: InlineEncoder::Ascii,
+            inline_encoder: RasterEncoder::Ascii,
             is_tmux: false,
             ls_options: LsixOptions::default(),
             inline_options: InlineOptions::default(),
@@ -290,7 +290,7 @@ impl McatConfig {
         let mut env = term_misc::EnvIdentifiers::new();
         self.is_tmux = env.is_tmux();
         self.inline_encoder =
-            rasteroid::InlineEncoder::auto_detect(kitty, iterm, sixel, ascii, &mut env);
+            rasteroid::RasterEncoder::auto_detect(kitty, iterm, sixel, ascii, &mut env);
 
         // fn and leave
         if let Some(shell) = opts.get_one::<String>("generate-completions") {

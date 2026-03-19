@@ -13,7 +13,7 @@ use crossterm::{
 };
 use image::{DynamicImage, ImageFormat};
 use rasteroid::{
-    InlineEncoder,
+    RasterEncoder,
     image_extended::{InlineImage, ZoomPanViewport},
     term_misc,
 };
@@ -333,7 +333,7 @@ fn print_image(
     opts: &McatConfig,
 ) -> Result<(), Box<dyn Error>> {
     let resize_for_ascii = match opts.inline_encoder {
-        rasteroid::InlineEncoder::Ascii => true,
+        rasteroid::RasterEncoder::Ascii => true,
         _ => false,
     };
 
@@ -402,7 +402,7 @@ fn interact_with_image(
     let image_height = img.height();
 
     let resize_for_ascii = match opts.inline_encoder {
-        rasteroid::InlineEncoder::Ascii => true,
+        rasteroid::RasterEncoder::Ascii => true,
         _ => false,
     };
 
@@ -412,9 +412,9 @@ fn interact_with_image(
     )?;
     let height = (tinfo.sc_height - 3).min(height_cells as u16);
     let should_disable_raw_mode = match opts.inline_encoder {
-        InlineEncoder::Kitty => tinfo.is_tmux,
-        InlineEncoder::Ascii => true,
-        InlineEncoder::Iterm | InlineEncoder::Sixel => false,
+        RasterEncoder::Kitty => tinfo.is_tmux,
+        RasterEncoder::Ascii => true,
+        RasterEncoder::Iterm | RasterEncoder::Sixel => false,
     };
     let mut current_index = 0;
     let max_images = images.len();

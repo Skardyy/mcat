@@ -2394,7 +2394,7 @@ checksum = "0c8d0fd677905edcbeedbf2edb6494d676f0e98d54d5cf9bda0b061cb8fb8aba"
 
 [[package]]
 name = "rasteroid"
-version = "0.1.9"
+version = "0.3.0"
 dependencies = [
  "base64",
  "color_quant",
@@ -2405,6 +2405,7 @@ dependencies = [
  "rand 0.10.0",
  "shared_memory",
  "signal-hook 0.4.3",
+ "thiserror 2.0.18",
  "windows 0.62.2",
 ]
 

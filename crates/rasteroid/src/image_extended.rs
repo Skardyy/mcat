@@ -1,72 +1,89 @@
-use std::{error, io::Cursor};
+use std::io::Cursor;
 
 use fast_image_resize::{IntoImageView, Resizer, images::Image};
 use image::{DynamicImage, GenericImage, GenericImageView, ImageEncoder, codecs::png::PngEncoder};
 
-use crate::term_misc::dim_to_cells;
-
-use super::term_misc::{self, dim_to_px};
+use crate::{
+    error::RasterError,
+    term_misc::{self, Wininfo},
+};
 
 pub trait InlineImage {
-    /// fast image resizer, that takes logic units.
-    /// # example:
+    /// Fast image resizer that accepts logical size units.
+    ///
+    /// # Arguments
+    /// * `wininfo` - Terminal info used to resolve percentage and cell based sizes
+    /// * `width` - Target width, accepts `%` (percentage of terminal), `c` (cells), or a plain number (pixels). `None` to derive from height while preserving aspect ratio
+    /// * `height` - Target height, same format as `width`. `None` to derive from width while preserving aspect ratio
+    /// * `resize_for_ascii` - When `true`, resizes to cell dimensions instead of pixels. Note: cell height is doubled internally to account for half block character rendering
+    /// * `pad` - When `true`, pads the image with empty pixels to reach the exact requested dimensions while maintaining aspect ratio. When `false`, the returned dimensions may be smaller than requested
+    ///
+    /// # Returns
+    /// A tuple of `(image_bytes, center_offset, width, height)` where:
+    /// * `image_bytes` - png encoded resized image
+    /// * `center_offset` - horizontal cell offset to center the image in the terminal
+    /// * `width` - final image width in pixels or cells depending on `resize_for_ascii`
+    /// * `height` - final image height in pixels or cells depending on `resize_for_ascii`
+    ///
+    /// # Examples
+    ///
     /// ```
     /// use std::path::Path;
     /// use rasteroid::image_extended::InlineImage;
+    /// use rasteroid::term_misc::{EnvIdentifiers, Wininfo};
     ///
     /// let path = Path::new("image.png");
     /// let buf = match std::fs::read(path) {
     ///     Ok(buf) => buf,
     ///     Err(e) => return,
     /// };
+    /// let env = EnvIdentifiers::new();
+    /// let wininfo = Wininfo::new(None, None, None, None, &env).unwrap();
     /// let dyn_img = image::load_from_memory(&buf).unwrap();
-    /// let (img_data, offset, width, height) = dyn_img.resize_plus(Some("80%"),Some("200c"), false, false).unwrap();
+    /// let (img_data, offset, width, height) = dyn_img.resize_plus(wininfo, Some("80%"), Some("200c"), false, false).unwrap();
     /// ```
-    /// * the offset is for centering the image
-    /// * it accepts either `%` (percentage) / `c` (cells) / just a number
-    /// * when resize for ascii is true it resizes to cells, if not it resizes to pixels
-    /// * pad adds empty pixels so the image will be the exact dimensions specified, while still
-    /// maintaining aspect ratio
     fn resize_plus(
         &self,
+        wininfo: &Wininfo,
         width: Option<&str>,
         height: Option<&str>,
         resize_for_ascii: bool,
         pad: bool,
-    ) -> Result<(Vec<u8>, u16, u32, u32), Box<dyn error::Error>>;
+    ) -> Result<(Vec<u8>, u16, u32, u32), RasterError>;
 }
 
 impl InlineImage for DynamicImage {
     fn resize_plus(
         &self,
+        wininfo: &Wininfo,
         width: Option<&str>,
         height: Option<&str>,
         resize_for_ascii: bool,
         pad: bool,
-    ) -> Result<(Vec<u8>, u16, u32, u32), Box<dyn error::Error>> {
+    ) -> Result<(Vec<u8>, u16, u32, u32), RasterError> {
         let (src_width, src_height) = self.dimensions();
         let width = match width {
             Some(w) => match resize_for_ascii {
-                true => dim_to_cells(w, term_misc::SizeDirection::Width)?,
-                false => dim_to_px(w, term_misc::SizeDirection::Width)?,
+                true => wininfo.dim_to_cells(w, term_misc::SizeDirection::Width)?,
+                false => wininfo.dim_to_px(w, term_misc::SizeDirection::Width)?,
             },
             None => src_width,
         };
         let height = match height {
             Some(h) => match resize_for_ascii {
-                true => dim_to_cells(h, term_misc::SizeDirection::Height)? * 2,
-                false => dim_to_px(h, term_misc::SizeDirection::Height)?,
+                true => wininfo.dim_to_cells(h, term_misc::SizeDirection::Height)? * 2,
+                false => wininfo.dim_to_px(h, term_misc::SizeDirection::Height)?,
             },
             None => src_height,
         };
 
         let (new_width, new_height) = calc_fit(src_width, src_height, width, height);
-        let center = term_misc::center_image(new_width as u16, resize_for_ascii);
+        let center = wininfo.center_offset(new_width as u16, resize_for_ascii);
 
         let mut dst_image = Image::new(
             new_width,
             new_height,
-            self.pixel_type().ok_or("image is invalid")?,
+            self.pixel_type().ok_or(RasterError::InvalidImage)?,
         );
         let mut resizer = Resizer::new();
         resizer.resize(self, &mut dst_image, None)?;
@@ -104,7 +121,10 @@ impl InlineImage for DynamicImage {
     }
 }
 
-/// Viewport for zooming and moving inside an image.
+/// Viewport for zooming and panning inside an image.
+///
+/// Tracks the container size, image size, zoom level, and pan position,
+/// and calculates the correct crop region via `get_viewport`.
 #[derive(Debug, Clone)]
 pub struct ZoomPanViewport {
     container_width: u32,
@@ -116,12 +136,15 @@ pub struct ZoomPanViewport {
     pan_y: i32,
 }
 
-/// Viewport calculated from ZoomPanViewport
-/// `x` - the offset from the left
-/// `y` - the offset from the top
-/// `width` - how many pixels to the right to take
-/// `height` - how many pixels down to take
-/// `scale_factor` - metadata from the ZoomPanViewport
+/// A crop region calculated from a `ZoomPanViewport`.
+///
+/// # Fields
+///
+/// * `x` - Offset from the left edge of the image in pixels
+/// * `y` - Offset from the top edge of the image in pixels
+/// * `width` - Number of pixels to take horizontally
+/// * `height` - Number of pixels to take vertically
+/// * `scale_factor` - The combined base and zoom scale factor used to produce this viewport
 #[derive(Debug, Clone)]
 pub struct Viewport {
     pub x: u32,
@@ -132,8 +155,6 @@ pub struct Viewport {
 }
 
 impl ZoomPanViewport {
-    /// container size would be the desired size you're trying to make the viewport fit
-    /// the image size would be the original image size
     pub fn new(
         container_width: u32,
         container_height: u32,
@@ -151,26 +172,36 @@ impl ZoomPanViewport {
         }
     }
 
-    /// won't go below 1.
-    /// clamps right after, so you can call `get_viewport`
+    /// Sets the zoom level, minimum value is 1.
+    ///
+    /// Pan is clamped automatically after setting zoom,
+    /// so `get_viewport` can be called immediately after.
     pub fn set_zoom(&mut self, zoom: usize) {
-        self.zoom = zoom.max(1); // Ensure zoom is at least 1
+        self.zoom = zoom.max(1);
         self.clamp_pan();
     }
 
-    /// clamps right after, so you can call `get_viewport`
+    /// Sets the pan position directly.
+    ///
+    /// Pan is clamped to valid limits automatically after setting,
+    /// so `get_viewport` can be called immediately after.
     pub fn set_pan(&mut self, pan_x: i32, pan_y: i32) {
         self.pan_x = pan_x;
         self.pan_y = pan_y;
         self.clamp_pan();
     }
 
-    /// adds the delta to the current pan, will not modify the pan if the final result won't be
-    /// within the limits.
+    /// Adds a delta to the current pan position, only if the result stays within the pan limits.
     ///
-    /// `returns` bool indicating if the pan was modified
+    /// Pan is clamped automatically after adjusting,
+    /// so `get_viewport` can be called immediately after.
     ///
-    /// clamps right after, so you can call `get_viewport`
+    /// # Arguments
+    /// * `delta_x` - Horizontal pan delta in image pixels, negative moves left, positive moves right
+    /// * `delta_y` - Vertical pan delta in image pixels, negative moves up, positive moves down
+    ///
+    /// # Returns
+    /// `true` if either axis was modified, `false` if the delta would exceed the pan limits on both axes
     pub fn adjust_pan(&mut self, delta_x: i32, delta_y: i32) -> bool {
         let mut modified = false;
         let (x1, x2, y1, y2) = self.get_pan_limits();
@@ -191,37 +222,33 @@ impl ZoomPanViewport {
         false
     }
 
-    /// crops the image using the viewport
+    /// Crops the image to the region defined by the current viewport.
     pub fn apply_to_image(&self, img: &DynamicImage) -> DynamicImage {
         let viewport = self.get_viewport();
         img.crop_imm(viewport.x, viewport.y, viewport.width, viewport.height)
     }
 
-    /// calculates and returns a `Viewport`
+    /// Calculates and returns the current `Viewport` based on container size, image size, zoom, and pan.
+    ///
+    /// The viewport represents the region of the source image that should be displayed,
+    /// scaled to fit the container while respecting the current zoom and pan offsets.
     pub fn get_viewport(&self) -> Viewport {
-        // Calculate the base scale to fit the image in the container
         let scale_x = self.container_width as f32 / self.image_width as f32;
         let scale_y = self.container_height as f32 / self.image_height as f32;
         let base_scale = scale_x.min(scale_y);
         let scale_factor = base_scale * self.zoom as f32;
 
-        // Calculate the viewport size in image coordinates
         let viewport_width = (self.container_width as f32 / scale_factor).round() as u32;
         let viewport_height = (self.container_height as f32 / scale_factor).round() as u32;
-
-        // Ensure viewport doesn't exceed image dimensions
         let viewport_width = viewport_width.min(self.image_width);
         let viewport_height = viewport_height.min(self.image_height);
 
-        // Calculate the center position with pan offset
         let center_x = (self.image_width as f32 / 2.0) + self.pan_x as f32;
         let center_y = (self.image_height as f32 / 2.0) + self.pan_y as f32;
 
-        // Calculate viewport position (top-left corner)
         let x_f32 = center_x - viewport_width as f32 / 2.0;
         let y_f32 = center_y - viewport_height as f32 / 2.0;
 
-        // Clamp to image boundaries and ensure we don't go negative
         let x = x_f32
             .max(0.0)
             .min((self.image_width - viewport_width) as f32) as u32;
@@ -238,10 +265,13 @@ impl ZoomPanViewport {
         }
     }
 
-    /// `returns` the limit to which pan will be applied.
-    /// values exceeding those retruned here won't modify the Viewport when calculating
+    /// Returns the valid pan range for the current zoom level.
+    ///
+    /// Pan values outside this range will have no effect on the viewport.
+    ///
+    /// # Returns
+    /// A tuple of `(min_pan_x, max_pan_x, min_pan_y, max_pan_y)` in image pixels
     pub fn get_pan_limits(&self) -> (i32, i32, i32, i32) {
-        // Calculate current viewport to determine pan limits
         let scale_x = self.container_width as f32 / self.image_width as f32;
         let scale_y = self.container_height as f32 / self.image_height as f32;
         let base_scale = scale_x.min(scale_y);
@@ -249,12 +279,9 @@ impl ZoomPanViewport {
 
         let viewport_width = (self.container_width as f32 / scale_factor).round() as u32;
         let viewport_height = (self.container_height as f32 / scale_factor).round() as u32;
-
-        // Ensure viewport doesn't exceed image dimensions
         let viewport_width = viewport_width.min(self.image_width);
         let viewport_height = viewport_height.min(self.image_height);
 
-        // Calculate maximum pan distances
         let max_pan_x = if viewport_width >= self.image_width {
             0
         } else {
@@ -271,7 +298,6 @@ impl ZoomPanViewport {
     }
 
     fn clamp_pan(&mut self) {
-        // Calculate current viewport to determine pan limits
         let scale_x = self.container_width as f32 / self.image_width as f32;
         let scale_y = self.container_height as f32 / self.image_height as f32;
         let base_scale = scale_x.min(scale_y);
@@ -280,11 +306,9 @@ impl ZoomPanViewport {
         let viewport_width = (self.container_width as f32 / scale_factor) as u32;
         let viewport_height = (self.container_height as f32 / scale_factor) as u32;
 
-        // Calculate maximum pan distances
         let max_pan_x = (self.image_width - viewport_width) as f32 / 2.0;
         let max_pan_y = (self.image_height - viewport_height) as f32 / 2.0;
 
-        // If the viewport is larger than the image, don't allow panning
         if viewport_width >= self.image_width {
             self.pan_x = 0;
         } else {
@@ -338,14 +362,32 @@ impl ZoomPanViewport {
     }
 }
 
-/// calculates the dimensions of an image into fit bounding box
-/// # example:
+/// Calculates the largest dimensions that fit within a bounding box while preserving aspect ratio.
+///
+/// # Arguments
+/// * `src_width` - Original image width in pixels
+/// * `src_height` - Original image height in pixels
+/// * `dst_width` - Bounding box width in pixels
+/// * `dst_height` - Bounding box height in pixels
+///
+/// # Returns
+/// A `(width, height)` tuple that fits within the bounding box while maintaining the source aspect ratio
+///
+/// # Examples
+///
 /// ```
 /// use rasteroid::image_extended::calc_fit;
 ///
-/// let (new_width, new_height) = calc_fit(1920, 1080, 800, 400);
+/// // wide image into a square box - constrained by width
+/// let (w, h) = calc_fit(1920, 1080, 800, 800);
+/// assert_eq!(w, 800);
+/// assert!(h < 800);
+///
+/// // tall image into a square box - constrained by height
+/// let (w, h) = calc_fit(1080, 1920, 800, 800);
+/// assert!(w < 800);
+/// assert_eq!(h, 800);
 /// ```
-/// the above will return dimensions close to 800x400 that maintain the aspect ratio of 1920x1080
 pub fn calc_fit(src_width: u32, src_height: u32, dst_width: u32, dst_height: u32) -> (u32, u32) {
     let src_ar = src_width as f32 / src_height as f32;
     let dst_ar = dst_width as f32 / dst_height as f32;

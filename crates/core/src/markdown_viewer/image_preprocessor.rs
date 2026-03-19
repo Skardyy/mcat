@@ -4,7 +4,7 @@ use comrak::nodes::{AstNode, NodeValue};
 use image::{DynamicImage, GenericImageView, ImageFormat};
 use itertools::Itertools;
 use rasteroid::{
-    InlineEncoder,
+    RasterEncoder,
     image_extended::InlineImage,
     inline_an_image,
     term_misc::{self},
@@ -85,10 +85,10 @@ impl ImagePreprocessor {
             conf.md_image_render
         } else {
             match conf.inline_encoder {
-                InlineEncoder::Kitty => MdImageRender::All,
-                InlineEncoder::Iterm => MdImageRender::Small,
-                InlineEncoder::Sixel => MdImageRender::Small,
-                InlineEncoder::Ascii => MdImageRender::None,
+                RasterEncoder::Kitty => MdImageRender::All,
+                RasterEncoder::Iterm => MdImageRender::Small,
+                RasterEncoder::Sixel => MdImageRender::Small,
+                RasterEncoder::Ascii => MdImageRender::None,
             }
         };
         let markdown_dir = markdown_file_path.and_then(|p| p.parent());
@@ -170,12 +170,12 @@ impl ImagePreprocessor {
     }
 }
 
-fn create_placeholder(img: &str, id: usize, inline_encoder: &InlineEncoder, width: u32) -> String {
+fn create_placeholder(img: &str, id: usize, inline_encoder: &RasterEncoder, width: u32) -> String {
     let fg_color = 16 + (id % 216);
     let bg_color = 16 + ((id / 216) % 216);
 
     let (width, height) = match inline_encoder {
-        InlineEncoder::Kitty => {
+        RasterEncoder::Kitty => {
             let placeholder = "\u{10EEEE}";
             let first_line = img.lines().next().unwrap_or("");
             let width = first_line.matches(placeholder).count();

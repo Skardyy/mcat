@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     env, f32,
     io::Write,
-    sync::{Arc, Mutex, OnceLock, atomic::AtomicBool},
+    sync::{Arc, atomic::AtomicBool},
 };
 
 use base64::{Engine, engine::general_purpose};
@@ -10,7 +10,7 @@ use crossterm::terminal::{size, window_size};
 use signal_hook::consts::signal::*;
 use signal_hook::flag;
 
-use crate::get_tmux_terminal_name;
+use crate::{error::RasterError, get_tmux_terminal_name};
 
 pub struct Wininfo {
     pub sc_width: u16,
@@ -26,7 +26,18 @@ pub fn image_to_base64(img: &[u8]) -> String {
     general_purpose::STANDARD.encode(img)
 }
 
-/// turns offset into terminal escape characters that move the cursor
+/// Converts a horizontal offset into a terminal escape sequence that moves the cursor right.
+///
+/// # Examples
+/// ```
+/// use rasteroid::term_misc::offset_to_terminal;
+///
+/// let esc = offset_to_terminal(Some(4));
+/// assert_eq!(esc, "\x1b[4C");
+///
+/// let none = offset_to_terminal(None);
+/// assert_eq!(none, "");
+/// ```
 pub fn offset_to_terminal(offset: Option<u16>) -> String {
     match offset {
         Some(offset) => format!("\x1b[{}C", offset),
@@ -34,7 +45,18 @@ pub fn offset_to_terminal(offset: Option<u16>) -> String {
     }
 }
 
-/// turns offset into terminal escape characters that move the cursor
+/// Converts an (x, y) terminal position into a cursor positioning escape sequence.
+///
+/// # Examples
+/// ```
+/// use rasteroid::term_misc::loc_to_terminal;
+///
+/// let esc = loc_to_terminal(Some((10, 5)));
+/// assert_eq!(esc, "\x1b[5;10H");
+///
+/// let none = loc_to_terminal(None);
+/// assert_eq!(none, "");
+/// ```
 pub fn loc_to_terminal(at: Option<(u16, u16)>) -> String {
     match at {
         Some((x, y)) => format!("\x1b[{y};{x}H"),
@@ -42,35 +64,55 @@ pub fn loc_to_terminal(at: Option<(u16, u16)>) -> String {
     }
 }
 
-#[derive(Clone)]
-struct WininfoParams {
-    spx: Size,
-    sc: Size,
-    scalex: Option<f32>,
-    scaley: Option<f32>,
-    is_tmux: bool,
-    needs_inline: bool,
-}
-
-static WININFO_PARAMS: OnceLock<Mutex<WininfoParams>> = OnceLock::new();
-static WININFO: OnceLock<Wininfo> = OnceLock::new();
-
-#[derive(Clone)]
-pub struct Size {
-    pub width: u16,
-    pub height: u16,
-    pub force: bool,
+fn parse_dimension(s: &str) -> Result<(Option<u16>, Option<u16>), RasterError> {
+    let parts: Vec<&str> = s.splitn(2, 'x').collect();
+    if parts.len() != 2 {
+        return Err(RasterError::InvalidSizeFormat);
+    }
+    let parse = |p: &str| -> Result<Option<u16>, RasterError> {
+        if p.eq_ignore_ascii_case("auto") {
+            Ok(None)
+        } else {
+            p.parse::<u16>()
+                .map(Some)
+                .map_err(|_| RasterError::InvalidSizeFormat)
+        }
+    };
+    Ok((parse(parts[0])?, parse(parts[1])?))
 }
 
 impl Wininfo {
+    /// Creates a new `Wininfo` by auto-detecting terminal dimensions and applying any overrides.
+    ///
+    /// # Arguments
+    /// * `spx` - Optional pixel bounding box override (e.g. `"1920x1080"`, `"autox1080"`, `"1920xauto"`)
+    /// * `sc` - Optional column x row bounding box override (e.g. `"100x20"`, `"autox20"`, `"100xauto"`)
+    /// * `scalex` - Optional scale multiplier applied over spx and sc
+    /// * `scaley` - Optional scale multiplier applied over spx and sc
+    /// * `env` - Terminal env identifiers used for auto detection
+    ///
+    /// # Examples
+    /// ```
+    /// use rasteroid::term_misc::{EnvIdentifiers, Wininfo};
+    ///
+    /// let env = EnvIdentifiers::new();
+    ///
+    /// // fully auto-detected
+    /// let wininfo = Wininfo::new(None, None, None, None, &env).unwrap();
+    ///
+    /// // override only pixel width, auto-detect height
+    /// let wininfo = Wininfo::new(Some("1920xauto"), None, None, None, &env).unwrap();
+    ///
+    /// // override columns, scale everything down by half
+    /// let wininfo = Wininfo::new(None, Some("100xauto"), Some(0.5), Some(0.5), &env).unwrap();
+    /// ```
     fn new(
-        spx_fallback: &Size,
-        sc_fallback: &Size,
+        spx: Option<&str>,
+        sc: Option<&str>,
         scalex: Option<f32>,
         scaley: Option<f32>,
-        is_tmux: bool,
-        needs_inline: bool,
-    ) -> Self {
+        env: &EnvIdentifiers,
+    ) -> Result<Self, RasterError> {
         let mut spx_width = 0;
         let mut spx_height = 0;
         if let Ok(res) = window_size() {
@@ -87,85 +129,36 @@ impl Wininfo {
         }
         let (mut sc_width, mut sc_height) = size().unwrap_or((0, 0));
 
-        // fallback or forcing
-        if spx_fallback.force || spx_width == 0 || spx_height == 0 {
-            spx_width = spx_fallback.width;
-            spx_height = spx_fallback.height;
+        if let Some(spx) = spx {
+            let (w, h) = parse_dimension(spx)?;
+            if let Some(w) = w {
+                spx_width = w;
+            }
+            if let Some(h) = h {
+                spx_height = h;
+            }
         }
-        if sc_fallback.force || sc_width == 0 || sc_height == 0 {
-            sc_width = sc_fallback.width;
-            sc_height = sc_fallback.height;
+        if let Some(sc) = sc {
+            let (w, h) = parse_dimension(sc)?;
+            if let Some(w) = w {
+                sc_width = w;
+            }
+            if let Some(h) = h {
+                sc_height = h;
+            }
         }
 
         let scalex = scalex.unwrap_or(1.0);
         let scaley = scaley.unwrap_or(1.0);
 
-        Wininfo {
+        Ok(Wininfo {
             sc_height: (sc_height as f32 * scaley) as u16,
             sc_width: (sc_width as f32 * scalex) as u16,
             spx_height: (spx_height as f32 * scaley) as u16,
             spx_width: (spx_width as f32 * scalex) as u16,
-            is_tmux,
-            needs_inline,
-        }
-    }
-}
-
-/// setting a fallback for when fails to query spx and sc.
-/// scale is for scaling while maintaining center. (scale the box not the image)
-/// # example:
-/// ```
-/// use rasteroid::term_misc::init_wininfo;
-/// use rasteroid::term_misc::Size;
-///
-/// let spx = Size {
-///     width: 1920,  // width in pixels
-///     height: 1080, // height in pixels
-///     force: false, // use that instead of checking
-/// };
-/// let sc = Size {
-///     width: 100,   // width in cells
-///     height: 20,   // height in cells
-///     force: false, // use that instead of checking
-/// };
-/// let mut env = rasteroid::term_misc::EnvIdentifiers::new();
-/// let is_tmux = env.is_tmux();
-/// // inline is for kitty to put a placeholder for images / videos so they can be placed in apps
-/// // that don't understand kitty gp and have them scroll with the buffer; e.g vim, tmux
-/// let inline = false;
-/// init_wininfo(&spx, &sc, None, None, is_tmux, inline).unwrap(); // going to error if you called it before already.
-/// ```
-pub fn init_wininfo(
-    spx: &Size,
-    sc: &Size,
-    scalex: Option<f32>,
-    scaley: Option<f32>,
-    is_tmux: bool,
-    needs_inline: bool,
-) -> Result<(), &'static str> {
-    let params = WininfoParams {
-        spx: spx.clone(),
-        sc: sc.clone(),
-        scalex,
-        scaley,
-        is_tmux,
-        needs_inline,
-    };
-
-    if let Some(existing_params) = WININFO_PARAMS.get() {
-        // Already have params, update them (only if Wininfo not created yet)
-        if WININFO.get().is_none() {
-            *existing_params.lock().unwrap() = params;
-            Ok(())
-        } else {
-            Err("Wininfo already in use, cannot update parameters")
-        }
-    } else {
-        // First time setting params
-        WININFO_PARAMS
-            .set(Mutex::new(params))
-            .map_err(|_| "Failed to set parameters")?;
-        Ok(())
+            is_tmux: env.is_tmux(),
+            needs_inline: false,
+        })
     }
 }
 
@@ -174,145 +167,139 @@ pub enum SizeDirection {
     Height,
 }
 
-/// call init_winsize before it if you need to;
-/// if not going to use 1920x1080, 100x20 fallback for when failing to query sizes
-pub fn get_wininfo() -> &'static Wininfo {
-    WININFO.get_or_init(|| {
-        let params = if let Some(params_mutex) = WININFO_PARAMS.get() {
-            params_mutex.lock().unwrap().clone()
+impl Wininfo {
+    /// Calculates the horizontal cell offset needed to center an image in the terminal.
+    ///
+    /// # Examples
+    /// ```
+    /// use rasteroid::term_misc::{EnvIdentifiers, Wininfo};
+    ///
+    /// let env = EnvIdentifiers::new();
+    /// let wininfo = Wininfo::new(None, None, None, None, &env).unwrap();
+    ///
+    /// let offset = wininfo.center_offset(800, false); // pixel-based image
+    /// let offset = wininfo.center_offset(40, true);   // ascii image, already in cells
+    /// ```
+    pub fn center_offset(&self, image_width: u16, is_cells: bool) -> u16 {
+        let offset = if is_cells {
+            (self.sc_width as f32 - image_width as f32) / 2.0
         } else {
-            // Default fallback
-            WininfoParams {
-                spx: Size {
-                    width: 1920,
-                    height: 1080,
-                    force: false,
-                },
-                sc: Size {
-                    width: 100,
-                    height: 20,
-                    force: false,
-                },
-                scalex: None,
-                scaley: None,
-                is_tmux: false,
-                needs_inline: false,
+            let offset_x = (self.spx_width as f32 - image_width as f32) / 2.0;
+            offset_x / (self.spx_width as f32 / self.sc_width as f32)
+        };
+        offset.max(0.0).round() as u16
+    }
+
+    /// Converts a dimension string into pixels based on the terminal's current size.
+    ///
+    /// # Accepted Formats
+    /// * `"1920"` or `"1920px"` - explicit pixel value
+    /// * `"40c"` - terminal cells
+    /// * `"80%"` - percentage of the terminal size
+    ///
+    /// # Examples
+    /// ```
+    /// use rasteroid::term_misc::{EnvIdentifiers, Wininfo, SizeDirection};
+    ///
+    /// let env = EnvIdentifiers::new();
+    /// let wininfo = Wininfo::new(None, None, None, None, &env).unwrap();
+    ///
+    /// let px = wininfo.dim_to_px("80%", SizeDirection::Width).unwrap();
+    /// let px = wininfo.dim_to_px("40c", SizeDirection::Height).unwrap();
+    /// let px = wininfo.dim_to_px("1920px", SizeDirection::Width).unwrap();
+    /// let px = wininfo.dim_to_px("1920", SizeDirection::Width).unwrap();
+    /// ```
+    pub fn dim_to_px(&self, dim: &str, direction: SizeDirection) -> Result<u32, RasterError> {
+        if let Ok(num) = dim.parse::<u32>() {
+            return Ok(num);
+        }
+
+        let not_px = dim.ends_with("c") || dim.ends_with("%");
+        let (spx, sc) = if not_px {
+            match direction {
+                SizeDirection::Width => (self.spx_width, self.sc_width),
+                SizeDirection::Height => (self.spx_height, self.sc_height),
             }
+        } else {
+            (1, 1)
         };
 
-        Wininfo::new(
-            &params.spx,
-            &params.sc,
-            params.scalex,
-            params.scaley,
-            params.is_tmux,
-            params.needs_inline,
-        )
-    })
-}
-
-/// Returns the horizontal offset (in cells) needed to center the image in the terminal.
-/// If `is_ascii` is true, `image_width` is already in cells. Otherwise, it's in pixels.
-pub fn center_image(image_width: u16, is_ascii: bool) -> u16 {
-    let winsize = get_wininfo();
-
-    let offset = if is_ascii {
-        (winsize.sc_width as f32 - image_width as f32) / 2.0
-    } else {
-        let offset_x = (winsize.spx_width as f32 - image_width as f32) / 2.0;
-        offset_x / (winsize.spx_width as f32 / winsize.sc_width as f32)
-    };
-
-    offset.round() as u16
-}
-
-/// convert any format of width / height into pixels.
-/// for instance 80% would be converted to the size of screen in the direction specified * 0.8.
-/// accepted formats are % (percent) / c (cells) / px (pixels) / or just number
-pub fn dim_to_px(dim: &str, direction: SizeDirection) -> Result<u32, String> {
-    if let Ok(num) = dim.parse::<u32>() {
-        return Ok(num);
-    }
-
-    // only call it if needed
-    let not_px = dim.ends_with("c") || dim.ends_with("%");
-    let (spx, sc) = if not_px {
-        let winsize = get_wininfo();
-        match direction {
-            SizeDirection::Width => (winsize.spx_width, winsize.sc_width),
-            SizeDirection::Height => (winsize.spx_height, winsize.sc_height),
-        }
-    } else {
-        (1, 1)
-    };
-
-    if dim.ends_with("px") {
-        if let Ok(num) = dim.trim_end_matches("px").parse::<u32>() {
-            return Ok(num);
-        }
-    } else if dim.ends_with("c") {
-        if let Ok(num) = dim.trim_end_matches("c").parse::<u16>() {
-            let value = (spx as f32 / sc as f32 * num as f32).ceil() as u32;
-            return Ok(value.into());
-        }
-    } else if dim.ends_with("%") {
-        if let Ok(num) = dim.trim_end_matches("%").parse::<f32>() {
-            let normalized_percent = num / 100.0;
-            let value = (spx as f32 * normalized_percent).ceil() as u32;
-            return Ok(value);
-        }
-    }
-
-    Err(format!("Invalid dimension format: {}", dim))
-}
-
-/// Convert any format of width / height into cells.
-/// Accepted formats: % (percent), px (pixels), c (cells), or just a number (assumed cells).
-pub fn dim_to_cells(dim: &str, direction: SizeDirection) -> Result<u32, String> {
-    if let Ok(num) = dim.parse::<u32>() {
-        return Ok(num);
-    }
-
-    // only call it if needed
-    let needs_calc = dim.ends_with("px") || dim.ends_with("%");
-    let (spx, sc) = if needs_calc {
-        let winsize = get_wininfo();
-        match direction {
-            SizeDirection::Width => (winsize.spx_width, winsize.sc_width),
-            SizeDirection::Height => (winsize.spx_height, winsize.sc_height),
-        }
-    } else {
-        (1, 1) // dummy values, won’t be used
-    };
-
-    if dim.ends_with("c") {
-        if let Ok(num) = dim.trim_end_matches("c").parse::<u32>() {
-            return Ok(num);
-        }
-    } else if dim.ends_with("px") {
-        if let Ok(px) = dim.trim_end_matches("px").parse::<u32>() {
-            if sc == 0 || spx == 0 {
-                return Err("Invalid screen size for px to cell conversion".into());
+        if dim.ends_with("px") {
+            if let Ok(num) = dim.trim_end_matches("px").parse::<u32>() {
+                return Ok(num);
             }
-            let value = (px as f32 / (spx as f32 / sc as f32)).ceil() as u32;
-            return Ok(value);
+        } else if dim.ends_with("c") {
+            if let Ok(num) = dim.trim_end_matches("c").parse::<u16>() {
+                let value = (spx as f32 / sc as f32 * num as f32).ceil() as u32;
+                return Ok(value.into());
+            }
+        } else if dim.ends_with("%") {
+            if let Ok(num) = dim.trim_end_matches("%").parse::<f32>() {
+                let normalized_percent = num / 100.0;
+                let value = (spx as f32 * normalized_percent).ceil() as u32;
+                return Ok(value);
+            }
         }
-    } else if dim.ends_with("%") {
-        if let Ok(percent) = dim.trim_end_matches("%").parse::<f32>() {
-            let normalized = percent / 100.0;
-            let value = (sc as f32 * normalized).ceil() as u32;
-            return Ok(value);
-        }
+
+        Err(RasterError::InvalidDimensionFormat)
     }
 
-    Err(format!("Invalid dimension format: {}", dim))
-}
+    /// Converts a dimension string into terminal cells based on the terminal's current size.
+    ///
+    /// # Accepted Formats
+    /// * `"40"` or `"40c"` - explicit cell value
+    /// * `"1920px"` - pixels
+    /// * `"80%"` - percentage of the terminal size
+    ///
+    /// # Examples
+    /// ```
+    /// use rasteroid::term_misc::{EnvIdentifiers, Wininfo, SizeDirection};
+    ///
+    /// let env = EnvIdentifiers::new();
+    /// let wininfo = Wininfo::new(None, None, None, None, &env).unwrap();
+    ///
+    /// let cells = wininfo.dim_to_cells("80%", SizeDirection::Width).unwrap();
+    /// let cells = wininfo.dim_to_cells("40c", SizeDirection::Height).unwrap();
+    /// let cells = wininfo.dim_to_cells("1920px", SizeDirection::Width).unwrap();
+    /// let cells = wininfo.dim_to_cells("40", SizeDirection::Width).unwrap();
+    /// ```
+    pub fn dim_to_cells(&self, dim: &str, direction: SizeDirection) -> Result<u32, RasterError> {
+        if let Ok(num) = dim.parse::<u32>() {
+            return Ok(num);
+        }
 
-// reports the size of the logic units in cells.
-pub fn report_size(width: &str, height: &str) {
-    let w = dim_to_cells(width, SizeDirection::Width).unwrap_or_default();
-    let h = dim_to_cells(height, SizeDirection::Height).unwrap_or_default();
-    eprintln!("|width: {}, height: {}|", w, h);
+        let needs_calc = dim.ends_with("px") || dim.ends_with("%");
+        let (spx, sc) = if needs_calc {
+            match direction {
+                SizeDirection::Width => (self.spx_width, self.sc_width),
+                SizeDirection::Height => (self.spx_height, self.sc_height),
+            }
+        } else {
+            (1, 1)
+        };
+
+        if dim.ends_with("c") {
+            if let Ok(num) = dim.trim_end_matches("c").parse::<u32>() {
+                return Ok(num);
+            }
+        } else if dim.ends_with("px") {
+            if let Ok(px) = dim.trim_end_matches("px").parse::<u32>() {
+                if sc == 0 || spx == 0 {
+                    return Err(RasterError::InvalidDimensionFormat);
+                }
+                let value = (px as f32 / (spx as f32 / sc as f32)).ceil() as u32;
+                return Ok(value);
+            }
+        } else if dim.ends_with("%") {
+            if let Ok(percent) = dim.trim_end_matches("%").parse::<f32>() {
+                let normalized = percent / 100.0;
+                let value = (sc as f32 * normalized).ceil() as u32;
+                return Ok(value);
+            }
+        }
+
+        Err(RasterError::InvalidDimensionFormat)
+    }
 }
 
 // gross estimation winsize for windows..
@@ -398,8 +385,6 @@ impl EnvIdentifiers {
         self.data.contains_key(key)
     }
 
-    /// all values are normalized into lowercase
-    /// pass the substr as lowercase
     pub fn contains(&self, key: &str, substr: &str) -> bool {
         if self.has_key(key) {
             return self.data.get(key).is_some_and(|f| f.contains(substr));
@@ -407,9 +392,7 @@ impl EnvIdentifiers {
         false
     }
 
-    /// all values are normalized into lowercase
-    /// pass the term as lowercase
-    pub fn term_contains(&mut self, term: &str) -> bool {
+    pub fn term_contains(&self, term: &str) -> bool {
         [
             "TERM_PROGRAM",
             "TERM",
@@ -421,34 +404,30 @@ impl EnvIdentifiers {
         .any(|key| self.contains(key, term))
     }
 
-    /// checks if the current terminal is a tmux terminal
-    pub fn is_tmux(&mut self) -> bool {
+    pub fn is_tmux(&self) -> bool {
         self.term_contains("tmux") || self.has_key("TMUX")
     }
 }
 
-/// makes sure you have enough lines below your cursor to at least insert a `height`
-pub fn ensure_space(out: &mut impl Write, height: u16) -> Result<(), Box<dyn std::error::Error>> {
+/// Ensures there are enough lines below the cursor to insert content of the given height.
+/// Achieves this by printing `height` newlines to scroll the terminal if needed,
+/// then moving the cursor back up by the same amount.
+///
+/// # Examples
+/// ```
+/// use rasteroid::term_misc::ensure_space;
+///
+/// let mut buf = Vec::new();
+/// ensure_space(&mut buf, 3).unwrap();
+/// assert_eq!(buf, b"\n\n\n\x1B[3A");
+/// ```
+pub fn ensure_space(out: &mut impl Write, height: u16) -> Result<(), RasterError> {
     write!(out, "{}", "\n".repeat(height as usize))?;
     write!(out, "\x1B[{height}A")?;
     Ok(())
 }
 
-pub fn break_size_string(s: &str) -> Result<Size, Box<dyn std::error::Error>> {
-    let mut parts = s.split("x");
-    let width = parts.next().ok_or("missing width")?.parse::<u16>()?;
-    let height = parts.next().ok_or("missing height")?.parse::<u16>()?;
-    let force = s.contains("force");
-
-    Ok(Size {
-        width,
-        height,
-        force,
-    })
-}
-
-/// get a handle to when the program is killed (will override so kill the program shortly after)
-pub fn setup_signal_handler() -> Arc<AtomicBool> {
+pub(crate) fn setup_signal_handler() -> Arc<AtomicBool> {
     let shutdown = Arc::new(AtomicBool::new(false));
 
     // Register signal handlers

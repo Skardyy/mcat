@@ -1,4 +1,4 @@
-use std::{cmp::min, collections::HashMap, error::Error, io::Write, sync::atomic::Ordering};
+use std::{cmp::min, collections::HashMap, io::Write, sync::atomic::Ordering};
 
 use base64::{Engine, engine::general_purpose};
 use image::GenericImageView;
@@ -6,7 +6,10 @@ use shared_memory::ShmemConf;
 
 use crate::{
     Frame,
-    term_misc::{self, EnvIdentifiers, image_to_base64, loc_to_terminal, offset_to_terminal},
+    error::RasterError,
+    term_misc::{
+        self, EnvIdentifiers, Wininfo, image_to_base64, loc_to_terminal, offset_to_terminal,
+    },
 };
 
 fn transmit_shm(
@@ -15,7 +18,7 @@ fn transmit_shm(
     opts: HashMap<String, String>,
     shm_name: &str,
     tmux: bool,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), RasterError> {
     let mut opts_string = String::with_capacity(opts.len() * 8);
     for (key, value) in opts {
         if !opts_string.is_empty() {
@@ -40,7 +43,9 @@ fn transmit_shm(
 
     write!(out, "{prefix}{opts_string};{shm_name}{suffix}")?;
 
-    // will clean the shm if not leaked..
+    // should be cleaned later. but the nature of this is it can be leaked.
+    // perhaps we need to reconsider how to do this, since its a leak that precedes the app
+    // lifetime.
     std::mem::forget(shmem);
     Ok(())
 }
@@ -52,7 +57,7 @@ fn chunk_base64(
     first_opts: HashMap<String, String>,
     sub_opts: HashMap<String, String>,
     tmux: bool,
-) -> Result<(), std::io::Error> {
+) -> Result<(), RasterError> {
     // first block
     let mut first_opts_string = String::with_capacity(first_opts.len() * 8);
     for (key, value) in first_opts {
@@ -114,32 +119,13 @@ fn chunk_base64(
     Ok(())
 }
 
-/// encode an image bytes into inline image
-/// should work with only png.
-/// you can use crates like `image` to convert images into png
-/// # example:
-/// ```
-/// use std::path::Path;
-/// use rasteroid::kitty_encoder::encode_image;
-/// use std::io::Write;
-///
-/// let path = Path::new("image.png");
-/// let bytes = match std::fs::read(path) {
-///     Ok(bytes) => bytes,
-///     Err(e) => return,
-/// };
-/// let mut stdout = std::io::stdout();
-/// encode_image(&bytes, &mut stdout, None, None).unwrap();
-/// stdout.flush().unwrap();
-/// ```
-/// the option offset just offsets the image to the right by the amount of cells you specify
-/// the print at is the same just absolute position
 pub fn encode_image(
     img: &[u8],
     out: &mut impl Write,
     offset: Option<u16>,
     print_at: Option<(u16, u16)>,
-) -> Result<(), Box<dyn std::error::Error>> {
+    wininfo: &Wininfo,
+) -> Result<(), RasterError> {
     let id = rand::random::<u32>();
     let mut opts = HashMap::from([
         ("f".to_string(), "100".to_string()),
@@ -147,22 +133,19 @@ pub fn encode_image(
         ("i".to_string(), id.to_string()),
     ]);
 
-    let winfo = term_misc::get_wininfo();
-    let tmux = winfo.is_tmux;
-    let inline = winfo.needs_inline || tmux;
-    if inline {
+    if wininfo.is_tmux || wininfo.needs_inline {
         let data = image::load_from_memory(img)?;
         let (widthpx, heightpx) = data.dimensions();
         let cols =
-            term_misc::dim_to_cells(&format!("{widthpx}px"), term_misc::SizeDirection::Width)?;
+            wininfo.dim_to_cells(&format!("{widthpx}px"), term_misc::SizeDirection::Width)?;
         let rows =
-            term_misc::dim_to_cells(&format!("{heightpx}px"), term_misc::SizeDirection::Height)?;
+            wininfo.dim_to_cells(&format!("{heightpx}px"), term_misc::SizeDirection::Height)?;
 
         opts.insert("U".to_string(), 1.to_string());
         opts.insert("r".to_string(), rows.to_string());
         opts.insert("c".to_string(), cols.to_string());
         let base64 = image_to_base64(img);
-        chunk_base64(&base64, out, 4096, opts, HashMap::new(), tmux)?;
+        chunk_base64(&base64, out, 4096, opts, HashMap::new(), wininfo.is_tmux)?;
 
         let placement = create_unicode_placeholder(cols, rows, id, offset, print_at)?;
         out.write_all(placement.as_bytes())?;
@@ -172,7 +155,7 @@ pub fn encode_image(
         out.write_all(print_at_string.as_ref())?;
         out.write_all(center_string.as_ref())?;
         let base64 = image_to_base64(img);
-        chunk_base64(&base64, out, 4096, opts, HashMap::new(), tmux)?;
+        chunk_base64(&base64, out, 4096, opts, HashMap::new(), wininfo.is_tmux)?;
     }
 
     Ok(())
@@ -215,13 +198,13 @@ fn get_diacritic(index: usize) -> Option<char> {
         .and_then(char::from_u32)
 }
 
-pub fn create_unicode_placeholder(
+fn create_unicode_placeholder(
     columns: u32,
     rows: u32,
     image_id: u32,
     offset: Option<u16>,
     print_at: Option<(u16, u16)>,
-) -> Result<String, Box<dyn Error>> {
+) -> Result<String, RasterError> {
     let mut result = String::new();
 
     let r = (image_id >> 16) & 255;
@@ -272,7 +255,7 @@ fn process_frame(
     use_shm: bool,
     shm_name: &str,
     tmux: bool,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<(), RasterError> {
     if use_shm {
         transmit_shm(data, out, first_opts, shm_name, tmux)?;
     } else {
@@ -289,72 +272,18 @@ fn process_frame(
     Ok(())
 }
 
-/// encode a video into inline video.
-/// recommended to use in conjunction with video parsing library
-/// this function differs from encode_frames function by using shared memory objects; and in turns
-/// becomes faster, and requires less cpu power, but leaks memory (shm objects will only be cleaned
-/// when someone reads the shm objects e.g kitty)
-/// # example:
-/// first make sure you can supply a iter of Frames (using ffmpeg-sidecar here)
-/// ```rust,no_run
-/// use ffmpeg_sidecar::command::FfmpegCommand;
-/// use rasteroid::Frame;
-/// use ffmpeg_sidecar::event::OutputVideoFrame;
-/// use rasteroid::kitty_encoder::encode_frames_fast;
-/// use rasteroid::kitty_encoder::is_kitty_capable;
-/// use rasteroid::image_extended::calc_fit;
-/// use ffmpeg_sidecar::event::FfmpegEvent;
-///
-/// pub struct KittyFrames(pub OutputVideoFrame);
-/// impl Frame for KittyFrames {
-///     fn width(&self) -> u16 {
-///         self.0.width as u16
-///     }
-///     fn height(&self) -> u16 {
-///         self.0.height as u16
-///     }
-///     fn timestamp(&self) -> f32 {
-///         self.0.timestamp
-///     }
-///     // must be rgb8!
-///     fn data(&self) -> &[u8] {
-///         &self.0.data
-///     }
-/// }
-/// // next get the frames (taken from ffmpeg-sidecar)
-///
-/// let mut out = std::io::stdout();
-/// let iter = match FfmpegCommand::new() // <- Builder API like `std::process::Command`
-///   .testsrc()  // <- Discoverable aliases for FFmpeg args
-///   .rawvideo() // <- Convenient argument presets
-///   .spawn()    // <- Ordinary `std::process::Child`
-///    {
-///        Ok(res) => res,
-///        Err(e) => return,
-/// }.iter().unwrap();   // <- Blocking iterator over logs and output
-/// // now convert to compatible frames
-/// let mut kitty_frames = iter
-///         .filter_map(|event| {
-///             if let FfmpegEvent::OutputFrame(frame) = event {
-///                 Some(KittyFrames(frame))
-///             } else {
-///                 None
-///             }
-///         });
-/// let id = rand::random::<u32>();
-/// // should be used carefully, leaks memory with lifetime over the app itself. if kitty doesn't
-/// // consume the animation, will just sit in /dev/shm or corresponding place for other os and
-/// // take alot of memory
-/// unsafe { encode_frames_fast(&mut kitty_frames, &mut out, true) };
-/// ```
 pub unsafe fn encode_frames_fast(
     frames: &mut dyn Iterator<Item = impl Frame>,
     out: &mut impl Write,
-    center: bool,
-) -> Result<(), Box<dyn Error>> {
-    let id = encode_frames_sep(frames, out, center, true)?;
+    wininfo: &Wininfo,
+    offset: Option<u16>,
+    print_at: Option<(u16, u16)>,
+) -> Result<(), RasterError> {
+    let id = encode_frames_sep(frames, out, true, wininfo, offset, print_at)?;
 
     // if the terminal didn't use a single shm object by now, im cleaning them all myself
+    // while it won't allow users to store videos made with shm objects for later use
+    // this will resolve issues related to mem leaking for ones that don't support kitty animations
     let shm_name = format!("mcat-video-{id}-0");
     if ShmemConf::new().os_id(&shm_name).open().is_ok() {
         let mut index = 0;
@@ -375,75 +304,26 @@ pub unsafe fn encode_frames_fast(
     Ok(())
 }
 
-/// encode a video into inline video.
-/// recommended to use in conjunction with video parsing library
-/// # example:
-/// first make sure you can supply a iter of Frames (using ffmpeg-sidecar here)
-/// ```rust,no_run
-/// use ffmpeg_sidecar::command::FfmpegCommand;
-/// use rasteroid::Frame;
-/// use ffmpeg_sidecar::event::OutputVideoFrame;
-/// use rasteroid::kitty_encoder::encode_frames;
-/// use rasteroid::kitty_encoder::is_kitty_capable;
-/// use rasteroid::image_extended::calc_fit;
-/// use ffmpeg_sidecar::event::FfmpegEvent;
-///
-/// pub struct KittyFrames(pub OutputVideoFrame);
-/// impl Frame for KittyFrames {
-///     fn width(&self) -> u16 {
-///         self.0.width as u16
-///     }
-///     fn height(&self) -> u16 {
-///         self.0.height as u16
-///     }
-///     fn timestamp(&self) -> f32 {
-///         self.0.timestamp
-///     }
-///     // must be rgb8!
-///     fn data(&self) -> &[u8] {
-///         &self.0.data
-///     }
-/// }
-/// // next get the frames (taken from ffmpeg-sidecar)
-///
-/// let mut out = std::io::stdout();
-/// let iter = match FfmpegCommand::new() // <- Builder API like `std::process::Command`
-///   .testsrc()  // <- Discoverable aliases for FFmpeg args
-///   .rawvideo() // <- Convenient argument presets
-///   .spawn()    // <- Ordinary `std::process::Child`
-///    {
-///        Ok(res) => res,
-///        Err(e) => return,
-/// }.iter().unwrap();   // <- Blocking iterator over logs and output
-/// // now convert to compatible frames
-/// let mut kitty_frames = iter
-///         .filter_map(|event| {
-///             if let FfmpegEvent::OutputFrame(frame) = event {
-///                 Some(KittyFrames(frame))
-///             } else {
-///                 None
-///             }
-///         });
-/// let id = rand::random::<u32>();
-/// encode_frames(&mut kitty_frames, &mut out, true);
-/// ```
 pub fn encode_frames(
     frames: &mut dyn Iterator<Item = impl Frame>,
     out: &mut impl Write,
-    center: bool,
-) -> Result<(), Box<dyn Error>> {
-    encode_frames_sep(frames, out, center, false)?;
+    wininfo: &Wininfo,
+    offset: Option<u16>,
+    print_at: Option<(u16, u16)>,
+) -> Result<(), RasterError> {
+    encode_frames_sep(frames, out, false, wininfo, offset, print_at)?;
     Ok(())
 }
 
 fn encode_frames_sep(
     frames: &mut dyn Iterator<Item = impl Frame>,
     out: &mut impl Write,
-    center: bool,
     use_shm: bool,
-) -> Result<u32, Box<dyn Error>> {
-    // getting the first frame
-    let first = frames.next().ok_or("video doesn't contain any frames")?;
+    wininfo: &Wininfo,
+    offset: Option<u16>,
+    print_at: Option<(u16, u16)>,
+) -> Result<u32, RasterError> {
+    let first = frames.next().ok_or(RasterError::EmptyVideo)?;
     let width = first.width();
     let height = first.height();
 
@@ -451,9 +331,8 @@ fn encode_frames_sep(
     let id = rand::random::<u32>();
     let shm_name = format!("mcat-video-{id}-");
 
-    let winfo = term_misc::get_wininfo();
-    let tmux = winfo.is_tmux;
-    let inline = winfo.needs_inline || tmux;
+    let tmux = wininfo.is_tmux;
+    let inline = wininfo.needs_inline || tmux;
     let prefix = if tmux {
         "\x1bPtmux;\x1b\x1b_G"
     } else {
@@ -461,14 +340,13 @@ fn encode_frames_sep(
     };
     let suffix = if tmux { "\x1b\x1b\\\x1b\\" } else { "\x1b\\" };
 
-    let offset = if center {
-        Some(term_misc::center_image(width as u16, false))
-    } else {
-        None
-    };
-    if center && !inline {
-        let center = offset_to_terminal(offset);
-        out.write_all(center.as_bytes())?;
+    // if not inline, its going to be a single row, we can just print it at the start and be done
+    if !inline {
+        let printat = term_misc::loc_to_terminal(print_at);
+        out.write_all(printat.as_bytes())?;
+
+        let offset = term_misc::offset_to_terminal(offset);
+        out.write_all(offset.as_bytes())?;
     }
 
     let i = id.to_string();
@@ -483,9 +361,9 @@ fn encode_frames_sep(
         ("v".to_string(), v),
     ]);
     let (rows, cols) = if inline {
-        let cols = term_misc::dim_to_cells(&format!("{width}px"), term_misc::SizeDirection::Width)?;
+        let cols = wininfo.dim_to_cells(&format!("{width}px"), term_misc::SizeDirection::Width)?;
         let rows =
-            term_misc::dim_to_cells(&format!("{height}px"), term_misc::SizeDirection::Height)?;
+            wininfo.dim_to_cells(&format!("{height}px"), term_misc::SizeDirection::Height)?;
         opts.insert("U".to_string(), 1.to_string());
         opts.insert("r".to_string(), rows.to_string());
         opts.insert("c".to_string(), cols.to_string());
@@ -549,42 +427,13 @@ fn encode_frames_sep(
     }
 
     if inline {
-        let placement = create_unicode_placeholder(cols, rows, id, offset, None)?;
+        let placement = create_unicode_placeholder(cols, rows, id, offset, print_at)?;
         out.write_all(placement.as_bytes())?;
     }
     write!(out, "{prefix}a=a,s=3,v=1,r=1,i={id},z={z}{suffix}")?;
     Ok(id)
 }
 
-pub fn delete_all_images(out: &mut impl Write) -> Result<(), std::io::Error> {
-    let tmux = term_misc::get_wininfo().is_tmux;
-    if tmux {
-        out.write_all(b"\x1bPtmux;\x1b\x1b_Ga=d,d=r,x=0,y=4294967295\x1b\x1b\\\x1b\\")
-    } else {
-        out.write_all(b"\x1b_Ga=d,d=r,x=0,y=4294967295\x1b\\")
-    }
-}
-pub fn delete_single_image(id: u32, out: &mut impl Write) -> Result<(), std::io::Error> {
-    let tmux = term_misc::get_wininfo().is_tmux;
-    if tmux {
-        write!(
-            out,
-            "\x1bPtmux;\x1b\x1b_Ga=d,d=i,i={id},p={id}\x1b\x1b\\\x1b\\"
-        )
-    } else {
-        write!(out, "\x1b_Ga=d,d=i,i={id},p={id}\x1b\\")
-    }
-}
-
-/// checks if the current terminal supports Kitty's graphic protocol
-/// # example:
-/// ```
-/// use rasteroid::kitty_encoder::is_kitty_capable;
-///
-/// let mut env = rasteroid::term_misc::EnvIdentifiers::new();
-/// let is_capable = is_kitty_capable(&mut env);
-/// println!("Kitty: {}", is_capable);
-/// ```
-pub fn is_kitty_capable(env: &mut EnvIdentifiers) -> bool {
+pub fn is_kitty_capable(env: &EnvIdentifiers) -> bool {
     env.term_contains("kitty") || env.term_contains("ghostty")
 }

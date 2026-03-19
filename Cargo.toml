@@ -14,7 +14,7 @@ lto = "fat"
 
 [workspace.dependencies]
 markdownify = { version = "0.3.0", path = "crates/markdownify" }
-rasteroid = { version = "0.1.9", path = "crates/rasteroid" }
+rasteroid = { version = "0.3.0", path = "crates/rasteroid" }
 
 strip-ansi-escapes = "0.2.1"
 clap_complete = "4.5.66"
