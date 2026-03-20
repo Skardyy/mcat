@@ -16,8 +16,16 @@ lto = "fat"
 markdownify = { version = "0.3.0", path = "crates/markdownify" }
 rasteroid = { version = "0.3.0", path = "crates/rasteroid" }
 
-strip-ansi-escapes = "0.2.1"
+infer = "0.19.0"
+anyhow = "1.0.102"
+clap = "4.5.58"
 clap_complete = "4.5.66"
+
+tokio = { version = "1.49.0", default-features = false, features = ["macros"] }
+tokio-tungstenite = "0.28.0"
+
+mime = "0.3.17"
+strip-ansi-escapes = "0.2.1"
 which = "8.0.0"
 rayon = "1.11.0"
 itertools = "0.14.0"
@@ -25,7 +33,6 @@ inquire = "0.9.3"
 shell-words = "1.1.1"
 ignore = "0.4.25"
 textwrap = "0.16.2"
-clap = "4.5.58"
 comrak = "0.50.0"
 crossterm = "0.29.0"
 pelite = { version = "0.10.0", default-features = false, features = ["std"] }
@@ -37,8 +44,6 @@ resvg = "0.47.0"
 fontdb = "0.23.0"
 serde_json = "1.0.149"
 base64 = "0.22.1"
-tokio = { version = "1.49.0", default-features = false, features = ["macros"] }
-tokio-tungstenite = "0.28.0"
 futures = "0.3.31"
 unicode-width = "0.2.2"
 dirs = "6.0.0"

@@ -57,6 +57,9 @@ scraper.workspace = true
 reqwest.workspace = true
 indicatif.workspace = true
 regex.workspace = true
+infer.workspace = true
+anyhow.workspace = true
+mime.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 winreg.workspace = true

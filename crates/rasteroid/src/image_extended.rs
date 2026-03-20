@@ -19,9 +19,8 @@ pub trait InlineImage {
     /// * `pad` - When `true`, pads the image with empty pixels to reach the exact requested dimensions while maintaining aspect ratio. When `false`, the returned dimensions may be smaller than requested
     ///
     /// # Returns
-    /// A tuple of `(image_bytes, center_offset, width, height)` where:
+    /// A tuple of `(image_bytes, width, height)` where:
     /// * `image_bytes` - png encoded resized image
-    /// * `center_offset` - horizontal cell offset to center the image in the terminal
     /// * `width` - final image width in pixels or cells depending on `resize_for_ascii`
     /// * `height` - final image height in pixels or cells depending on `resize_for_ascii`
     ///
@@ -40,7 +39,7 @@ pub trait InlineImage {
     /// let env = EnvIdentifiers::new();
     /// let wininfo = Wininfo::new(None, None, None, None, &env).unwrap();
     /// let dyn_img = image::load_from_memory(&buf).unwrap();
-    /// let (img_data, offset, width, height) = dyn_img.resize_plus(&wininfo, Some("80%"), Some("200c"), false, false).unwrap();
+    /// let (img_data, width, height) = dyn_img.resize_plus(&wininfo, Some("80%"), Some("200c"), false, false).unwrap();
     /// ```
     fn resize_plus(
         &self,
@@ -49,7 +48,7 @@ pub trait InlineImage {
         height: Option<&str>,
         resize_for_ascii: bool,
         pad: bool,
-    ) -> Result<(Vec<u8>, u16, u32, u32), RasterError>;
+    ) -> Result<(Vec<u8>, u32, u32), RasterError>;
 }
 
 impl InlineImage for DynamicImage {
@@ -60,7 +59,7 @@ impl InlineImage for DynamicImage {
         height: Option<&str>,
         resize_for_ascii: bool,
         pad: bool,
-    ) -> Result<(Vec<u8>, u16, u32, u32), RasterError> {
+    ) -> Result<(Vec<u8>, u32, u32), RasterError> {
         let (src_width, src_height) = self.dimensions();
         let width = match width {
             Some(w) => match resize_for_ascii {
@@ -78,7 +77,6 @@ impl InlineImage for DynamicImage {
         };
 
         let (new_width, new_height) = calc_fit(src_width, src_height, width, height);
-        let center = wininfo.center_offset(new_width as u16, resize_for_ascii);
 
         let mut dst_image = Image::new(
             new_width,
@@ -114,10 +112,10 @@ impl InlineImage for DynamicImage {
             new_img.copy_from(&img, x_offset, y_offset)?;
             let mut cursor = Cursor::new(Vec::new());
             new_img.write_to(&mut cursor, image::ImageFormat::Png)?;
-            return Ok((cursor.into_inner(), center, width, height));
+            return Ok((cursor.into_inner(), width, height));
         }
 
-        Ok((buffer, center, new_width, new_height))
+        Ok((buffer, new_width, new_height))
     }
 }
 

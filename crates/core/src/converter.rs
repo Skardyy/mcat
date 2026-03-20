@@ -6,10 +6,8 @@ use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use pelite::PeFile;
 use rasteroid::{
-    Frame,
     image_extended::InlineImage,
-    inline_an_image,
-    term_misc::{self, SizeDirection, dim_to_cells, dim_to_px, ensure_space},
+    term_misc::{self, SizeDirection},
 };
 use rayon::prelude::*;
 use regex::Regex;
@@ -185,57 +183,6 @@ pub fn url_file_to_image(path: impl AsRef<Path>) -> Option<DynamicImage> {
     }
 
     return image::open(icon_path).ok();
-}
-
-pub fn svg_to_image(
-    mut reader: impl Read,
-    width: Option<&str>,
-    height: Option<&str>,
-) -> Result<DynamicImage, Box<dyn std::error::Error>> {
-    let mut svg_data = Vec::new();
-    reader.read_to_end(&mut svg_data)?;
-
-    let mut opt = Options::default();
-
-    // allowing text
-    let mut fontdb = fontdb::Database::new();
-    fontdb.load_system_fonts();
-    opt.fontdb = std::sync::Arc::new(fontdb);
-    opt.text_rendering = usvg::TextRendering::OptimizeLegibility;
-
-    let tree = Tree::from_data(&svg_data, &opt)?;
-
-    // Get size of the SVG
-    let pixmap_size = tree.size();
-    let src_width = pixmap_size.width();
-    let src_height = pixmap_size.height();
-    let width = match width {
-        Some(w) => rasteroid::term_misc::dim_to_px(w, rasteroid::term_misc::SizeDirection::Width)?,
-        None => src_width as u32,
-    };
-    let height = match height {
-        Some(h) => rasteroid::term_misc::dim_to_px(h, rasteroid::term_misc::SizeDirection::Height)?,
-        None => src_height as u32,
-    };
-    let (target_width, target_height) =
-        rasteroid::image_extended::calc_fit(src_width as u32, src_height as u32, width, height);
-    let scale_x = target_width as f32 / src_width;
-    let scale_y = target_height as f32 / src_height;
-    let scale = scale_x.min(scale_y);
-
-    // Create a Pixmap to render to
-    let mut pixmap = tiny_skia::Pixmap::new(target_width, target_height)
-        .ok_or("Failed to create pixmap for svg")?;
-    let transform = tiny_skia::Transform::from_scale(scale, scale);
-
-    resvg::render(&tree, transform, &mut pixmap.as_mut());
-
-    // Convert Pixmap to ImageBuffer
-    let image_buffer =
-        ImageBuffer::<Rgba<u8>, _>::from_raw(target_width, target_height, pixmap.data().to_vec())
-            .ok_or("Failed to create image buffer for svg")?;
-
-    Ok(DynamicImage::ImageRgba8(image_buffer))
 }
 
 pub fn latex_to_pdf<P: AsRef<Path>>(input_path: P) -> Option<(TempDir, PathBuf)> {
@@ -427,27 +374,6 @@ pub fn pdf_to_image(
     }
 
     Ok(output.stdout)
-}
-
-pub struct VideoFrames {
-    timestamp: f32,
-    img: Vec<u8>,
-    width: u16,
-    height: u16,
-}
-impl Frame for VideoFrames {
-    fn timestamp(&self) -> f32 {
-        self.timestamp
-    }
-    fn data(&self) -> &[u8] {
-        &self.img
-    }
-    fn width(&self) -> u16 {
-        self.width as u16
-    }
-    fn height(&self) -> u16 {
-        self.height as u16
-    }
 }
 
 fn truncate_filename(name: String, width: u16, lnk: &Path, create_hyprlink: bool) -> String {
