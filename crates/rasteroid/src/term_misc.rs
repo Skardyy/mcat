@@ -106,7 +106,7 @@ impl Wininfo {
     /// // override columns, scale everything down by half
     /// let wininfo = Wininfo::new(None, Some("100xauto"), Some(0.5), Some(0.5), &env).unwrap();
     /// ```
-    fn new(
+    pub fn new(
         spx: Option<&str>,
         sc: Option<&str>,
         scalex: Option<f32>,
