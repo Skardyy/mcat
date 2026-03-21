@@ -6,103 +6,136 @@ pub mod pptx;
 pub mod sheets;
 
 use std::{
-    fs::File,
     io::Read,
     path::{Path, PathBuf},
 };
 
+pub use file_format::FileFormat;
+use file_format::Kind;
 use flate2::read::GzDecoder;
 use lzma_rust2::XzReader;
 
 use crate::{archives::FileTree, error::ParsingError};
 
-enum Converter {
-    Tar,
-    Zip,
-    Md,
-    Docx,
-    OpenDoc,
-    Csv,
-    Calamine,
-    Pptx,
-    Image(String),          // file path
-    Video(String),          // file path
-    Binary(String, String), // file path, ext
-    Audio(String),          // file path
-    RawText(String),        // file ext
+pub struct MarkdownifyInput {
+    pub bytes: Vec<u8>,
+    pub format: FileFormat,
+    pub id: String,
+    pub path: Option<PathBuf>,
+    pub ext: Option<String>,
 }
 
-impl Converter {
-    fn from_path(path: String, ext: String) -> Converter {
-        match ext.as_ref() {
-            "tar" => Converter::Tar,
-            "zip" => Converter::Zip,
-            "md" | "html" => Converter::Md,
-            "docx" => Converter::Docx,
-            "csv" => Converter::Csv,
-            "pptx" => Converter::Pptx,
-            "xlsx" | "xls" | "xlsm" | "xlsb" | "xla" | "xlam" | "ods" => Converter::Calamine,
-            "odt" | "odp" => Converter::OpenDoc,
+impl MarkdownifyInput {
+    pub fn from_path(path: impl AsRef<Path>) -> Result<Self, ParsingError> {
+        let path = path.as_ref();
+        let bytes = std::fs::read(path).map_err(ParsingError::UnreadableFile)?;
+        let mut input = Self::from_bytes(bytes, path.to_string_lossy().to_string());
+        input.path = Some(path.to_path_buf());
+        input.ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_lowercase());
+        Ok(input)
+    }
 
-            "jpg" | "jpeg" | "png" | "gif" | "eps" | "svg" | "webp" | "cr2" | "tif" | "tiff"
-            | "bmp" | "heif" | "avif" | "jxr" | "psd" | "ico" | "ora" | "djvu" => {
-                Converter::Image(path)
+    pub fn from_bytes(bytes: Vec<u8>, id: String) -> Self {
+        let format = FileFormat::from_bytes(&bytes);
+        let (bytes, format) = match format {
+            FileFormat::Xz => {
+                let mut out = Vec::new();
+                if XzReader::new(bytes.as_slice(), true)
+                    .read_to_end(&mut out)
+                    .is_ok()
+                {
+                    let fmt = FileFormat::from_bytes(&out);
+                    (out, fmt)
+                } else {
+                    (bytes, format)
+                }
             }
-
-            "mp4" | "m4v" | "mkv" | "webm" | "mov" | "avi" | "wmv" | "mpg" | "flv" => {
-                Converter::Video(path)
+            FileFormat::Gzip => {
+                let mut out = Vec::new();
+                if GzDecoder::new(bytes.as_slice())
+                    .read_to_end(&mut out)
+                    .is_ok()
+                {
+                    let fmt = FileFormat::from_bytes(&out);
+                    (out, fmt)
+                } else {
+                    (bytes, format)
+                }
             }
+            _ => (bytes, format),
+        };
 
-            "mid" | "mp3" | "m4a" | "ogg" | "flac" | "wav" | "amr" | "aac" | "aiff" | "dsf"
-            | "ape" => Converter::Audio(path),
-
-            "epub" | "rar" | "bz2" | "bz3" | "7z" | "pdf" | "swf" | "rtf" | "eot" | "ps"
-            | "sqlite" | "nes" | "crx" | "cab" | "deb" | "ar" | "Z" | "lz" | "rpm" | "dcm"
-            | "zst" | "lz4" | "msi" | "cpio" | "par2" | "woff" | "woff2" | "ttf" | "otf"
-            | "wasm" | "exe" | "dll" | "elf" | "bc" | "mach" | "class" | "dex" | "dey" | "der"
-            | "obj" => Converter::Binary(path, ext),
-
-            _ => Converter::RawText(ext),
+        Self {
+            bytes,
+            format,
+            id,
+            path: None,
+            ext: None,
         }
+    }
+
+    pub fn convert(&self) -> Result<String, ParsingError> {
+        let result = match self.format {
+            FileFormat::TapeArchive => archives::parse_tar(&self.bytes)?,
+            FileFormat::Zip => archives::parse_zip(&self.bytes)?,
+            FileFormat::HypertextMarkupLanguage | FileFormat::PlainText => {
+                parse_utf8(self.bytes.clone())?
+            }
+            FileFormat::OfficeOpenXmlDocument | FileFormat::MicrosoftWordDocument => {
+                docx::parse_docx(&self.bytes)?
+            }
+            FileFormat::OfficeOpenXmlPresentation | FileFormat::MicrosoftPowerpointPresentation => {
+                pptx::parse_pptx(&self.bytes)?
+            }
+            FileFormat::OpendocumentText | FileFormat::OpendocumentPresentation => {
+                opendoc::parse_opendoc(&self.bytes)?
+            }
+            FileFormat::OfficeOpenXmlSpreadsheet
+            | FileFormat::MicrosoftExcelSpreadsheet
+            | FileFormat::OpendocumentSpreadsheet => sheets::parse_sheets(&self.bytes)?,
+            _ => {
+                // extension based for formats with no magic bytes
+                match self.ext.as_deref() {
+                    Some("csv") => sheets::parse_csv(&self.bytes)?,
+                    Some("md") => parse_utf8(self.bytes.clone())?,
+                    // i think xlsx should catch them, but just in case.
+                    Some("xlsm") | Some("xlsb") | Some("xla") | Some("xlam") => {
+                        sheets::parse_sheets(&self.bytes)?
+                    }
+                    // bigger catchers for fallback
+                    _ => match self.format.kind() {
+                        Kind::Image => image_fallback(self.id.clone()),
+                        Kind::Video => video_fallback(self.id.clone()),
+                        Kind::Audio => audio_fallback(self.id.clone()),
+                        _ => match parse_utf8(self.bytes.clone()) {
+                            Ok(text) => file_fallback(text, self.format.extension().to_string()),
+                            Err(_) => binary_fallback(
+                                self.id.clone(),
+                                self.format.extension().to_string(),
+                            ),
+                        },
+                    },
+                }
+            }
+        };
+        Ok(result)
     }
 }
 
-fn convert_from_bytes(content: Vec<u8>, convert_type: Converter) -> Result<String, ParsingError> {
-    let result = match convert_type {
-        Converter::Tar => archives::parse_tar(content)?,
-        Converter::Zip => archives::parse_zip(content)?,
-        Converter::Md => parse_utf8(content)?,
-        Converter::Csv => sheets::parse_csv(content)?,
-        Converter::Calamine => sheets::parse_sheets(content)?,
-        Converter::Pptx => pptx::parse_pptx(content)?,
-        Converter::OpenDoc => opendoc::parse_opendoc(content)?,
-        Converter::Docx => docx::parse_docx(content)?,
-        Converter::Image(v) => image_fallback(v),
-        Converter::Video(v) => video_fallback(v),
-        Converter::Binary(p, ext) => binary_fallback(p, ext),
-        Converter::Audio(v) => audio_fallback(v),
-        Converter::RawText(ext) => file_fallback(parse_utf8(content)?, ext),
-    };
-
-    Ok(result)
-}
-
-pub fn convert_files(files: Vec<PathBuf>) -> Result<String, ParsingError> {
+pub fn convert_files(files: Vec<MarkdownifyInput>) -> Result<String, ParsingError> {
     if files.is_empty() {
         return Ok(String::new());
     }
 
-    let files: Vec<PathBuf> = files
-        .into_iter()
-        .map(|p| p.canonicalize().unwrap_or(p))
-        .collect();
-
     let common_root: PathBuf = files
         .iter()
-        .filter_map(|p| p.parent())
+        .filter_map(|f| f.path.as_ref()?.parent().map(|p| p.to_path_buf()))
         .fold(None::<PathBuf>, |acc, path| {
             Some(match acc {
-                None => path.to_path_buf(),
+                None => path,
                 Some(common) => common
                     .components()
                     .zip(path.components())
@@ -116,66 +149,23 @@ pub fn convert_files(files: Vec<PathBuf>) -> Result<String, ParsingError> {
 
     let mut tree = FileTree::new();
 
-    for path in files {
-        let key = path
-            .strip_prefix(&common_root)
-            .unwrap_or(&path)
-            .to_string_lossy()
-            .into_owned();
+    for input in files {
+        let key = input
+            .path
+            .as_ref()
+            .map(|p| {
+                p.strip_prefix(common_root)
+                    .unwrap_or(p)
+                    .to_string_lossy()
+                    .into_owned()
+            })
+            .unwrap_or_else(|| input.id.clone());
 
-        let content = convert(&path)?;
+        let content = input.convert()?;
         tree.add_file(key, content);
     }
 
     tree.render()
-}
-
-pub fn convert(path: &Path) -> Result<String, ParsingError> {
-    if !path.is_file() {
-        return Err(ParsingError::InvalidFile(path.to_string_lossy().to_string()).into());
-    }
-
-    // files without exts will just map into the file_fallback method
-    let mut ext = path
-        .extension()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_lowercase();
-    let mut file = File::open(path).map_err(ParsingError::UnreadableFile)?;
-    let mut content = Vec::new();
-
-    match ext.as_str() {
-        "xz" => {
-            ext = path
-                .file_stem()
-                .and_then(|s| Path::new(s).extension())
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_lowercase();
-            XzReader::new(file, true)
-                .read_to_end(&mut content)
-                .map_err(ParsingError::UnreadableFile)?;
-        }
-        "gz" => {
-            ext = path
-                .file_stem()
-                .and_then(|s| Path::new(s).extension())
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_lowercase();
-            GzDecoder::new(file)
-                .read_to_end(&mut content)
-                .map_err(ParsingError::UnreadableFile)?;
-        }
-        _ => {
-            file.read_to_end(&mut content)
-                .map_err(ParsingError::UnreadableFile)?;
-        }
-    }
-
-    let convert_type = Converter::from_path(path.to_string_lossy().to_string(), ext);
-
-    convert_from_bytes(content, convert_type)
 }
 
 pub fn parse_utf8(content: Vec<u8>) -> Result<String, ParsingError> {

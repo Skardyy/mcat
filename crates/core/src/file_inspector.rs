@@ -1,136 +1,55 @@
 use anyhow::{Context, Ok, Result};
-use infer::Type;
-use mime::Mime;
+use file_format::{FileFormat, Kind};
+use image::DynamicImage;
+use markdownify::MarkdownifyInput;
+use pelite::PeFile;
 use rasteroid::{Frame, image_extended::InlineImage, term_misc::Wininfo};
+use reqwest::Url;
 use resvg::{
     tiny_skia,
     usvg::{self, Options, Tree},
 };
 use std::{
-    fs,
+    fs::{self},
+    io::Write,
     path::{Path, PathBuf},
 };
+use tempfile::NamedTempFile;
+
+use crate::{cdp::ChromeHeadless, fetch_manager};
 
 pub struct McatFile {
-    bytes: Vec<u8>,
-    path: Option<PathBuf>,
-    mime: Option<Mime>,
-    infer_type: Option<Type>,
+    pub bytes: Vec<u8>,
+    pub path: Option<PathBuf>,
+    pub format: FileFormat,
+    pub kind: Kind,
 }
 
 impl McatFile {
-    // ## Constructors ##
-
     pub fn from_path(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
         let bytes = fs::read(&path)?;
-        let infer_type = infer::get(&bytes);
+        let format = FileFormat::from_bytes(&bytes);
 
         Ok(Self {
             bytes,
             path: Some(path),
-            mime: None,
-            infer_type,
+            format,
+            kind: format.kind(),
         })
     }
 
-    pub fn from_bytes(bytes: Vec<u8>, mime: Option<Mime>) -> Self {
-        let infer_type = infer::get(&bytes);
+    pub fn from_bytes(bytes: Vec<u8>) -> Self {
+        let format = FileFormat::from_bytes(&bytes);
+
         Self {
             bytes,
             path: None,
-            mime,
-            infer_type,
+            format,
+            kind: format.kind(),
         }
     }
 
-    // ## Type detection ##
-
-    pub fn is_image(&self) -> bool {
-        image::guess_format(&self.bytes).is_ok()
-    }
-
-    pub fn is_video(&self) -> bool {
-        self.infer_type
-            .map(|t| t.matcher_type() == infer::MatcherType::Video)
-            .unwrap_or(false)
-    }
-
-    pub fn is_audio(&self) -> bool {
-        self.infer_type
-            .map(|t| t.matcher_type() == infer::MatcherType::Audio)
-            .unwrap_or(false)
-    }
-
-    pub fn is_archive(&self) -> bool {
-        self.infer_type
-            .map(|t| t.matcher_type() == infer::MatcherType::Archive)
-            .unwrap_or(false)
-    }
-
-    pub fn is_book(&self) -> bool {
-        self.infer_type
-            .map(|t| t.matcher_type() == infer::MatcherType::Book)
-            .unwrap_or(false)
-    }
-
-    pub fn is_document(&self) -> bool {
-        self.infer_type
-            .map(|t| t.matcher_type() == infer::MatcherType::Doc)
-            .unwrap_or(false)
-    }
-
-    pub fn is_font(&self) -> bool {
-        self.infer_type
-            .map(|t| t.matcher_type() == infer::MatcherType::Font)
-            .unwrap_or(false)
-    }
-
-    pub fn is_app(&self) -> bool {
-        self.infer_type
-            .map(|t| t.matcher_type() == infer::MatcherType::App)
-            .unwrap_or(false)
-    }
-
-    pub fn is_pdf(&self) -> bool {
-        self.infer_type
-            .map(|t| t.mime_type() == mime::APPLICATION_PDF.as_ref())
-            .unwrap_or(false)
-    }
-
-    pub fn is_svg(&self) -> bool {
-        self.extension().as_deref() == Some("svg")
-            || self.bytes.starts_with(b"<svg")
-            || self.mime.as_ref() == Some(&mime::IMAGE_SVG)
-    }
-
-    pub fn is_html(&self) -> bool {
-        self.extension().as_deref() == Some("html")
-            || self.extension().as_deref() == Some("htm")
-            || self.mime.as_ref() == Some(&mime::TEXT_HTML)
-            || self.bytes.starts_with(b"<!DOCTYPE html")
-            || self.bytes.starts_with(b"<html")
-    }
-
-    // ## Raw access ##
-
-    pub fn bytes(&self) -> &[u8] {
-        &self.bytes
-    }
-
-    pub fn into_string(self) -> Result<String> {
-        Ok(String::from_utf8(self.bytes)?)
-    }
-
-    pub fn path(&self) -> Result<&PathBuf> {
-        self.path
-            .as_ref()
-            .context("no path available for byte source")
-    }
-
-    // ## Conversions ##
-
-    /// Supports: images, pdf, svg, tex, typ, exe, lnk
     pub fn to_image(
         &self,
         wininfo: &Wininfo,
@@ -138,12 +57,18 @@ impl McatFile {
         height: Option<&str>,
         is_ascii: bool,
     ) -> Result<(Vec<u8>, u32, u32)> {
-        let img = if self.is_image() {
-            image::load_from_memory(&self.bytes)?
-        } else if self.is_svg() {
-            return svg_to_image(&self.bytes, wininfo, width, height);
-        } else {
-            todo!()
+        let img = match self.format {
+            FileFormat::ScalableVectorGraphics => {
+                return svg_to_image(&self.bytes, wininfo, width, height);
+            }
+            FileFormat::PortableExecutable => exe_to_image(&self.bytes)?,
+            FileFormat::WindowsShortcut => lnk_to_image(&self.bytes)?,
+            FileFormat::HypertextMarkupLanguage => html_to_image(self)?,
+            _ if image::guess_format(&self.bytes).is_ok() => image::load_from_memory(&self.bytes)?,
+            _ => match self.extension().as_deref() {
+                Some("url") => url_to_image(&self.bytes)?,
+                _ => return Err(anyhow::anyhow!("unsupported format: {:?}", self.format)),
+            },
         };
 
         let (img, width, height) = img.resize_plus(wininfo, width, height, is_ascii, false)?;
@@ -151,16 +76,48 @@ impl McatFile {
         Ok((img, width, height))
     }
 
-    pub fn to_markdown(&self) {
-        todo!()
+    pub fn to_markdown_input(&self) -> MarkdownifyInput {
+        let mut input = MarkdownifyInput::from_bytes(
+            self.bytes.clone(),
+            self.path
+                .as_ref()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_default(),
+        );
+        input.path = self.path.clone();
+        input.ext = self
+            .path
+            .as_ref()
+            .and_then(|p| p.extension())
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_lowercase());
+        input
     }
 
-    /// Supports: video formats via ffmpeg
-    // pub fn to_frames(&self) -> Result<impl Iterator<Item = VideoFrames>> {
-    //     todo!()
-    // }
+    pub fn to_frames(&self) -> Result<Box<dyn Iterator<Item = VideoFrames>>> {
+        let input = if let Some(path) = &self.path {
+            path.to_string_lossy().to_string()
+        } else {
+            let mut tmp_file = NamedTempFile::with_suffix(".mp4")?;
+            tmp_file.write_all(&self.bytes)?;
+            tmp_file.path().to_string_lossy().to_string()
+        };
 
-    // ## Internal ##
+        let mut command = fetch_manager::get_ffmpeg().context(
+            "ffmpeg isn't installed. either install it manually, or call `mcat --fetch-ffmpeg`",
+        )?;
+
+        command.hwaccel("auto").input(&input).rawvideo();
+        let mut child = command.spawn()?;
+        let frames = child.iter()?.filter_frames().map(|f| VideoFrames {
+            timestamp: f.timestamp,
+            img: f.data,
+            width: f.width as u16,
+            height: f.height as u16,
+        });
+
+        Ok(Box::new(frames))
+    }
 
     fn extension(&self) -> Option<String> {
         self.path
@@ -199,7 +156,7 @@ pub fn svg_to_image(
     wininfo: &Wininfo,
     width: Option<&str>,
     height: Option<&str>,
-) -> anyhow::Result<(Vec<u8>, u32, u32)> {
+) -> Result<(Vec<u8>, u32, u32)> {
     let mut opt = Options::default();
 
     // allowing text
@@ -233,4 +190,134 @@ pub fn svg_to_image(
     resvg::render(&tree, transform, &mut pixmap.as_mut());
 
     Ok((pixmap.data().to_vec(), target_width, target_height))
+}
+
+pub fn exe_to_image(bytes: &[u8]) -> Result<DynamicImage> {
+    let pe = PeFile::from_bytes(bytes)?;
+    let resources = pe.resources()?;
+
+    let (_name, icon_group) = resources
+        .icons()
+        .next()
+        .context("no icons found in exe")??;
+
+    let best_entry = icon_group
+        .entries()
+        .iter()
+        .max_by_key(|e| {
+            let width = if e.bWidth == 0 { 256 } else { e.bWidth as u32 };
+            let height = if e.bHeight == 0 {
+                256
+            } else {
+                e.bHeight as u32
+            };
+            (width * height, e.wBitCount as u32)
+        })
+        .context("no icon entries found")?;
+
+    let icon_data = icon_group.image(best_entry.nId)?;
+
+    let mut ico_file = Vec::new();
+    // ICO header
+    ico_file.extend_from_slice(&[0, 0, 1, 0, 1, 0]);
+    ico_file.push(best_entry.bWidth);
+    ico_file.push(best_entry.bHeight);
+    ico_file.push(best_entry.bColorCount);
+    ico_file.push(0);
+    ico_file.extend_from_slice(&best_entry.wPlanes.to_le_bytes());
+    ico_file.extend_from_slice(&best_entry.wBitCount.to_le_bytes());
+    ico_file.extend_from_slice(&(icon_data.len() as u32).to_le_bytes());
+    ico_file.extend_from_slice(&22u32.to_le_bytes());
+    ico_file.extend_from_slice(icon_data);
+
+    Ok(image::load_from_memory(&ico_file)?)
+}
+
+pub fn lnk_to_image(bytes: &[u8]) -> Result<DynamicImage> {
+    // Rather lazy tbh, just checking for target and not to icon if set.
+    // Most will likely just target an exe which we can take the icon from.
+
+    let link_flags = u32::from_le_bytes([bytes[0x14], bytes[0x15], bytes[0x16], bytes[0x17]]);
+    anyhow::ensure!(link_flags & 0x02 != 0, "lnk has no link info");
+
+    let mut offset = 0x4C;
+    if link_flags & 0x01 != 0 {
+        let id_list_size = u16::from_le_bytes([bytes[offset], bytes[offset + 1]]);
+        offset += 2 + id_list_size as usize;
+    }
+
+    let local_base_path_offset = u32::from_le_bytes([
+        bytes[offset + 0x10],
+        bytes[offset + 0x11],
+        bytes[offset + 0x12],
+        bytes[offset + 0x13],
+    ]) as usize;
+
+    anyhow::ensure!(local_base_path_offset != 0, "lnk has no local base path");
+
+    let path_offset = offset + local_base_path_offset;
+    let end = bytes[path_offset..]
+        .iter()
+        .position(|&b| b == 0)
+        .unwrap_or(260);
+
+    let target = String::from_utf8(bytes[path_offset..path_offset + end].to_vec())?;
+    let target = Path::new(&target);
+
+    anyhow::ensure!(target.exists(), "lnk target does not exist");
+    anyhow::ensure!(
+        target
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_lowercase())
+            .as_deref()
+            == Some("exe"),
+        "lnk target is not an exe"
+    );
+
+    let exe_bytes = fs::read(target)?;
+    exe_to_image(&exe_bytes)
+}
+
+pub fn url_to_image(bytes: &[u8]) -> Result<DynamicImage> {
+    let content = std::str::from_utf8(bytes)?;
+    let icon_path = content
+        .lines()
+        .find_map(|line| line.strip_prefix("IconFile="))
+        .map(|s| s.trim())
+        .context("no IconFile entry in url file")?;
+
+    let icon_path = Path::new(icon_path);
+    anyhow::ensure!(icon_path.exists(), "icon path does not exist");
+
+    let icon_file = McatFile::from_path(icon_path)?;
+    match icon_file.format {
+        FileFormat::PortableExecutable => exe_to_image(&icon_file.bytes),
+        FileFormat::WindowsIcon => Ok(image::load_from_memory(&icon_file.bytes)?),
+        _ => anyhow::bail!("unsupported icon format: {:?}", icon_file.format),
+    }
+}
+
+pub fn html_to_image(source: &McatFile) -> Result<DynamicImage> {
+    let url = if let Some(path) = &source.path {
+        Url::from_file_path(path)
+            .map_err(|_| anyhow::anyhow!("failed to create url for chromium"))?
+    } else {
+        let html = std::str::from_utf8(&source.bytes)?;
+        let mut tmp_file = NamedTempFile::with_suffix(".html")?;
+        tmp_file.write_all(html.as_bytes())?;
+        Url::from_file_path(tmp_file.path())
+            .map_err(|_| anyhow::anyhow!("failed to create url for chromium"))?
+    };
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+
+    let img_bytes: Vec<u8> = rt.block_on(async {
+        let browser = ChromeHeadless::new(url.as_str()).await?;
+        browser.capture_screenshot().await
+    })?;
+
+    Ok(image::load_from_memory(&img_bytes)?)
 }

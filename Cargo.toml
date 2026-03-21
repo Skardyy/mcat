@@ -16,7 +16,7 @@ lto = "fat"
 markdownify = { version = "0.3.0", path = "crates/markdownify" }
 rasteroid = { version = "0.3.0", path = "crates/rasteroid" }
 
-infer = "0.19.0"
+file-format = "0.28.0"
 anyhow = "1.0.102"
 clap = "4.5.58"
 clap_complete = "4.5.66"
@@ -24,7 +24,6 @@ clap_complete = "4.5.66"
 tokio = { version = "1.49.0", default-features = false, features = ["macros"] }
 tokio-tungstenite = "0.28.0"
 
-mime = "0.3.17"
 strip-ansi-escapes = "0.2.1"
 which = "8.0.0"
 rayon = "1.11.0"

@@ -1,4 +1,4 @@
-use crate::{Converter, error::ParsingError};
+use crate::{MarkdownifyInput, error::ParsingError};
 use std::{
     collections::BTreeMap,
     io::{Cursor, Read},
@@ -22,19 +22,21 @@ pub fn parse_zip(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
         }
 
         let name = entry.name().to_string();
-
         if should_skip_file(&name) {
             continue;
         }
 
-        let ext = get_extension(&name);
         let mut contents = Vec::new();
         entry
             .read_to_end(&mut contents)
             .map_err(|e| ParsingError::ArchiveError(e.to_string()))?;
 
-        let convert_type = Converter::from_path(name.clone(), ext);
-        let text = crate::convert_from_bytes(contents, convert_type)?;
+        let mut input = MarkdownifyInput::from_bytes(contents, name.clone());
+        input.ext = Path::new(&name)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_lowercase());
+        let text = input.convert()?;
         tree.add_file(name, text);
     }
 
@@ -54,20 +56,23 @@ pub fn parse_tar(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
             continue;
         }
 
-        let path = entry
+        let name = entry
             .path()
-            .map_err(|e| ParsingError::ArchiveError(e.to_string()))?;
-        let name = path.to_string_lossy().to_string();
-        let ext = get_extension(&name);
+            .map_err(|e| ParsingError::ArchiveError(e.to_string()))?
+            .to_string_lossy()
+            .to_string();
 
         let mut contents = Vec::new();
         entry
             .read_to_end(&mut contents)
             .map_err(|e| ParsingError::ArchiveError(e.to_string()))?;
 
-        let convert_type = Converter::from_path(name.clone(), ext);
-        let text = crate::convert_from_bytes(contents, convert_type)?;
-
+        let mut input = MarkdownifyInput::from_bytes(contents, name.clone());
+        input.ext = Path::new(&name)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_lowercase());
+        let text = input.convert()?;
         tree.add_file(name, text);
     }
 
@@ -80,14 +85,6 @@ fn should_skip_file(name: &str) -> bool {
         || Path::new(name)
             .file_name()
             .map_or(false, |f| f.to_string_lossy().starts_with("._"))
-}
-
-fn get_extension(name: &str) -> String {
-    Path::new(name)
-        .extension()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_lowercase()
 }
 
 pub struct FileTree {

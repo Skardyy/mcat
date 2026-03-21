@@ -427,7 +427,7 @@ pub fn ensure_space(out: &mut impl Write, height: u16) -> Result<(), RasterError
     Ok(())
 }
 
-pub(crate) fn setup_signal_handler() -> Arc<AtomicBool> {
+pub fn setup_signal_handler() -> Arc<AtomicBool> {
     let shutdown = Arc::new(AtomicBool::new(false));
 
     // Register signal handlers

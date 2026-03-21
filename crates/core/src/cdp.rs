@@ -1,3 +1,4 @@
+use anyhow::{Context, Result};
 use base64::Engine;
 use base64::engine::general_purpose;
 use futures::{SinkExt, StreamExt};
@@ -20,7 +21,7 @@ pub struct ChromeHeadless {
     port: u16,
 }
 
-fn find_available_port() -> Result<u16, Box<dyn std::error::Error>> {
+fn find_available_port() -> Result<u16> {
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let port = listener.local_addr()?.port();
     drop(listener);
@@ -28,8 +29,8 @@ fn find_available_port() -> Result<u16, Box<dyn std::error::Error>> {
 }
 
 impl ChromeHeadless {
-    pub async fn new(uri: &str) -> Result<Self, Box<dyn std::error::Error>> {
-        let browser_config = BrowserConfig::default().ok_or("chromium isn't installed. either install it manually (chrome/msedge will do so too) or call `mcat --fetch-chromium`")?;
+    pub async fn new(uri: &str) -> Result<Self> {
+        let browser_config = BrowserConfig::default().context("chromium isn't installed. either install it manually (chrome/msedge will do so too) or call `mcat --fetch-chromium`")?;
         let path = browser_config.path;
         let port = find_available_port()?;
         let process = Command::new(path)
@@ -74,7 +75,7 @@ impl ChromeHeadless {
         Ok(instance)
     }
 
-    async fn wait_for_server(&self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn wait_for_server(&self) -> Result<()> {
         loop {
             match timeout(
                 Duration::from_millis(2000),
@@ -92,7 +93,7 @@ impl ChromeHeadless {
         }
     }
 
-    pub async fn capture_screenshot(&self) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    pub async fn capture_screenshot(&self) -> Result<Vec<u8>> {
         let endpoint = self.get_websocket_endpoint().await?;
         let (mut ws_stream, _) = tokio_tungstenite::connect_async(&endpoint).await?;
 
@@ -169,11 +170,11 @@ impl ChromeHeadless {
 
         let screenshot_data = response["data"]
             .as_str()
-            .ok_or("failed to get screenshot")?;
+            .context("failed to get screenshot")?;
         Ok(general_purpose::STANDARD.decode(screenshot_data)?)
     }
 
-    async fn get_websocket_endpoint(&self) -> Result<String, Box<dyn std::error::Error>> {
+    async fn get_websocket_endpoint(&self) -> Result<String> {
         // shouldn't really go over 1 and even
         let max_attempts = 10;
         for _ in 1..=max_attempts {
@@ -189,7 +190,7 @@ impl ChromeHeadless {
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
-        Err("Failed to get websocket for headless chrome".into())
+        anyhow::bail!("Failed to get websocket for headless chrome")
     }
 
     async fn send_command(
@@ -199,7 +200,7 @@ impl ChromeHeadless {
         method: &str,
         params: Option<Value>,
         wait: bool,
-    ) -> Result<Value, Box<dyn std::error::Error>> {
+    ) -> Result<Value> {
         let command = match params {
             Some(params) => json!({
                 "id": id,
@@ -223,14 +224,14 @@ impl ChromeHeadless {
                     let response: Value = serde_json::from_str(&text)?;
                     if response["id"] == id {
                         if let Some(error) = response.get("error") {
-                            return Err(format!("Chrome error: {}", error).into());
+                            anyhow::bail!(format!("Chrome error: {}", error));
                         }
                         return Ok(response["result"].to_owned());
                     }
                 }
             }
 
-            Err("WebSocket connection closed unexpectedly".into())
+            anyhow::bail!("WebSocket connection closed unexpectedly")
         } else {
             Ok(Value::Null)
         }
@@ -239,7 +240,7 @@ impl ChromeHeadless {
     async fn wait_for_load_event(
         &self,
         ws_stream: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> Result<()> {
         // perhaps it was already loaded..
         let ready_state = self
             .send_command(
@@ -269,7 +270,7 @@ impl ChromeHeadless {
             }
         }
 
-        Err("WebSocket closed before loadEventFired".into())
+        anyhow::bail!("WebSocket closed before loadEventFired")
     }
 }
 

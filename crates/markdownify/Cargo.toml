@@ -25,3 +25,5 @@ calamine.workspace = true
 csv.workspace = true
 
 quick-xml.workspace = true
+
+file-format.workspace = true
