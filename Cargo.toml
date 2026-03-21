@@ -6,7 +6,6 @@ members = [
 ]
 resolver = "3"
 
-# The profile that 'dist' will build with
 [profile.dist]
 inherits = "release"
 codegen-units = 1
@@ -16,14 +15,17 @@ lto = "fat"
 markdownify = { version = "0.3.0", path = "crates/markdownify" }
 rasteroid = { version = "0.3.0", path = "crates/rasteroid" }
 
-file-format = "0.28.0"
 anyhow = "1.0.102"
-clap = "4.5.58"
+clap = { version = "4.5.58", features = ["derive", "env"] }
 clap_complete = "4.5.66"
+tracing = "0.1.44"
+tracing-subscriber = "0.3.23"
 
 tokio = { version = "1.49.0", default-features = false, features = ["macros"] }
 tokio-tungstenite = "0.28.0"
 
+encoding_rs = "0.8.35"
+infer = "0.19.0"
 strip-ansi-escapes = "0.2.1"
 which = "8.0.0"
 rayon = "1.11.0"

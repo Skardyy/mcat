@@ -1,9 +1,8 @@
-use anyhow::{Context, Ok, Result};
-use file_format::{FileFormat, Kind};
+use anyhow::{Context, Result};
 use image::DynamicImage;
 use markdownify::MarkdownifyInput;
 use pelite::PeFile;
-use rasteroid::{Frame, image_extended::InlineImage, term_misc::Wininfo};
+use rasteroid::{Frame, RasterEncoder, image_extended::InlineImage, term_misc::Wininfo};
 use reqwest::Url;
 use resvg::{
     tiny_skia,
@@ -16,10 +15,43 @@ use std::{
 };
 use tempfile::NamedTempFile;
 
-use crate::{cdp::ChromeHeadless, fetch_manager};
+use crate::{
+    cdp::ChromeHeadless,
+    config::{McatConfig, Theme},
+    fetch_manager, markdown_viewer,
+};
 
+pub enum McatKind {
+    PlainText,
+
+    Markdown,
+    Html,
+
+    Image,
+    Svg,
+
+    Exe,
+    Lnk,
+
+    Archive,
+
+    Docx,
+    Pdf,
+
+    Xlsx,
+    Csv,
+    Ods,
+
+    Pptx,
+    Odt,
+    Odp,
+}
+
+// files get decompressed if needed
+// compression such as gz, xz, .lz, .lzma
 pub struct McatFile {
     pub bytes: Vec<u8>,
+
     pub path: Option<PathBuf>,
     pub format: FileFormat,
     pub kind: Kind,
@@ -50,28 +82,60 @@ impl McatFile {
         }
     }
 
-    pub fn to_image(
-        &self,
-        wininfo: &Wininfo,
-        width: Option<&str>,
-        height: Option<&str>,
-        is_ascii: bool,
-    ) -> Result<(Vec<u8>, u32, u32)> {
+    pub fn set_format(&mut self, format: FileFormat) {
+        self.format = format;
+        self.kind = format.kind();
+    }
+
+    pub fn to_html(&self, theme_for_style: Option<Theme>) -> Result<String> {
+        let md = self.to_markdown_input().convert()?;
+        let html =
+            markdown_viewer::md_to_html(&md, theme_for_style.map(|v| v.to_string()).as_deref());
+
+        Ok(html)
+    }
+
+    pub fn to_image(&self, config: &McatConfig) -> Result<(Vec<u8>, u32, u32)> {
+        let wininfo = config
+            .wininfo
+            .as_ref()
+            .context("this is likely a bug, tried to convert to image and wininfo is None")?;
+        let width: Option<&str> = Some(&config.img_width);
+        let height: Option<&str> = Some(&config.img_height);
+        let is_ascii = config
+            .encoder
+            .map(|v| v == RasterEncoder::Ascii)
+            .unwrap_or(false);
+
         let img = match self.format {
             FileFormat::ScalableVectorGraphics => {
-                return svg_to_image(&self.bytes, wininfo, width, height);
+                return svg_to_image(&self.bytes, &wininfo, width, height);
             }
             FileFormat::PortableExecutable => exe_to_image(&self.bytes)?,
             FileFormat::WindowsShortcut => lnk_to_image(&self.bytes)?,
             FileFormat::HypertextMarkupLanguage => html_to_image(self)?,
+            FileFormat::PlainText => {
+                let theme = config.theme.clone();
+                let html = self.to_html(Some(theme))?;
+                let mut file = McatFile::from_bytes(html.into_bytes());
+                file.set_format(FileFormat::HypertextMarkupLanguage);
+                html_to_image(&file)?
+            }
             _ if image::guess_format(&self.bytes).is_ok() => image::load_from_memory(&self.bytes)?,
             _ => match self.extension().as_deref() {
                 Some("url") => url_to_image(&self.bytes)?,
+                _ if self.format.kind() == Kind::Other => {
+                    let theme = config.theme.clone();
+                    let html = self.to_html(Some(theme))?;
+                    let mut file = McatFile::from_bytes(html.into_bytes());
+                    file.set_format(FileFormat::HypertextMarkupLanguage);
+                    html_to_image(&file)?
+                }
                 _ => return Err(anyhow::anyhow!("unsupported format: {:?}", self.format)),
             },
         };
 
-        let (img, width, height) = img.resize_plus(wininfo, width, height, is_ascii, false)?;
+        let (img, width, height) = img.resize_plus(&wininfo, width, height, is_ascii, false)?;
 
         Ok((img, width, height))
     }

@@ -1,3 +1,4 @@
+use anyhow::Result;
 use ignore::WalkBuilder;
 use inquire::MultiSelect;
 use std::collections::{HashMap, HashSet};
@@ -5,9 +6,9 @@ use std::path::{Path, PathBuf};
 
 use crate::markdown_viewer::utils::get_lang_icon_and_color;
 
-pub fn prompt_for_files(dir: &Path, hidden: bool) -> Result<Vec<PathBuf>, String> {
+pub fn prompt_for_files(dir: &Path, hidden: bool) -> Result<Vec<PathBuf>> {
     let mut all_paths = collect_gitignored_paths(dir, hidden)?;
-    all_paths.sort(); // Ensures folders come before contents
+    all_paths.sort();
 
     let tree_view = format_file_list(&all_paths, dir);
 
@@ -20,20 +21,19 @@ pub fn prompt_for_files(dir: &Path, hidden: bool) -> Result<Vec<PathBuf>, String
     let selected = MultiSelect::new("Select files or folders", tree_view)
         .with_page_size(20)
         .with_vim_mode(true)
-        .prompt()
-        .map_err(|e| e.to_string())?;
+        .prompt()?;
 
     let selected_paths: HashSet<PathBuf> = selected
         .into_iter()
         .filter_map(|label| index_map.get(&label).cloned())
         .collect();
 
-    // Avoid duplicates: if a folder is selected, skip its inner files
+    // if a folder is selected, skip its inner files
     let mut final_files = HashSet::new();
 
     for path in &selected_paths {
         if path.is_file() {
-            // Only include files not covered by a selected folder
+            // only include files not covered by a selected folder
             let covered = selected_paths
                 .iter()
                 .any(|other| other.is_dir() && path.starts_with(other));
@@ -53,7 +53,7 @@ pub fn prompt_for_files(dir: &Path, hidden: bool) -> Result<Vec<PathBuf>, String
     Ok(final_files.into_iter().collect())
 }
 
-fn collect_gitignored_paths(dir: &Path, hidden: bool) -> Result<Vec<PathBuf>, String> {
+fn collect_gitignored_paths(dir: &Path, hidden: bool) -> Result<Vec<PathBuf>> {
     let walker = WalkBuilder::new(dir)
         .standard_filters(!hidden)
         .hidden(!hidden)
@@ -130,7 +130,7 @@ fn format_file_list(paths: &[PathBuf], base: &Path) -> Vec<String> {
             }
         }
 
-        // Add invisible unique suffix to make each label distinct
+        // add invisible unique suffix to make each label distinct
         line.push_str(&encode_invisible_id(i));
 
         formatted.push(line);

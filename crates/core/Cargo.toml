@@ -57,8 +57,10 @@ scraper.workspace = true
 reqwest.workspace = true
 indicatif.workspace = true
 regex.workspace = true
-file-format.workspace = true
+infer.workspace = true
 anyhow.workspace = true
+flate2.workspace = true
+lzma-rust2.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 winreg.workspace = true

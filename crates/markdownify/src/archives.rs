@@ -10,7 +10,7 @@ use zip::ZipArchive;
 pub fn parse_zip(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
     let mut archive = ZipArchive::new(Cursor::new(content))
         .map_err(|e| ParsingError::ArchiveError(e.to_string()))?;
-    let mut tree = FileTree::new();
+    let mut tree = FileTree::default();
 
     for i in 0..archive.len() {
         let mut entry = archive
@@ -31,7 +31,7 @@ pub fn parse_zip(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
             .read_to_end(&mut contents)
             .map_err(|e| ParsingError::ArchiveError(e.to_string()))?;
 
-        let mut input = MarkdownifyInput::from_bytes(contents, name.clone());
+        let mut input = MarkdownifyInput::from_bytes(contents, name.clone())?;
         input.ext = Path::new(&name)
             .extension()
             .and_then(|e| e.to_str())
@@ -45,7 +45,7 @@ pub fn parse_zip(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
 
 pub fn parse_tar(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
     let mut archive = Archive::new(Cursor::new(content));
-    let mut tree = FileTree::new();
+    let mut tree = FileTree::default();
 
     for entry in archive
         .entries()
@@ -67,7 +67,7 @@ pub fn parse_tar(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
             .read_to_end(&mut contents)
             .map_err(|e| ParsingError::ArchiveError(e.to_string()))?;
 
-        let mut input = MarkdownifyInput::from_bytes(contents, name.clone());
+        let mut input = MarkdownifyInput::from_bytes(contents, name.clone())?;
         input.ext = Path::new(&name)
             .extension()
             .and_then(|e| e.to_str())
@@ -84,20 +84,15 @@ fn should_skip_file(name: &str) -> bool {
         || name.contains("/._")
         || Path::new(name)
             .file_name()
-            .map_or(false, |f| f.to_string_lossy().starts_with("._"))
+            .is_some_and(|f| f.to_string_lossy().starts_with("._"))
 }
 
+#[derive(Default)]
 pub struct FileTree {
     files: BTreeMap<String, String>,
 }
 
 impl FileTree {
-    pub fn new() -> Self {
-        Self {
-            files: BTreeMap::new(),
-        }
-    }
-
     pub fn add_file(&mut self, path: String, content: String) {
         self.files.insert(path, content);
     }
