@@ -240,11 +240,86 @@ impl ProcessingContext {
     }
 }
 
+/// Replace backtick-enclosed code spans with placeholders.
+/// Handles both single and multiple backtick delimiters.
+fn protect_code_spans(input: &str) -> (String, Vec<String>) {
+    let mut result = String::with_capacity(input.len());
+    let mut placeholders: Vec<String> = Vec::new();
+    let chars: Vec<char> = input.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        if chars[i] == '`' {
+            // Count consecutive backticks
+            let start = i;
+            let mut tick_count = 0;
+            while i < chars.len() && chars[i] == '`' {
+                tick_count += 1;
+                i += 1;
+            }
+            // Find the matching closing backticks
+            let mut found_end = false;
+            let mut j = i;
+            while j <= chars.len().saturating_sub(tick_count) {
+                let mut matches = true;
+                for k in 0..tick_count {
+                    if chars[j + k] != '`' {
+                        matches = false;
+                        break;
+                    }
+                }
+                if matches {
+                    // Verify the closing delimiter is exactly
+                    // tick_count backticks (not more)
+                    let after = j + tick_count;
+                    if after >= chars.len() || chars[after] != '`' {
+                        let end = j + tick_count;
+                        let span: String = chars[start..end]
+                            .iter().collect();
+                        let idx = placeholders.len();
+                        placeholders.push(span);
+                        result.push_str(
+                            &format!("MCAT_CODE_PLACEHOLDER_{}_END", idx),
+                        );
+                        i = end;
+                        found_end = true;
+                        break;
+                    }
+                }
+                j += 1;
+            }
+            if !found_end {
+                // No matching close; emit the backticks literally
+                for _ in 0..tick_count {
+                    result.push('`');
+                }
+            }
+        } else {
+            result.push(chars[i]);
+            i += 1;
+        }
+    }
+
+    (result, placeholders)
+}
+
 pub fn process(markdown: &str) -> String {
     let ctx = ProcessingContext::new();
 
-    let escaped_markdown = ctx.escape_unknown_elements(markdown);
-    let document = Html::parse_fragment(&escaped_markdown);
+    // Protect backtick-enclosed content from HTML processing.
+    // Replace inline code spans with placeholders so the HTML
+    // parser does not interpret tags inside backticks.
+    let (protected, placeholders) = protect_code_spans(markdown);
 
-    collect(document.root_element(), &ctx, "\n\n")
+    let escaped_markdown = ctx.escape_unknown_elements(&protected);
+    let document = Html::parse_fragment(&escaped_markdown);
+    let mut content = collect(document.root_element(), &ctx, "\n\n");
+
+    // Restore backtick-enclosed content
+    for (i, original) in placeholders.iter().enumerate() {
+        let placeholder = format!("MCAT_CODE_PLACEHOLDER_{}_END", i);
+        content = content.replace(&placeholder, original);
+    }
+
+    content
 }

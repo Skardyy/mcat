@@ -146,3 +146,62 @@ fn comrak_options<'a>() -> options::Options<'a> {
 
     options
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::McatConfig;
+
+    fn render(md: &str) -> String {
+        use clap::Parser;
+        let mut config = McatConfig::parse_from(["mcat", "-"]);
+        config.finalize().unwrap();
+        let result = md_to_ansi(md, config, None).unwrap();
+        strip_ansi_escapes::strip_str(&result).to_string()
+    }
+
+    #[test]
+    fn list_item_with_code_block_on_separate_lines() {
+        let md = "1. Step one:\n\n        echo hello\n";
+        let output = render(md);
+
+        // The code block header (file icon + "text") must not
+        // appear on the same line as the list item text.
+        let step_line = output.lines().find(|l| l.contains("Step one"));
+        assert!(step_line.is_some(), "should contain \'Step one\'");
+        let step_line = step_line.unwrap();
+
+        assert!(
+            !step_line.contains("\u{f15c}") && !step_line.contains("text"),
+            "code block header should not be on the same line as list item text, got: {:?}",
+            step_line,
+        );
+    }
+
+    #[test]
+    fn html_tags_in_backticks_rendered_literally() {
+        let md = "This has `<div>` and `<script>` in backticks.\n";
+        let output = render(md);
+        let lines: Vec<&str> = output.lines()
+            .filter(|l| !l.trim().is_empty())
+            .collect();
+
+        // Should be a single line with tags rendered literally
+        assert_eq!(
+            lines.len(), 1,
+            "should be one line, got {}:\n{}",
+            lines.len(), output,
+        );
+        assert!(
+            lines[0].contains("<div>"),
+            "should contain literal <div>, got: {:?}",
+            lines[0],
+        );
+        assert!(
+            lines[0].contains("<script>"),
+            "should contain literal <script>, got: {:?}",
+            lines[0],
+        );
+    }
+}
