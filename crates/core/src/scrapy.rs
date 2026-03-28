@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use file_format::FileFormat;
 use futures::StreamExt;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use regex::Regex;
@@ -9,10 +8,11 @@ use std::sync::OnceLock;
 use std::time::Duration;
 use tokio::runtime::{Builder, Runtime};
 
-use crate::mcat_file::McatFile;
+use crate::mcat_file::{McatFile, McatKind};
 
 static GITHUB_BLOB_URL: OnceLock<Regex> = OnceLock::new();
 static HTTP_CLIENT: OnceLock<Client> = OnceLock::new();
+// TODO: remove that
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 static GLOBAL_MULTI_PROGRESS: OnceLock<MultiProgress> = OnceLock::new();
 
@@ -20,18 +20,10 @@ fn get_multi_progress() -> &'static MultiProgress {
     GLOBAL_MULTI_PROGRESS.get_or_init(MultiProgress::new)
 }
 
+#[derive(Default)]
 pub struct MediaScrapeOptions {
     pub silent: bool,
     pub max_content_length: Option<u64>,
-}
-
-impl Default for MediaScrapeOptions {
-    fn default() -> Self {
-        Self {
-            silent: false,
-            max_content_length: None,
-        }
-    }
 }
 
 pub fn scrape_biggest_media(url: &str, options: &MediaScrapeOptions) -> Result<McatFile> {
@@ -58,13 +50,13 @@ pub fn scrape_biggest_media(url: &str, options: &MediaScrapeOptions) -> Result<M
         let format = mime.as_deref().and_then(format_from_mime);
 
         // if we know its not html, download directly
-        if let Some(fmt) = format {
-            if fmt != FileFormat::HypertextMarkupLanguage {
-                let data = download(response, options).await?;
-                let mut file = McatFile::from_bytes(data);
-                file.format = fmt;
-                return Ok(file);
-            }
+        if let Some(fmt) = format
+            && fmt != McatKind::Html
+        {
+            let data = download(response, options).await?;
+            let mut file = McatFile::from_bytes(data, None)?;
+            file.kind = fmt;
+            return Ok(file);
         }
 
         // otherwise scrape html for biggest media
@@ -153,10 +145,10 @@ async fn scrape_html(
     ] {
         if let Ok(sel) = scraper::Selector::parse(selector) {
             for el in document.select(&sel) {
-                if let Some(src) = el.value().attr("src").or_else(|| el.value().attr("data")) {
-                    if let Ok(url) = base.join(src) {
-                        candidates.push(url.to_string());
-                    }
+                if let Some(src) = el.value().attr("src").or_else(|| el.value().attr("data"))
+                    && let Ok(url) = base.join(src)
+                {
+                    candidates.push(url.to_string());
                 }
             }
         }
@@ -175,10 +167,11 @@ async fn scrape_html(
 
         // only keep image/video/svg
         let is_media = format
+            .as_ref()
             .map(|f| {
                 matches!(
-                    f.kind(),
-                    file_format::Kind::Image | file_format::Kind::Video
+                    f,
+                    McatKind::Gif | McatKind::Image | McatKind::Svg | McatKind::Video
                 )
             })
             .unwrap_or(false);
@@ -191,9 +184,9 @@ async fn scrape_html(
         };
         let size = data.len();
 
-        let mut file = McatFile::from_bytes(data);
+        let mut file = McatFile::from_bytes(data, None)?;
         if let Some(fmt) = format {
-            file.format = fmt;
+            file.kind = fmt;
         }
 
         if biggest
@@ -248,69 +241,45 @@ async fn get_response(
     Ok(response)
 }
 
-fn format_from_mime(mime: &str) -> Option<FileFormat> {
+fn format_from_mime(mime: &str) -> Option<McatKind> {
     let mime = mime.split(';').next()?.trim();
     match mime {
-        // images
-        "image/jpeg" => Some(FileFormat::JointPhotographicExpertsGroup),
-        "image/png" => Some(FileFormat::PortableNetworkGraphics),
-        "image/gif" => Some(FileFormat::GraphicsInterchangeFormat),
-        "image/webp" => Some(FileFormat::Webp),
-        "image/svg+xml" => Some(FileFormat::ScalableVectorGraphics),
-        "image/avif" => Some(FileFormat::Av1ImageFileFormat),
-        "image/bmp" => Some(FileFormat::WindowsBitmap),
-        "image/tiff" => Some(FileFormat::TagImageFileFormat),
-        "image/x-icon" | "image/vnd.microsoft.icon" => Some(FileFormat::WindowsIcon),
-        "image/heic" => Some(FileFormat::HighEfficiencyImageCoding),
-        "image/heif" => Some(FileFormat::HighEfficiencyImageFileFormat),
-        "image/jxl" => Some(FileFormat::JpegXl),
-        "image/apng" => Some(FileFormat::AnimatedPortableNetworkGraphics),
-        "image/vnd.adobe.photoshop" => Some(FileFormat::AdobePhotoshopDocument),
-        "image/x-xcf" => Some(FileFormat::ExperimentalComputingFacility),
-        // video
-        "video/mp4" => Some(FileFormat::Mpeg4Part14Video),
-        "video/webm" => Some(FileFormat::Webm),
-        "video/matroska" => Some(FileFormat::MatroskaVideo),
-        "video/quicktime" => Some(FileFormat::AppleQuicktime),
-        "video/avi" | "video/x-msvideo" => Some(FileFormat::AudioVideoInterleave),
-        "video/x-ms-wmv" => Some(FileFormat::WindowsMediaVideo),
-        "video/x-flv" => Some(FileFormat::FlashVideo),
-        "video/mpeg" => Some(FileFormat::Mpeg12Video),
-        "video/ogg" => Some(FileFormat::OggTheora),
-        "video/3gpp" => Some(FileFormat::ThirdGenerationPartnershipProject),
-        "video/x-m4v" => Some(FileFormat::AppleItunesVideo),
-        // documents
-        "application/pdf" => Some(FileFormat::PortableDocumentFormat),
-        "application/msword" => Some(FileFormat::MicrosoftWordDocument),
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => {
-            Some(FileFormat::OfficeOpenXmlDocument)
-        }
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation" => {
-            Some(FileFormat::OfficeOpenXmlPresentation)
-        }
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" => {
-            Some(FileFormat::OfficeOpenXmlSpreadsheet)
-        }
-        "application/vnd.ms-powerpoint" => Some(FileFormat::MicrosoftPowerpointPresentation),
-        "application/vnd.ms-excel" => Some(FileFormat::MicrosoftExcelSpreadsheet),
-        "application/vnd.oasis.opendocument.text" => Some(FileFormat::OpendocumentText),
-        "application/vnd.oasis.opendocument.presentation" => {
-            Some(FileFormat::OpendocumentPresentation)
-        }
-        "application/vnd.oasis.opendocument.spreadsheet" => {
-            Some(FileFormat::OpendocumentSpreadsheet)
-        }
-        "application/rtf" => Some(FileFormat::RichTextFormat),
-        "text/x-tex" => Some(FileFormat::Latex),
-        // text
-        "text/html" => Some(FileFormat::HypertextMarkupLanguage),
-        "text/plain" => Some(FileFormat::PlainText),
-        "text/xml" => Some(FileFormat::ExtensibleMarkupLanguage),
-        // archives
-        "application/zip" => Some(FileFormat::Zip),
-        "application/x-tar" => Some(FileFormat::TapeArchive),
-        "application/gzip" => Some(FileFormat::Gzip),
-        "application/x-xz" => Some(FileFormat::Xz),
+        "image/gif" => Some(McatKind::Gif),
+        "image/svg+xml" => Some(McatKind::Svg),
+        "image/png"
+        | "image/jpeg"
+        | "image/webp"
+        | "image/tiff"
+        | "image/bmp"
+        | "image/x-icon"
+        | "image/vnd.microsoft.icon"
+        | "image/avif"
+        | "image/vnd.radiance"
+        | "image/x-exr"
+        | "image/qoi"
+        | "image/x-portable-anymap"
+        | "image/farbfeld"
+        | "image/vnd.ms-dds" => Some(McatKind::Image),
+        "video/mp4" | "video/webm" | "video/matroska" | "video/quicktime" | "video/avi"
+        | "video/x-msvideo" | "video/x-ms-wmv" | "video/x-flv" | "video/mpeg" | "video/ogg"
+        | "video/3gpp" | "video/x-m4v" => Some(McatKind::Video),
+        "application/pdf" => Some(McatKind::Pdf),
+        "text/x-tex" => Some(McatKind::Tex),
+        "text/html" => Some(McatKind::Html),
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        | "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        | "application/vnd.ms-excel"
+        | "application/vnd.oasis.opendocument.text"
+        | "application/vnd.oasis.opendocument.presentation"
+        | "application/vnd.oasis.opendocument.spreadsheet"
+        | "application/zip"
+        | "application/x-tar"
+        | "application/gzip"
+        | "application/x-xz"
+        | "application/json"
+        | "application/x-yaml" => Some(McatKind::PreMarkdown),
+        _ if mime.starts_with("text/") => Some(McatKind::PreMarkdown),
         _ => None,
     }
 }

@@ -76,7 +76,7 @@ fn encode_sixel(
     let mut color_used = vec![false; palette_size];
     let mut sixel_data = vec![0u8; width * palette_size];
 
-    let sixel_rows = (height + 5) / 6;
+    let sixel_rows = height.div_ceil(6);
     for row in 0..sixel_rows {
         if row > 0 {
             write!(out, "-")?;
@@ -214,7 +214,7 @@ pub fn encode_frames(
         Some(at),
         wininfo,
     )?;
-    term_misc::ensure_space(out, first_frame.height() as u16)?;
+    term_misc::ensure_space(out, first_frame.height())?;
     out.write_all(&first_buf)?;
     out.flush()?;
 

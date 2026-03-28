@@ -26,11 +26,11 @@ use crate::{archives::FileTree, error::ParsingError};
 pub struct MarkdownifyInput {
     pub bytes: Vec<u8>,
 
-    id: String,
-    path: Option<PathBuf>,
-    ext: Option<String>,
+    pub id: String,
+    pub path: Option<PathBuf>,
+    pub ext: Option<String>,
 
-    allow_inline_images: bool,
+    pub allow_inline_images: bool,
 }
 
 type Checker = fn(&[u8]) -> bool;
@@ -129,7 +129,15 @@ impl MarkdownifyInput {
             (|_| false, "xlsb", |b| sheets::parse_sheets(b)),
             (|_| false, "xla", |b| sheets::parse_sheets(b)),
             (|_| false, "xlam", |b| sheets::parse_sheets(b)),
-            (|_| false, "html", |b| parse_text(b)),
+            (
+                |_| false,
+                "html",
+                |b| {
+                    let html = parse_text(b)?;
+                    let md = format!("```html\n{html}\n```");
+                    Ok(md)
+                },
+            ),
             (|_| false, "md", |b| parse_text(b)),
         ];
 

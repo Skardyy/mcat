@@ -30,10 +30,8 @@ fn collect(element: ElementRef, ctx: &ProcessingContext, sep: &str) -> String {
                 } else {
                     Some(collect(el, ctx, ""))
                 }
-            } else if let Some(text) = child.value().as_text() {
-                Some(text.to_string())
             } else {
-                None
+                child.value().as_text().map(|v| v.to_string())
             }
         })
         .map(|s| s.trim().to_string())
@@ -194,10 +192,10 @@ impl ProcessingContext {
                     return content;
                 }
 
-                if let Some(align) = element.value().attr("align") {
-                    if align.trim().to_lowercase() == "center" {
-                        return format!("<!--CENTER_ON-->\n\n{content}\n\n<!--CENTER_OFF-->");
-                    }
+                if let Some(align) = element.value().attr("align")
+                    && align.trim().to_lowercase() == "center"
+                {
+                    return format!("<!--CENTER_ON-->\n\n{content}\n\n<!--CENTER_OFF-->");
                 }
 
                 content
@@ -248,7 +246,5 @@ pub fn process(markdown: &str) -> String {
     let escaped_markdown = ctx.escape_unknown_elements(markdown);
     let document = Html::parse_fragment(&escaped_markdown);
 
-    let content = collect(document.root_element(), &ctx, "\n\n");
-
-    content
+    collect(document.root_element(), &ctx, "\n\n")
 }

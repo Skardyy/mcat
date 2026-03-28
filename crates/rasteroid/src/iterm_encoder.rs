@@ -80,7 +80,7 @@ pub fn encode_frames(
         encode_image(data, &mut buf, offset, print_at, wininfo)?;
 
         if first {
-            term_misc::ensure_space(out, frame.height() as u16)?;
+            term_misc::ensure_space(out, frame.height())?;
             write!(out, "\x1b[s")?;
             first = false;
         } else {

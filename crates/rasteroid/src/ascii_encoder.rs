@@ -167,7 +167,7 @@ pub fn encode_frames(
     }
 }
 
-fn clear_write_frame(mut out: impl Write, val: &Vec<u8>, start: bool) -> Result<(), RasterError> {
+fn clear_write_frame(mut out: impl Write, val: &[u8], start: bool) -> Result<(), RasterError> {
     let mut buf = Vec::new();
     if start {
         let image_height = val.lines().count();

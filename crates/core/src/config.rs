@@ -20,6 +20,7 @@ use rasteroid::{
     color = clap::ColorChoice::Always,
     styles = get_styles(),
 )]
+#[derive(Clone)]
 pub struct McatConfig {
     /// Input source (file/dir/url/ls)
     #[arg(num_args = 1..)]
@@ -27,8 +28,7 @@ pub struct McatConfig {
 
     // ## Core Options ##
     /// Color theme
-    #[arg(long, short = 't', help_heading = "Core Options",
-          env = "MCAT_THEME", default_value_t = Theme::Github)]
+    #[arg(long, short = 't', help_heading = "Core Options", env = "MCAT_THEME")]
     pub theme: Theme,
 
     /// Output format
@@ -357,7 +357,7 @@ fn get_styles() -> Styles {
         .usage(AnsiColor::Magenta.on_default())
 }
 
-#[derive(ValueEnum, Clone)]
+#[derive(ValueEnum, Clone, Default)]
 pub enum Theme {
     Catppuccin,
     Nord,
@@ -371,6 +371,7 @@ pub enum Theme {
     MakuraiDark,
     Ayu,
     AyuMirage,
+    #[default]
     Github,
     Synthwave,
     Material,
@@ -393,7 +394,6 @@ pub enum OutputFormat {
     Html,
     Md,
     Image,
-    Video,
     Inline,
     Interactive,
 }
@@ -426,7 +426,7 @@ impl std::fmt::Display for PagingMode {
     }
 }
 
-#[derive(ValueEnum, Clone, Default)]
+#[derive(ValueEnum, Clone, Default, PartialEq)]
 pub enum MdImageMode {
     All,
     Small,

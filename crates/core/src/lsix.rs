@@ -1,37 +1,30 @@
+use anyhow::{Context, Result};
 use ignore::WalkBuilder;
-use image::{DynamicImage, GenericImage, ImageFormat, Rgba, RgbaImage};
+use image::{DynamicImage, GenericImage, Rgba, RgbaImage};
 use itertools::Itertools;
-use rasteroid::{
-    image_extended::InlineImage,
-    term_misc::{self, SizeDirection},
-};
+use rasteroid::{Encoder, term_misc};
+use rasteroid::{RasterEncoder, term_misc::SizeDirection};
 use rayon::prelude::*;
 use std::io::Write;
-use std::{
-    error,
-    fs::{self},
-    io::Cursor,
-    path::Path,
-};
+use std::{io::Cursor, path::Path};
 
+use crate::mcat_file::{McatFile, McatKind};
 use crate::{
-    catter,
-    config::{LsixOptions, SortMode},
+    config::{McatConfig, SortMode},
     markdown_viewer::utils::string_len,
 };
 
-fn truncate_filename(name: String, width: u16, lnk: &Path, create_hyprlink: bool) -> String {
+fn truncate_filename(name: &str, width: u16, lnk: &Path, create_hyprlink: bool) -> String {
     let width = width as usize;
 
     let osc8_start = if create_hyprlink {
-        std::fs::canonicalize(&lnk)
-            .ok()
-            .and_then(|abs_path| {
+        std::fs::canonicalize(lnk)
+            .map(|abs_path| {
                 let abs_path = abs_path.display().to_string();
                 let abs_path = abs_path.strip_prefix(r"\\?\").unwrap_or(&abs_path);
                 let abs_path = abs_path.replace("\\", "/");
                 let uri = format!("file://{}", abs_path);
-                Some(format!("\x1b]8;;{}\x1b\\", uri))
+                format!("\x1b]8;;{}\x1b\\", uri)
             })
             .unwrap_or("".to_owned())
     } else {
@@ -43,7 +36,7 @@ fn truncate_filename(name: String, width: u16, lnk: &Path, create_hyprlink: bool
         ""
     };
 
-    let le = string_len(&name);
+    let le = string_len(name);
     if le <= width {
         let rem_space = width - le;
         let left_spaces = rem_space / 2;
@@ -61,13 +54,13 @@ fn truncate_filename(name: String, width: u16, lnk: &Path, create_hyprlink: bool
     let (base, ext) = match dot_pos {
         Some(pos) => {
             let (b, e) = name.split_at(pos);
-            (b.into(), format!(".{}", e))
+            (b, format!(".{}", e))
         }
         None => (name, "".into()),
     };
 
     let ext_len = string_len(&ext);
-    let base_len = string_len(&base);
+    let base_len = string_len(base);
 
     // if even only the ext can't fit, why..
     if width <= ext_len {
@@ -82,7 +75,7 @@ fn truncate_filename(name: String, width: u16, lnk: &Path, create_hyprlink: bool
     let available_base_width = width - ext_len;
 
     let front_part = if available_base_width < base_len {
-        base.chars().take(available_base_width).collect::<String>()
+        &base.chars().take(available_base_width).collect::<String>()
     } else {
         base
     };
@@ -90,12 +83,16 @@ fn truncate_filename(name: String, width: u16, lnk: &Path, create_hyprlink: bool
     format!("{osc8_start}{}{}{osc8_end}", front_part, ext)
 }
 
-fn calculate_items_per_row(terminal_width: u16, ctx: &LsixOptions) -> Result<usize, String> {
-    let min_item_width: u16 = term_misc::dim_to_cells(&ctx.min_width, SizeDirection::Width)? as u16;
-    let max_item_width: u16 = term_misc::dim_to_cells(&ctx.max_width, SizeDirection::Width)? as u16;
-    let max_items_per_row: usize = ctx.max_items_per_row;
+fn calculate_items_per_row(terminal_width: u16, ctx: &McatConfig) -> Result<usize> {
+    let wininfo = ctx
+        .wininfo
+        .as_ref()
+        .context("this is likely a bug, wininfo isn't set at calculate_items_per_row")?;
+    let min_item_width: u16 = wininfo.dim_to_cells(&ctx.ls_min_width, SizeDirection::Width)? as u16;
+    let max_item_width: u16 = wininfo.dim_to_cells(&ctx.ls_max_width, SizeDirection::Width)? as u16;
+    let max_items_per_row: usize = ctx.ls_items_per_row;
 
-    let min_items = ((terminal_width + max_item_width - 1) / max_item_width) as usize;
+    let min_items = terminal_width.div_ceil(max_item_width) as usize;
     let max_items = (terminal_width / min_item_width) as usize;
     let mut items = min_items;
     items = items.min(max_items);
@@ -105,11 +102,9 @@ fn calculate_items_per_row(terminal_width: u16, ctx: &LsixOptions) -> Result<usi
 
 #[rustfmt::skip]
 fn ext_to_svg(ext: &str) -> &'static str {
-    let svg = if ext == "IAMADIR" {
+    if ext == "IAMADIR" {
         include_str!("../assets//folder.svg")
-    } else if catter::is_video(ext) {
-        include_str!("../assets/video.svg")
-    } else if ext == "" {
+    } else if ext.is_empty() {
         include_str!("../assets/file.svg")
     } else if matches!(ext, 
         "codes" | "py" | "rs" | "js" | "ts" | "java" | "c" | "cpp" | "h" | "hpp" | 
@@ -156,16 +151,10 @@ fn ext_to_svg(ext: &str) -> &'static str {
         include_str!("../assets/archive.svg")
     } else {
         include_str!("../assets/txt.svg")
-    };
-    svg
+    }
 }
 
-pub fn lsix(
-    input: impl AsRef<str>,
-    out: &mut impl Write,
-    ctx: &LsixOptions,
-    inline_encoder: &rasteroid::RasterEncoder,
-) -> Result<(), Box<dyn error::Error>> {
+pub fn lsix(input: impl AsRef<str>, out: &mut impl Write, mut ctx: McatConfig) -> Result<()> {
     let dir_path = Path::new(input.as_ref());
     let walker = WalkBuilder::new(dir_path)
         .standard_filters(!ctx.hidden)
@@ -173,15 +162,24 @@ pub fn lsix(
         .max_depth(Some(1))
         .follow_links(true)
         .build();
-    let resize_for_ascii = matches!(inline_encoder, rasteroid::RasterEncoder::Ascii);
-    let ts = rasteroid::term_misc::get_wininfo();
-    let items_per_row = calculate_items_per_row(ts.sc_width, &ctx)?;
-    let x_padding = term_misc::dim_to_cells(&ctx.x_padding, SizeDirection::Width)? as u16;
-    let y_padding = term_misc::dim_to_cells(&ctx.y_padding, SizeDirection::Height)? as u16;
-    let width = (ts.sc_width as f32 / items_per_row as f32 + 0.1).round() as u16 - x_padding - 1;
+    let encoder = ctx
+        .encoder
+        .context("this is likely a bug, encoder wasn't set at lsix")?;
+    let wininfo = ctx
+        .wininfo
+        .as_ref()
+        .context("this is likely a bug, wininfo wasn't set at lsix")?;
+
+    let resize_for_ascii = encoder == RasterEncoder::Ascii;
+    let items_per_row = calculate_items_per_row(wininfo.sc_width, &ctx)?;
+    let x_padding = wininfo.dim_to_cells(&ctx.ls_x_padding, SizeDirection::Width)? as u16;
+    let y_padding = wininfo.dim_to_cells(&ctx.ls_y_padding, SizeDirection::Height)? as u16;
+    let width =
+        (wininfo.sc_width as f32 / items_per_row as f32 + 0.1).round() as u16 - x_padding - 1;
     let width_formatted = format!("{width}c");
-    let height = ctx.height.as_ref();
-    let px_x_padding = dim_to_px(&format!("{x_padding}c"), SizeDirection::Width)?;
+    let px_x_padding = wininfo.dim_to_px(&format!("{x_padding}c"), SizeDirection::Width)?;
+    ctx.img_width = width_formatted;
+    ctx.img_height = ctx.ls_height.clone();
 
     // Collect all valid paths first
     let mut paths: Vec<_> = walker
@@ -204,7 +202,7 @@ pub fn lsix(
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_lowercase();
-            if ext == "" && filename.contains(".") {
+            if ext.is_empty() && filename.contains(".") {
                 return Some((path, filename.replace(".", ""), filename));
             }
             Some((path, ext, filename))
@@ -222,7 +220,7 @@ pub fn lsix(
 
         match dir_order {
             std::cmp::Ordering::Equal => {
-                let order = match ctx.sort_mode {
+                let order = match ctx.sort {
                     SortMode::Name => {
                         let a_str = a.0.to_string_lossy().to_lowercase();
                         let b_str = b.0.to_string_lossy().to_lowercase();
@@ -269,41 +267,34 @@ pub fn lsix(
 
     // Process images in parallel
     let images: Vec<_> = paths
-        .par_iter()
+        .into_par_iter()
         .filter_map(|(path, ext, filename)| {
-            let dyn_img = if ext == "svg" {
-                fs::read(path).ok().and_then(|buf| {
-                    svg_to_image(buf.as_slice(), Some(&width_formatted), Some(&height)).ok()
-                })
-            } else if ImageFormat::from_extension(ext).is_some() {
-                fs::read(path)
-                    .ok()
-                    .and_then(|buf| image::load_from_memory(&buf).ok())
-            } else if ext == "url" {
-                url_file_to_image(path)
-            } else if ext == "exe" {
-                exe_to_image(path)
-            } else if ext == "lnk" {
-                lnk_to_image(path)
-            } else {
-                None
+            let mcat_file = McatFile::from_path(&path).ok()?;
+            let img = match mcat_file.kind {
+                McatKind::Gif
+                | McatKind::Image
+                | McatKind::Svg
+                | McatKind::Url
+                | McatKind::Exe
+                | McatKind::Lnk => mcat_file.to_image(&ctx, true, true).ok(),
+                _ => None,
             };
-            let dyn_img = dyn_img.or_else(|| {
-                let svg = ext_to_svg(ext);
-                let cursor = Cursor::new(svg);
-                svg_to_image(cursor, Some(&width_formatted), Some(&height)).ok()
-            })?;
 
-            let (img, _, w, h) = dyn_img
-                .resize_plus(
-                    Some(&width_formatted),
-                    Some(&height),
-                    resize_for_ascii,
-                    true,
-                )
-                .ok()?;
+            match img {
+                Some((img, w, h)) => Some((img, filename, w, h, path)),
+                None => {
+                    let svg = if mcat_file.kind == McatKind::Video {
+                        include_str!("../assets/video.svg")
+                    } else {
+                        ext_to_svg(&ext)
+                    };
+                    let new_file =
+                        McatFile::from_bytes(svg.as_bytes().to_owned(), Some("svg")).ok()?;
+                    let (img, w, h) = new_file.to_image(&ctx, true, true).ok()?;
 
-            Some((img, filename, w, h, path))
+                    Some((img, filename, w, h, path))
+                }
+            }
         })
         .collect();
 
@@ -313,8 +304,7 @@ pub fn lsix(
         let items: Vec<_> = chunk.collect();
         let images: Vec<DynamicImage> = items
             .iter()
-            .map(|f| image::load_from_memory(&f.0))
-            .flatten()
+            .flat_map(|f| image::load_from_memory(&f.0))
             .collect();
         let image = combine_images_into_row(
             images,
@@ -324,22 +314,19 @@ pub fn lsix(
                 px_x_padding
             },
         )?;
-        let height = dim_to_cells(height.as_ref(), SizeDirection::Height)?;
-        ensure_space(&mut buf, height as u16)?;
+        let height = wininfo.dim_to_cells(&ctx.ls_height, SizeDirection::Height)?;
+        term_misc::ensure_space(&mut buf, height as u16)?;
         // windows for some reason doesn't handle newlines as expected..
         if cfg!(windows) {
             buf.write_all(b"\x1b[s")?;
         }
-        inline_an_image(&image, &mut buf, None, None, inline_encoder)?;
+        encoder.encode_image(&image, &mut buf, wininfo, None, None)?;
         if cfg!(windows) {
             buf.write_all(format!("\x1b[u\x1b[{height}B").as_bytes())?;
         }
         let names: Vec<String> = items
             .iter()
-            .map(|f| {
-                let tpath = truncate_filename((*f.1).clone(), width, &f.4, ctx.create_hyprlink);
-                tpath
-            })
+            .map(|f| truncate_filename(&f.1, width, &f.4, ctx.hyprlink))
             .collect();
         let pad_x = " ".repeat(x_padding as usize);
         let pad_y = "\n".repeat(y_padding as usize);
@@ -352,10 +339,7 @@ pub fn lsix(
     Ok(())
 }
 
-fn combine_images_into_row(
-    images: Vec<DynamicImage>,
-    padding: u32,
-) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+fn combine_images_into_row(images: Vec<DynamicImage>, padding: u32) -> Result<Vec<u8>> {
     let background = Rgba([0, 0, 0, 0]);
     if images.is_empty() {
         return Ok(Vec::new());

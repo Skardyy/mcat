@@ -130,10 +130,10 @@ impl BrowserConfig {
 }
 
 fn get_by_env_var() -> Option<PathBuf> {
-    if let Ok(path) = env::var("CHROME") {
-        if Path::new(&path).exists() {
-            return Some(path.into());
-        }
+    if let Ok(path) = env::var("CHROME")
+        && Path::new(&path).exists()
+    {
+        return Some(path.into());
     }
 
     None

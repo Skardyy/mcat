@@ -162,10 +162,7 @@ fn get_tmux_terminal_name() -> Result<(String, String), io::Error> {
     if parts.len() == 2 {
         Ok((parts[0].to_string(), parts[1].to_string()))
     } else {
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            "Failed to parse tmux output",
-        ))
+        Err(io::Error::other("Failed to parse tmux output"))
     }
 }
 

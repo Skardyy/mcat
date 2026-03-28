@@ -1,5 +1,8 @@
 use anyhow::{Context, Result};
+use flate2::read::GzDecoder;
 use image::DynamicImage;
+use infer::{app::is_exe, archive::is_pdf, image::is_gif, is_video};
+use lzma_rust2::XzReader;
 use markdownify::MarkdownifyInput;
 use pelite::PeFile;
 use rasteroid::{Frame, RasterEncoder, image_extended::InlineImage, term_misc::Wininfo};
@@ -10,7 +13,7 @@ use resvg::{
 };
 use std::{
     fs::{self},
-    io::Write,
+    io::{Read, Write},
     path::{Path, PathBuf},
 };
 use tempfile::NamedTempFile;
@@ -21,81 +24,112 @@ use crate::{
     fetch_manager, markdown_viewer,
 };
 
+#[derive(Clone, Default, Debug, PartialEq)]
 pub enum McatKind {
-    PlainText,
-
+    #[default]
+    PreMarkdown, // is the most common ones, just something that is passed into markdownify
     Markdown,
     Html,
 
-    Image,
-    Svg,
+    Video,
+    Gif, // have different logic on iterm
 
+    Image,
+    Svg, // svg is handled manually, since its not supported by the image crate
+
+    Url,
     Exe,
     Lnk,
 
-    Archive,
-
-    Docx,
+    // has some manual handling
     Pdf,
-
-    Xlsx,
-    Csv,
-    Ods,
-
-    Pptx,
-    Odt,
-    Odp,
+    Tex,
+    Typst,
 }
 
-// files get decompressed if needed
-// compression such as gz, xz, .lz, .lzma
+type Checker = fn(&[u8]) -> bool;
+
 pub struct McatFile {
     pub bytes: Vec<u8>,
 
+    pub kind: McatKind,
     pub path: Option<PathBuf>,
-    pub format: FileFormat,
-    pub kind: Kind,
 }
 
 impl McatFile {
     pub fn from_path(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref().to_path_buf();
+        let ext = path.extension().map(|v| v.to_string_lossy().to_string());
         let bytes = fs::read(&path)?;
-        let format = FileFormat::from_bytes(&bytes);
+
+        let mut s = Self::from_bytes(bytes, ext.as_deref())?;
+        s.path = Some(path);
+        Ok(s)
+    }
+
+    pub fn from_bytes(bytes: Vec<u8>, ext: Option<&str>) -> Result<Self> {
+        let bytes: Vec<u8> = if infer::archive::is_gz(&bytes) {
+            let mut decoder = GzDecoder::new(bytes.as_slice());
+            let mut out = Vec::new();
+            decoder.read_to_end(&mut out)?;
+            out
+        } else if infer::archive::is_xz(&bytes) {
+            let mut decoder = XzReader::new(bytes.as_slice(), true);
+            let mut out = Vec::new();
+            decoder.read_to_end(&mut out)?;
+            out
+        } else {
+            bytes
+        };
+        let kind = Self::detect_kind(&bytes, ext);
 
         Ok(Self {
             bytes,
-            path: Some(path),
-            format,
-            kind: format.kind(),
+            path: None,
+            kind,
         })
     }
 
-    pub fn from_bytes(bytes: Vec<u8>) -> Self {
-        let format = FileFormat::from_bytes(&bytes);
+    fn detect_kind(bytes: &[u8], ext: Option<&str>) -> McatKind {
+        let ext = ext.unwrap_or("");
+        let handlers: &[(Checker, &str, McatKind)] = &[
+            (is_pdf, "", McatKind::Pdf),
+            (is_gif, "", McatKind::Gif), // gif most be before video check.
+            (|b| image::guess_format(b).is_ok(), "", McatKind::Image),
+            (is_video, "", McatKind::Video),
+            (is_exe, "", McatKind::Exe),
+            (|_| false, "svg", McatKind::Svg),
+            (|_| false, "html", McatKind::Html),
+            (|_| false, "htm", McatKind::Html),
+            (|_| false, "md", McatKind::Markdown),
+            (|_| false, "tex", McatKind::Tex),
+            (|_| false, "typ", McatKind::Typst),
+            (|_| false, "lnk", McatKind::Lnk),
+            (|_| false, "url", McatKind::Url),
+        ];
 
-        Self {
-            bytes,
-            path: None,
-            format,
-            kind: format.kind(),
-        }
-    }
-
-    pub fn set_format(&mut self, format: FileFormat) {
-        self.format = format;
-        self.kind = format.kind();
+        handlers
+            .iter()
+            .find(|(check, e, _)| check(bytes) || (!e.is_empty() && ext == *e))
+            .map(|(_, _, kind)| kind.clone())
+            .unwrap_or_default()
     }
 
     pub fn to_html(&self, theme_for_style: Option<Theme>) -> Result<String> {
-        let md = self.to_markdown_input().convert()?;
+        let md = self.to_markdown_input(false)?.convert()?;
+        let should_style = theme_for_style.is_some();
         let html =
-            markdown_viewer::md_to_html(&md, theme_for_style.map(|v| v.to_string()).as_deref());
+            markdown_viewer::md_to_html(&md, &theme_for_style.unwrap_or_default(), should_style);
 
         Ok(html)
     }
 
-    pub fn to_image(&self, config: &McatConfig) -> Result<(Vec<u8>, u32, u32)> {
+    pub fn to_image(
+        &self,
+        config: &McatConfig,
+        pad: bool,
+        resize: bool,
+    ) -> Result<(Vec<u8>, u32, u32)> {
         let wininfo = config
             .wininfo
             .as_ref()
@@ -107,47 +141,46 @@ impl McatFile {
             .map(|v| v == RasterEncoder::Ascii)
             .unwrap_or(false);
 
-        let img = match self.format {
-            FileFormat::ScalableVectorGraphics => {
-                return svg_to_image(&self.bytes, &wininfo, width, height);
-            }
-            FileFormat::PortableExecutable => exe_to_image(&self.bytes)?,
-            FileFormat::WindowsShortcut => lnk_to_image(&self.bytes)?,
-            FileFormat::HypertextMarkupLanguage => html_to_image(self)?,
-            FileFormat::PlainText => {
+        let img: DynamicImage = match self.kind {
+            McatKind::PreMarkdown | McatKind::Markdown => {
                 let theme = config.theme.clone();
                 let html = self.to_html(Some(theme))?;
-                let mut file = McatFile::from_bytes(html.into_bytes());
-                file.set_format(FileFormat::HypertextMarkupLanguage);
+                let file = McatFile::from_bytes(html.into_bytes(), Some("html"))?;
                 html_to_image(&file)?
             }
-            _ if image::guess_format(&self.bytes).is_ok() => image::load_from_memory(&self.bytes)?,
-            _ => match self.extension().as_deref() {
-                Some("url") => url_to_image(&self.bytes)?,
-                _ if self.format.kind() == Kind::Other => {
-                    let theme = config.theme.clone();
-                    let html = self.to_html(Some(theme))?;
-                    let mut file = McatFile::from_bytes(html.into_bytes());
-                    file.set_format(FileFormat::HypertextMarkupLanguage);
-                    html_to_image(&file)?
-                }
-                _ => return Err(anyhow::anyhow!("unsupported format: {:?}", self.format)),
-            },
+            McatKind::Html => html_to_image(self)?,
+            McatKind::Video => anyhow::bail!(
+                "Cannot turn video format to image, this is most likely a bug and should not reach here."
+            ),
+            McatKind::Gif => image::load_from_memory(&self.bytes)?,
+            McatKind::Image => image::load_from_memory(&self.bytes)?,
+            McatKind::Svg => return svg_to_image(&self.bytes, wininfo, width, height),
+            McatKind::Url => url_to_image(&self.bytes)?,
+            McatKind::Exe => exe_to_image(&self.bytes)?,
+            McatKind::Lnk => lnk_to_image(&self.bytes)?,
+            McatKind::Pdf => todo!(),
+            McatKind::Tex => todo!(),
+            McatKind::Typst => todo!(),
         };
 
-        let (img, width, height) = img.resize_plus(&wininfo, width, height, is_ascii, false)?;
-
-        Ok((img, width, height))
+        if resize {
+            let (img, width, height) = img.resize_plus(wininfo, width, height, is_ascii, pad)?;
+            Ok((img, width, height))
+        } else {
+            let bytes = img.into_bytes();
+            Ok((bytes, 0, 0))
+        }
     }
 
-    pub fn to_markdown_input(&self) -> MarkdownifyInput {
+    pub fn to_markdown_input(&self, inline_images: bool) -> Result<MarkdownifyInput> {
         let mut input = MarkdownifyInput::from_bytes(
             self.bytes.clone(),
             self.path
                 .as_ref()
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_default(),
-        );
+        )?;
+        input.allow_inline_images = inline_images;
         input.path = self.path.clone();
         input.ext = self
             .path
@@ -155,7 +188,8 @@ impl McatFile {
             .and_then(|p| p.extension())
             .and_then(|e| e.to_str())
             .map(|e| e.to_lowercase());
-        input
+
+        Ok(input)
     }
 
     pub fn to_frames(&self) -> Result<Box<dyn Iterator<Item = VideoFrames>>> {
@@ -182,14 +216,6 @@ impl McatFile {
 
         Ok(Box::new(frames))
     }
-
-    fn extension(&self) -> Option<String> {
-        self.path
-            .as_ref()?
-            .extension()?
-            .to_str()
-            .map(|e| e.to_lowercase())
-    }
 }
 
 pub struct VideoFrames {
@@ -206,10 +232,10 @@ impl Frame for VideoFrames {
         &self.img
     }
     fn width(&self) -> u16 {
-        self.width as u16
+        self.width
     }
     fn height(&self) -> u16 {
-        self.height as u16
+        self.height
     }
 }
 
@@ -355,10 +381,10 @@ pub fn url_to_image(bytes: &[u8]) -> Result<DynamicImage> {
     anyhow::ensure!(icon_path.exists(), "icon path does not exist");
 
     let icon_file = McatFile::from_path(icon_path)?;
-    match icon_file.format {
-        FileFormat::PortableExecutable => exe_to_image(&icon_file.bytes),
-        FileFormat::WindowsIcon => Ok(image::load_from_memory(&icon_file.bytes)?),
-        _ => anyhow::bail!("unsupported icon format: {:?}", icon_file.format),
+    match icon_file.kind {
+        McatKind::Image => Ok(image::load_from_memory(&icon_file.bytes)?),
+        McatKind::Exe => exe_to_image(&icon_file.bytes),
+        _ => anyhow::bail!("unsupported icon format: {:?}", icon_file.kind),
     }
 }
 
@@ -374,6 +400,7 @@ pub fn html_to_image(source: &McatFile) -> Result<DynamicImage> {
             .map_err(|_| anyhow::anyhow!("failed to create url for chromium"))?
     };
 
+    // TODO: do something about that, we don't want to recreate runtime everytime..
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;

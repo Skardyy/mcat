@@ -85,7 +85,7 @@ fn format_file_list(paths: &[PathBuf], base: &Path) -> Vec<String> {
     let blue = "\x1b[34m";
     let purple = "\x1b[35m";
     let dir_color = &format!("{bold}{blue}");
-    let link_color = &format!("{purple}");
+    let link_color = purple;
 
     for (i, path) in paths.iter().enumerate() {
         let rel = path.strip_prefix(base).unwrap_or(path);
@@ -110,7 +110,7 @@ fn format_file_list(paths: &[PathBuf], base: &Path) -> Vec<String> {
                 })
                 .unwrap_or(true);
             line.push_str(if is_last { "└── " } else { "├── " });
-            line.push_str(&reset);
+            line.push_str(reset);
         }
 
         let name_color = if is_link {
@@ -122,12 +122,10 @@ fn format_file_list(paths: &[PathBuf], base: &Path) -> Vec<String> {
         };
         if is_dir {
             line.push_str(&format!("{name_color}\u{f024b} {name}/{reset}"));
+        } else if let Some((icon, color)) = get_lang_icon_and_color(&ext) {
+            line.push_str(&format!("{color}{icon}{reset} {name_color}{name}{reset}"));
         } else {
-            if let Some((icon, color)) = get_lang_icon_and_color(&ext) {
-                line.push_str(&format!("{color}{icon}{reset} {name_color}{name}{reset}"));
-            } else {
-                line.push_str(&format!("{name_color}{name}{reset}"));
-            }
+            line.push_str(&format!("{name_color}{name}{reset}"));
         }
 
         // add invisible unique suffix to make each label distinct

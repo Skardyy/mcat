@@ -1852,6 +1852,7 @@ dependencies = [
  "comrak",
  "crossterm",
  "dirs",
+ "encoding_rs",
  "ffmpeg-sidecar",
  "flate2",
  "fontdb",

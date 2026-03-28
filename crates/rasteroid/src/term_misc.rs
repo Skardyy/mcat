@@ -12,6 +12,7 @@ use signal_hook::flag;
 
 use crate::{error::RasterError, get_tmux_terminal_name};
 
+#[derive(Clone)]
 pub struct Wininfo {
     pub sc_width: u16,
     pub sc_height: u16,
@@ -231,14 +232,14 @@ impl Wininfo {
         } else if dim.ends_with("c") {
             if let Ok(num) = dim.trim_end_matches("c").parse::<u16>() {
                 let value = (spx as f32 / sc as f32 * num as f32).ceil() as u32;
-                return Ok(value.into());
-            }
-        } else if dim.ends_with("%") {
-            if let Ok(num) = dim.trim_end_matches("%").parse::<f32>() {
-                let normalized_percent = num / 100.0;
-                let value = (spx as f32 * normalized_percent).ceil() as u32;
                 return Ok(value);
             }
+        } else if dim.ends_with("%")
+            && let Ok(num) = dim.trim_end_matches("%").parse::<f32>()
+        {
+            let normalized_percent = num / 100.0;
+            let value = (spx as f32 * normalized_percent).ceil() as u32;
+            return Ok(value);
         }
 
         Err(RasterError::InvalidDimensionFormat)
@@ -290,12 +291,12 @@ impl Wininfo {
                 let value = (px as f32 / (spx as f32 / sc as f32)).ceil() as u32;
                 return Ok(value);
             }
-        } else if dim.ends_with("%") {
-            if let Ok(percent) = dim.trim_end_matches("%").parse::<f32>() {
-                let normalized = percent / 100.0;
-                let value = (sc as f32 * normalized).ceil() as u32;
-                return Ok(value);
-            }
+        } else if dim.ends_with("%")
+            && let Ok(percent) = dim.trim_end_matches("%").parse::<f32>()
+        {
+            let normalized = percent / 100.0;
+            let value = (sc as f32 * normalized).ceil() as u32;
+            return Ok(value);
         }
 
         Err(RasterError::InvalidDimensionFormat)
@@ -340,12 +341,13 @@ fn get_size_windows() -> Option<(u16, u16)> {
     Some((width, height))
 }
 
+#[derive(Clone)]
 pub struct EnvIdentifiers {
     pub data: HashMap<String, String>,
 }
 
-impl EnvIdentifiers {
-    pub fn new() -> Self {
+impl Default for EnvIdentifiers {
+    fn default() -> Self {
         let keys = vec![
             "TERM",
             "TERM_PROGRAM",
@@ -369,6 +371,12 @@ impl EnvIdentifiers {
         let mut env = EnvIdentifiers { data: result };
         env.check_tmux_term();
         env
+    }
+}
+
+impl EnvIdentifiers {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn check_tmux_term(&mut self) {

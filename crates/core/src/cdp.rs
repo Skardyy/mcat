@@ -13,7 +13,6 @@ use tokio::time::timeout;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
-use crate::UnwrapOrExit;
 use crate::fetch_manager::BrowserConfig;
 
 pub struct ChromeHeadless {
@@ -34,7 +33,7 @@ impl ChromeHeadless {
         let path = browser_config.path;
         let port = find_available_port()?;
         let process = Command::new(path)
-            .args(&[
+            .args([
                 // Core headless setup
                 "--headless=new",
                 &format!("--remote-debugging-port={}", port),
@@ -58,8 +57,8 @@ impl ChromeHeadless {
         tokio::spawn(async move {
             loop {
                 if shutdown.load(Ordering::SeqCst) {
-                    let mut process = shutdown_arc.lock().unwrap_or_exit();
-                    process.kill().unwrap_or_exit();
+                    let mut process = shutdown_arc.lock().unwrap();
+                    process.kill().unwrap();
                     std::process::exit(1);
                 };
                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
@@ -181,12 +180,11 @@ impl ChromeHeadless {
             let url = format!("http://127.0.0.1:{}/json", self.port);
             let body = reqwest::get(&url).await?.text().await?;
             let json: Value = serde_json::from_str(&body)?;
-            if let Some(arr) = json.as_array() {
-                if let Some(page) = arr.iter().find(|entry| entry["type"] == "page") {
-                    if let Some(ws_url) = page["webSocketDebuggerUrl"].as_str() {
-                        return Ok(ws_url.to_owned());
-                    }
-                }
+            if let Some(arr) = json.as_array()
+                && let Some(page) = arr.iter().find(|entry| entry["type"] == "page")
+                && let Some(ws_url) = page["webSocketDebuggerUrl"].as_str()
+            {
+                return Ok(ws_url.to_owned());
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
@@ -253,20 +251,19 @@ impl ChromeHeadless {
                 true,
             )
             .await?;
-        if let Some(state) = ready_state["result"]["value"].as_str() {
-            if state == "complete" {
-                return Ok(());
-            }
+        if let Some(state) = ready_state["result"]["value"].as_str()
+            && state == "complete"
+        {
+            return Ok(());
         }
 
         while let Some(msg) = ws_stream.next().await {
             let msg = msg?;
-            if let Message::Text(text) = msg {
-                if let Ok(json) = serde_json::from_str::<Value>(&text) {
-                    if json["method"] == "Page.loadEventFired" {
-                        return Ok(());
-                    }
-                }
+            if let Message::Text(text) = msg
+                && let Ok(json) = serde_json::from_str::<Value>(&text)
+                && json["method"] == "Page.loadEventFired"
+            {
+                return Ok(());
             }
         }
 
@@ -276,7 +273,7 @@ impl ChromeHeadless {
 
 impl Drop for ChromeHeadless {
     fn drop(&mut self) {
-        let mut process = self.process.lock().unwrap_or_exit();
+        let mut process = self.process.lock().unwrap();
         let _ = process.kill();
     }
 }

@@ -1,9 +1,9 @@
 mod catter;
 mod cdp;
 mod config;
-mod converter;
 mod fetch_manager;
 mod image_viewer;
+mod lsix;
 mod markdown_viewer;
 mod mcat_file;
 mod prompter;
@@ -56,7 +56,7 @@ fn main() -> Result<()> {
     }
     if config.report {
         fn_and_leave = true;
-        report_full(&config);
+        report_full(&config)?;
     }
     if let Some(shell) = config.generate {
         fn_and_leave = true;
@@ -69,6 +69,7 @@ fn main() -> Result<()> {
 
     if config
         .wininfo
+        .as_ref()
         .context("this is likely a bug, wininfo is None")?
         .is_tmux
     {
@@ -76,17 +77,12 @@ fn main() -> Result<()> {
     }
 
     // if ls
-    // if config.input[0].to_lowercase() == "ls" {
-    //     let d = ".".to_string();
-    //     let input = config.input.get(1).unwrap_or(&d);
-    //     converter::lsix(
-    //         input,
-    //         &mut out,
-    //         &config.ls_options,
-    //         &config.encoder.unwrap(),
-    //     )?;
-    //     return Ok(());
-    // }
+    if config.input[0].to_lowercase() == "ls" {
+        let d = ".".to_string();
+        let input = config.input.get(1).cloned().unwrap_or(d);
+        lsix::lsix(input, &mut out, config)?;
+        return Ok(());
+    }
 
     let mut files: Vec<McatFile> = Vec::new();
 
@@ -95,11 +91,14 @@ fn main() -> Result<()> {
         let mut buffer = Vec::new();
         std::io::stdin().read_to_end(&mut buffer)?;
 
-        let file = McatFile::from_bytes(buffer);
+        let file = McatFile::from_bytes(buffer, None)?;
         files.push(file);
     }
 
-    let mut scraper_opts = MediaScrapeOptions::default();
+    let mut scraper_opts = MediaScrapeOptions {
+        silent: config.silent,
+        ..Default::default()
+    };
     scraper_opts.silent = config.silent;
     for i in config.input.iter() {
         if i.starts_with("https://") || i.starts_with("http://") {
@@ -109,7 +108,7 @@ fn main() -> Result<()> {
                 eprintln!("{} didn't contain any supported media", i);
             }
         } else {
-            let i = expand_tilde(&i);
+            let i = expand_tilde(i);
             let path = Path::new(&i);
             if !path.exists() {
                 eprintln!("{} doesn't exists", path.display());
@@ -121,7 +120,7 @@ fn main() -> Result<()> {
                 selected_files.sort();
                 let new_files = selected_files
                     .iter()
-                    .map(|p| McatFile::from_path(p))
+                    .map(McatFile::from_path)
                     .collect::<Result<Vec<_>, _>>()?;
                 files.extend(new_files);
             } else {
@@ -130,31 +129,31 @@ fn main() -> Result<()> {
         }
     }
 
-    catter::cat(files, &mut out, &config);
+    catter::cat(files, &mut out, &config)?;
 
     Ok(())
 }
 
 fn expand_tilde(path: &str) -> String {
-    if path.starts_with("~") {
-        if let Some(home) = home_dir() {
-            return path.replace("~", &home.to_string_lossy().into_owned());
-        }
+    if path.starts_with("~")
+        && let Some(home) = home_dir()
+    {
+        return path.replace("~", &home.to_string_lossy());
     }
     path.to_string()
 }
 
-fn report_full(config: &McatConfig) {
+fn report_full(config: &McatConfig) -> Result<()> {
     let is_chromium_installed = fetch_manager::is_chromium_installed();
     let is_ffmpeg_installed = fetch_manager::is_ffmpeg_installed();
     let is_poppler_installed = fetch_manager::is_poppler_installed();
-    let mut env = config
+    let env = config
         .env_id
         .as_ref()
         .context("this is likely a bug, env id is None")?;
-    let kitty = rasteroid::kitty_encoder::is_kitty_capable(&mut env);
-    let iterm = rasteroid::iterm_encoder::is_iterm_capable(&mut env);
-    let sixel = rasteroid::sixel_encoder::is_sixel_capable(&mut env);
+    let kitty = rasteroid::kitty_encoder::is_kitty_capable(env);
+    let iterm = rasteroid::iterm_encoder::is_iterm_capable(env);
+    let sixel = rasteroid::sixel_encoder::is_sixel_capable(env);
     let ascii = true; //not sure what doesn't support it
     let wininfo = config
         .wininfo
@@ -258,4 +257,6 @@ fn report_full(config: &McatConfig) {
     println!("│   Version:    {:<36} │", ver);
 
     println!("└────────────────────────────────────────────────────┘");
+
+    Ok(())
 }
