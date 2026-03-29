@@ -31,7 +31,7 @@ pub fn get_album(file: &McatFile, config: &McatConfig) -> Result<Vec<DynamicImag
         | McatKind::Url
         | McatKind::Exe
         | McatKind::Lnk => {
-            let img = file.to_image(config, false, true)?;
+            let img = file.to_image(config, false, false)?;
             let dyn_img = image::load_from_memory(&img.0)?;
             Ok(vec![dyn_img])
         }

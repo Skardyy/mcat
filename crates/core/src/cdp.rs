@@ -34,7 +34,6 @@ impl ChromeHeadless {
         let port = find_available_port()?;
         let process = Command::new(path)
             .args([
-                // Core headless setup
                 "--headless=new",
                 &format!("--remote-debugging-port={}", port),
                 "--disable-gpu",
@@ -42,6 +41,22 @@ impl ChromeHeadless {
                 "--force-color-profile=srgb",
                 "--disable-dev-shm-usage",
                 "--no-sandbox",
+                "--disable-extensions",
+                "--disable-plugins",
+                "--disable-default-apps",
+                "--disable-sync",
+                "--disable-background-networking",
+                "--disable-breakpad",
+                "--disable-hang-monitor",
+                "--no-first-run",
+                "--disable-popup-blocking",
+                "--disable-prompt-on-repost",
+                "--disable-background-timer-throttling",
+                "--disable-renderer-backgrounding",
+                "--disable-backgrounding-occluded-windows",
+                "--disable-ipc-flooding-protection",
+                "--memory-pressure-off",
+                "--metrics-recording-only",
                 uri,
             ])
             .stdout(Stdio::null())
@@ -95,7 +110,7 @@ impl ChromeHeadless {
         let (mut ws_stream, _) = tokio_tungstenite::connect_async(&endpoint).await?;
 
         // Get the page ready
-        self.send_command(&mut ws_stream, 1, "Page.enable", None, false)
+        self.send_command(&mut ws_stream, 1, "Page.enable", None, true)
             .await?;
         self.wait_for_load_event(&mut ws_stream).await?;
 
