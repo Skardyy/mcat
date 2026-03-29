@@ -5,7 +5,11 @@ use infer::{app::is_exe, archive::is_pdf, image::is_gif, is_video};
 use lzma_rust2::XzReader;
 use markdownify::MarkdownifyInput;
 use pelite::PeFile;
-use rasteroid::{Frame, RasterEncoder, image_extended::InlineImage, term_misc::Wininfo};
+use rasteroid::{
+    Frame, RasterEncoder,
+    image_extended::InlineImage,
+    term_misc::{SizeDirection, Wininfo},
+};
 use reqwest::Url;
 use resvg::{
     tiny_skia,
@@ -154,7 +158,7 @@ impl McatFile {
             ),
             McatKind::Gif => image::load_from_memory(&self.bytes)?,
             McatKind::Image => image::load_from_memory(&self.bytes)?,
-            McatKind::Svg => return svg_to_image(&self.bytes, wininfo, width, height),
+            McatKind::Svg => return svg_to_image(&self.bytes, wininfo, width, height, is_ascii),
             McatKind::Url => url_to_image(&self.bytes)?,
             McatKind::Exe => exe_to_image(&self.bytes)?,
             McatKind::Lnk => lnk_to_image(&self.bytes)?,
@@ -246,6 +250,7 @@ pub fn svg_to_image(
     wininfo: &Wininfo,
     width: Option<&str>,
     height: Option<&str>,
+    is_ascii: bool,
 ) -> Result<(Vec<u8>, u32, u32)> {
     let mut opt = Options::default();
 
@@ -261,11 +266,17 @@ pub fn svg_to_image(
     let src_height = pixmap_size.height();
 
     let width = match width {
-        Some(w) => wininfo.dim_to_px(w, rasteroid::term_misc::SizeDirection::Width)?,
+        Some(w) => match is_ascii {
+            true => wininfo.dim_to_cells(w, SizeDirection::Width)?,
+            false => wininfo.dim_to_px(w, SizeDirection::Width)?,
+        },
         None => src_width as u32,
     };
     let height = match height {
-        Some(h) => wininfo.dim_to_px(h, rasteroid::term_misc::SizeDirection::Height)?,
+        Some(h) => match is_ascii {
+            true => wininfo.dim_to_cells(h, SizeDirection::Height)? * 2,
+            false => wininfo.dim_to_px(h, SizeDirection::Height)?,
+        },
         None => src_height as u32,
     };
     let (target_width, target_height) =
