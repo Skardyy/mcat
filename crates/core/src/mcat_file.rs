@@ -159,7 +159,7 @@ impl McatFile {
             McatKind::Gif => image::load_from_memory(&self.bytes)?,
             McatKind::Image => image::load_from_memory(&self.bytes)?,
             McatKind::Svg => {
-                return svg_to_image(&self.bytes, wininfo, width, height, is_ascii, pad);
+                return svg_to_image(&self.bytes, wininfo, width, height, is_ascii, pad, resize);
             }
             McatKind::Url => url_to_image(&self.bytes)?,
             McatKind::Exe => exe_to_image(&self.bytes)?,
@@ -254,6 +254,7 @@ pub fn svg_to_image(
     height: Option<&str>,
     is_ascii: bool,
     pad: bool,
+    needs_resize: bool,
 ) -> Result<(Vec<u8>, u32, u32)> {
     let mut opt = Options::default();
 
@@ -269,18 +270,18 @@ pub fn svg_to_image(
     let src_height = pixmap_size.height();
 
     let width = match width {
-        Some(w) => match is_ascii {
+        Some(w) if needs_resize => match is_ascii {
             true => wininfo.dim_to_cells(w, SizeDirection::Width)?,
             false => wininfo.dim_to_px(w, SizeDirection::Width)?,
         },
-        None => src_width as u32,
+        _ => src_width as u32,
     };
     let height = match height {
-        Some(h) => match is_ascii {
+        Some(h) if needs_resize => match is_ascii {
             true => wininfo.dim_to_cells(h, SizeDirection::Height)? * 2,
             false => wininfo.dim_to_px(h, SizeDirection::Height)?,
         },
-        None => src_height as u32,
+        _ => src_height as u32,
     };
     let (target_width, target_height) =
         rasteroid::image_extended::calc_fit(src_width as u32, src_height as u32, width, height);
