@@ -65,7 +65,7 @@ pub fn cat(files: Vec<McatFile>, out: &mut impl Write, config: &McatConfig) -> R
             let images = files
                 .par_iter()
                 .map(|v| {
-                    v.to_image(config, false, true).and_then(|v| {
+                    v.to_image(config, false, false).and_then(|v| {
                         image::load_from_memory(&v.0).context("failed to load image from memory")
                     })
                 })
@@ -244,8 +244,7 @@ fn interact_with_image(
 
     let resize_for_ascii = encoder == &RasterEncoder::Ascii;
 
-    let height_cells = wininfo.dim_to_cells(&opts.img_height, term_misc::SizeDirection::Height)?;
-    let height = (wininfo.sc_height - 3).min(height_cells as u16);
+    let height = wininfo.sc_height - 4;
     let should_disable_raw_mode = match encoder {
         RasterEncoder::Kitty => wininfo.is_tmux,
         RasterEncoder::Ascii => true,
@@ -269,21 +268,29 @@ fn interact_with_image(
                 vp.update_image_size(width, height);
             }
             let new_img = vp.apply_to_image(img);
-            let (img, width, _) = new_img
+            let (img, width, img_height_px) = new_img
                 .resize_plus(
                     wininfo,
-                    Some(&opts.img_width),
+                    Some("80%"),
                     Some(&format!("{height}c")),
                     resize_for_ascii,
                     false,
                 )
                 .ok()?;
             let center = wininfo.center_offset(width as u16, resize_for_ascii);
+            let img_height_cells = wininfo
+                .dim_to_cells(
+                    &format!("{img_height_px}px"),
+                    term_misc::SizeDirection::Height,
+                )
+                .unwrap_or(height as u32);
+            let v_pad = (height as u32).saturating_sub(img_height_cells) / 2;
             if should_disable_raw_mode {
                 disable_raw_mode().ok()?;
             }
 
             let mut buf = Vec::new();
+            buf.write_all("\n".repeat(v_pad as usize).as_bytes()).ok()?;
             encoder
                 .encode_image(
                     &img,
