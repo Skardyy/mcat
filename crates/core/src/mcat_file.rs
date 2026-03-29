@@ -279,7 +279,12 @@ pub fn svg_to_image(
     let transform = tiny_skia::Transform::from_scale(scale, scale);
     resvg::render(&tree, transform, &mut pixmap.as_mut());
 
-    Ok((pixmap.data().to_vec(), target_width, target_height))
+    let img = image::RgbaImage::from_raw(target_width, target_height, pixmap.data().to_vec())
+        .context("Failed to create image buffer from svg pixmap")?;
+    let mut buf = Vec::new();
+    DynamicImage::ImageRgba8(img)
+        .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)?;
+    Ok((buf, target_width, target_height))
 }
 
 pub fn exe_to_image(bytes: &[u8]) -> Result<DynamicImage> {

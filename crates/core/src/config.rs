@@ -28,7 +28,13 @@ pub struct McatConfig {
 
     // ## Core Options ##
     /// Color theme
-    #[arg(long, short = 't', help_heading = "Core Options", env = "MCAT_THEME")]
+    #[arg(
+        long,
+        short = 't',
+        help_heading = "Core Options",
+        env = "MCAT_THEME",
+        default_value_t
+    )]
     pub theme: Theme,
 
     /// Output format
