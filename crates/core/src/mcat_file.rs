@@ -177,8 +177,9 @@ impl McatFile {
             let (img, width, height) = img.resize_plus(wininfo, width, height, is_ascii, pad)?;
             Ok((img, width, height))
         } else {
-            let bytes = img.into_bytes();
-            Ok((bytes, 0, 0))
+            let mut buf = Vec::new();
+            img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)?;
+            Ok((buf, 0, 0))
         }
     }
 
