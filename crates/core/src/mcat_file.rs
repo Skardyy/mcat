@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use flate2::read::GzDecoder;
-use image::DynamicImage;
+use image::{DynamicImage, GenericImage};
 use infer::{app::is_exe, archive::is_pdf, image::is_gif, is_video};
 use lzma_rust2::XzReader;
 use markdownify::MarkdownifyInput;
@@ -158,7 +158,9 @@ impl McatFile {
             ),
             McatKind::Gif => image::load_from_memory(&self.bytes)?,
             McatKind::Image => image::load_from_memory(&self.bytes)?,
-            McatKind::Svg => return svg_to_image(&self.bytes, wininfo, width, height, is_ascii),
+            McatKind::Svg => {
+                return svg_to_image(&self.bytes, wininfo, width, height, is_ascii, pad);
+            }
             McatKind::Url => url_to_image(&self.bytes)?,
             McatKind::Exe => exe_to_image(&self.bytes)?,
             McatKind::Lnk => lnk_to_image(&self.bytes)?,
@@ -251,6 +253,7 @@ pub fn svg_to_image(
     width: Option<&str>,
     height: Option<&str>,
     is_ascii: bool,
+    pad: bool,
 ) -> Result<(Vec<u8>, u32, u32)> {
     let mut opt = Options::default();
 
@@ -295,6 +298,26 @@ pub fn svg_to_image(
     let mut buf = Vec::new();
     DynamicImage::ImageRgba8(img)
         .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)?;
+
+    if pad && (target_width != width || target_height != height) {
+        let img = image::load_from_memory(&buf)?;
+        let mut new_img = DynamicImage::new_rgba8(width, height);
+        let x_offset = if width == target_width {
+            0
+        } else {
+            (width - target_width) / 2
+        };
+        let y_offset = if height == target_height {
+            0
+        } else {
+            (height - target_height) / 2
+        };
+        new_img.copy_from(&img, x_offset, y_offset)?;
+        let mut cursor = std::io::Cursor::new(Vec::new());
+        new_img.write_to(&mut cursor, image::ImageFormat::Png)?;
+        return Ok((cursor.into_inner(), width, height));
+    }
+
     Ok((buf, target_width, target_height))
 }
 
