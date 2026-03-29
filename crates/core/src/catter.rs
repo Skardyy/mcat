@@ -11,6 +11,8 @@ use std::{
     process::{Command, Stdio},
 };
 
+use tracing::{info, warn};
+
 use crate::{
     config::{ColorMode, McatConfig, MdImageMode, OutputFormat},
     image_viewer::{clear_screen, run_interactive_viewer, show_help_prompt},
@@ -197,10 +199,13 @@ pub fn cat(files: Vec<McatFile>, out: &mut impl Write, config: &McatConfig) -> R
 
             if use_pager {
                 if let Some(pager) = Pager::new(&config.pager) {
+                    info!(pager = %config.pager, "using pager");
                     if pager.page(&content).is_err() {
+                        warn!(pager = %config.pager, "pager failed, writing directly");
                         out.write_all(content.as_bytes())?;
                     }
                 } else {
+                    warn!(pager = %config.pager, "pager not found, writing directly");
                     out.write_all(content.as_bytes())?;
                 }
             } else {

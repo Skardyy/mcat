@@ -20,6 +20,7 @@ use std::{
     io::{BufWriter, Read},
     path::Path,
 };
+use tracing_subscriber::EnvFilter;
 
 use crate::mcat_file::McatFile;
 
@@ -38,6 +39,14 @@ fn main() -> Result<()> {
     let mut out = BufWriter::new(stdout);
 
     let mut config = McatConfig::parse();
+
+    if config.verbose {
+        tracing_subscriber::fmt()
+            .with_env_filter(EnvFilter::new("mcat=debug"))
+            .with_writer(std::io::stderr)
+            .init();
+    }
+
     config.finalize()?;
 
     // fn and leave

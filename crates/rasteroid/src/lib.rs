@@ -116,7 +116,7 @@ impl Encoder for RasterEncoder {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub enum RasterEncoder {
     Kitty,
     Iterm,

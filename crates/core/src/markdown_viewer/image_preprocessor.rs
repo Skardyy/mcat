@@ -15,6 +15,8 @@ use rasteroid::{
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use regex::Regex;
 
+use tracing::{info, warn};
+
 use crate::mcat_file::McatFile;
 use crate::{
     config::{McatConfig, MdImageMode},
@@ -84,6 +86,11 @@ impl ImagePreprocessor {
                 RasterEncoder::Ascii => &MdImageMode::None,
             }
         };
+        info!(
+            image_count = urls.len(),
+            ?render_mode,
+            "preprocessing markdown images"
+        );
         let markdown_dir = markdown_file_path.and_then(|p| p.parent());
         let scrape_opts = MediaScrapeOptions {
             silent: conf.silent,
@@ -142,9 +149,7 @@ impl ImagePreprocessor {
         for (i, (url, img, width)) in items.iter().enumerate() {
             let mut buffer = Vec::new();
             if let Err(e) = encoder.encode_image(img, &mut buffer, wininfo, None, None) {
-                if !conf.silent {
-                    eprintln!("Failed to encode image '{}': {}", url.original_url, e);
-                }
+                warn!(url = %url.original_url, error = %e, "failed to encode image");
             } else {
                 let img_str = String::from_utf8(buffer).unwrap_or_default();
                 let img = ImageElement {

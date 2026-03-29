@@ -8,6 +8,8 @@ use rayon::prelude::*;
 use std::io::Write;
 use std::{io::Cursor, path::Path};
 
+use tracing::{debug, info};
+
 use crate::mcat_file::{McatFile, McatKind};
 use crate::{
     config::{McatConfig, SortMode},
@@ -176,6 +178,19 @@ pub fn lsix(input: impl AsRef<str>, out: &mut impl Write, mut ctx: McatConfig) -
     let y_padding = wininfo.dim_to_cells(&ctx.ls_y_padding, SizeDirection::Height)? as u16;
     let width =
         (wininfo.sc_width as f32 / items_per_row as f32 + 0.1).round() as u16 - x_padding - 1;
+    debug!(
+        items_per_row,
+        ?encoder,
+        x_padding,
+        y_padding,
+        cell_width = width,
+        resize_for_ascii,
+        hidden = ctx.hidden,
+        ?ctx.sort,
+        reverse = ctx.reverse,
+        hyprlink = ctx.hyprlink,
+        "lsix layout"
+    );
     let cell_px = wininfo.spx_width as f32 / wininfo.sc_width as f32;
     let img_px_width = (cell_px * width as f32).round() as u32;
     let px_x_padding = (cell_px * x_padding as f32).round() as u32;
@@ -267,6 +282,7 @@ pub fn lsix(input: impl AsRef<str>, out: &mut impl Write, mut ctx: McatConfig) -
         }
     });
 
+    info!(dir = %dir_path.display(), entry_count = paths.len(), "listing directory");
     // Process images in parallel
     let images: Vec<_> = paths
         .into_par_iter()

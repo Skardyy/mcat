@@ -8,6 +8,8 @@ use std::sync::OnceLock;
 use std::time::Duration;
 use tokio::runtime::{Builder, Runtime};
 
+use tracing::{debug, info, warn};
+
 use crate::mcat_file::{McatFile, McatKind};
 
 static GITHUB_BLOB_URL: OnceLock<Regex> = OnceLock::new();
@@ -48,7 +50,6 @@ pub fn scrape_biggest_media(url: &str, options: &MediaScrapeOptions) -> Result<M
 
         let mime = get_mime(&response);
         let format = mime.as_deref().and_then(format_from_mime);
-
         // if we know its not html, download directly
         if let Some(fmt) = format
             && fmt != McatKind::Html
@@ -56,12 +57,20 @@ pub fn scrape_biggest_media(url: &str, options: &MediaScrapeOptions) -> Result<M
             let data = download(response, options).await?;
             let mut file = McatFile::from_bytes(data, None)?;
             file.kind = fmt;
+            info!(url = %url, kind = ?file.kind, size = file.bytes.len(), "scraped media");
             return Ok(file);
         }
 
         // otherwise scrape html for biggest media
         let html = response.text().await?;
-        scrape_html(client, &url, &html, options).await
+        let result = scrape_html(client, &url, &html, options).await;
+        match &result {
+            Ok(file) => {
+                info!(url = %url, kind = ?file.kind, size = file.bytes.len(), "scraped media")
+            }
+            Err(e) => warn!(url = %url, error = %e, "no media found on page"),
+        }
+        result
     })
 }
 
@@ -180,6 +189,7 @@ async fn scrape_html(
         }
 
         let Ok(data) = download(response, options).await else {
+            warn!(url = %url, "failed to download candidate");
             continue;
         };
         let size = data.len();
@@ -189,6 +199,7 @@ async fn scrape_html(
             file.kind = fmt;
         }
 
+        debug!(url = %url, size, kind = ?file.kind, "downloaded candidate");
         if biggest
             .as_ref()
             .map(|b| size > b.bytes.len())

@@ -11,6 +11,7 @@ use ffmpeg_sidecar::{
     download::{download_ffmpeg_package, ffmpeg_download_url, unpack_ffmpeg},
 };
 use tokio::runtime::Builder;
+use tracing::{debug, info, warn};
 use zip::ZipArchive;
 
 pub fn is_chromium_installed() -> bool {
@@ -78,6 +79,7 @@ pub fn get_cache_path() -> PathBuf {
 
 pub fn get_ffmpeg() -> Option<FfmpegCommand> {
     if ffmpeg_sidecar::command::ffmpeg_is_installed() {
+        info!("using system ffmpeg");
         return Some(FfmpegCommand::new());
     }
     let cache_path = get_cache_path();
@@ -86,8 +88,10 @@ pub fn get_ffmpeg() -> Option<FfmpegCommand> {
         ffmpeg_path.set_extension("exe");
     }
     if ffmpeg_path.exists() {
+        info!(path = %ffmpeg_path.display(), "using cached ffmpeg");
         return Some(FfmpegCommand::new_with_path(ffmpeg_path));
     }
+    debug!("ffmpeg not found");
     None
 }
 
@@ -103,28 +107,34 @@ impl BrowserConfig {
 
     fn auto_detect_path() -> Option<PathBuf> {
         if let Some(path) = get_by_env_var() {
+            info!(path = %path.display(), "found browser via CHROME env var");
             return Some(path);
         }
 
         if let Some(path) = get_by_name() {
+            info!(path = %path.display(), "found browser in PATH");
             return Some(path);
         }
 
         #[cfg(windows)]
         if let Some(path) = get_by_registry() {
+            info!(path = %path.display(), "found browser via registry");
             return Some(path);
         }
 
         if let Some(path) = get_by_path() {
+            info!(path = %path.display(), "found browser at known path");
             return Some(path);
         }
 
         let cr = ChromeRevision::default()?;
         let p = cr.path();
         if p.exists() {
+            info!(path = %p.display(), "found cached chromium");
             return Some(p);
         }
 
+        warn!("no browser found");
         None
     }
 }

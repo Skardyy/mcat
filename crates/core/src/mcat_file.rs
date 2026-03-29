@@ -22,6 +22,8 @@ use std::{
 };
 use tempfile::NamedTempFile;
 
+use tracing::{debug, info};
+
 use crate::{
     cdp::ChromeHeadless,
     config::{McatConfig, Theme},
@@ -67,6 +69,7 @@ impl McatFile {
         let bytes = fs::read(&path)?;
 
         let mut s = Self::from_bytes(bytes, ext.as_deref())?;
+        info!(path = %path.display(), kind = ?s.kind, "loaded file");
         s.path = Some(path);
         Ok(s)
     }
@@ -134,6 +137,7 @@ impl McatFile {
         pad: bool,
         resize: bool,
     ) -> Result<(Vec<u8>, u32, u32)> {
+        debug!(kind = ?self.kind, pad, resize, "converting to image");
         let wininfo = config
             .wininfo
             .as_ref()

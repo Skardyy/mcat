@@ -10,6 +10,7 @@ use rasteroid::{
     RasterEncoder,
     term_misc::{self, EnvIdentifiers, Wininfo},
 };
+use tracing::debug;
 
 #[derive(Parser)]
 #[command(
@@ -318,6 +319,10 @@ pub struct McatConfig {
     #[arg(long, help_heading = "System Operations")]
     pub fetch_clean: bool,
 
+    /// Enable verbose debug logging
+    #[arg(short = 'v', long, help_heading = "Core Options")]
+    pub verbose: bool,
+
     // ## Runtime ##
     #[arg(skip)]
     pub wininfo: Option<Wininfo>,
@@ -335,7 +340,6 @@ impl McatConfig {
         let spx = Some(self.spx.as_ref());
         let sc = Some(self.sc.as_ref());
         let wininfo = Wininfo::new(spx, sc, Some(self.scalex), Some(self.scaley), &env)?;
-
         let encoder = if self.kitty {
             RasterEncoder::Kitty
         } else if self.iterm {
@@ -348,6 +352,21 @@ impl McatConfig {
             RasterEncoder::auto_detect(&env)
         };
 
+        debug!(
+            ?encoder,
+            ?self.output,
+            ?self.theme,
+            ?self.md_image,
+            ?self.color,
+            ?self.paging,
+            sc_width = wininfo.sc_width,
+            sc_height = wininfo.sc_height,
+            spx_width = wininfo.spx_width,
+            spx_height = wininfo.spx_height,
+            is_tmux = wininfo.is_tmux,
+            needs_inline = wininfo.needs_inline,
+            "config"
+        );
         self.env_id = Some(env);
         self.wininfo = Some(wininfo);
         self.encoder = Some(encoder);
@@ -363,7 +382,7 @@ fn get_styles() -> Styles {
         .usage(AnsiColor::Magenta.on_default())
 }
 
-#[derive(ValueEnum, Clone, Default)]
+#[derive(ValueEnum, Clone, Default, Debug)]
 pub enum Theme {
     Catppuccin,
     Nord,
@@ -395,7 +414,7 @@ impl std::fmt::Display for Theme {
     }
 }
 
-#[derive(ValueEnum, Clone, PartialEq)]
+#[derive(ValueEnum, Clone, PartialEq, Debug)]
 pub enum OutputFormat {
     Html,
     Md,
@@ -404,7 +423,7 @@ pub enum OutputFormat {
     Interactive,
 }
 
-#[derive(ValueEnum, Clone, PartialEq, Default)]
+#[derive(ValueEnum, Clone, PartialEq, Default, Debug)]
 pub enum ColorMode {
     Never,
     Always,
@@ -418,7 +437,7 @@ impl std::fmt::Display for ColorMode {
     }
 }
 
-#[derive(ValueEnum, Clone, PartialEq, Default)]
+#[derive(ValueEnum, Clone, PartialEq, Default, Debug)]
 pub enum PagingMode {
     Never,
     Always,
@@ -432,7 +451,7 @@ impl std::fmt::Display for PagingMode {
     }
 }
 
-#[derive(ValueEnum, Clone, Default, PartialEq)]
+#[derive(ValueEnum, Clone, Default, PartialEq, Debug)]
 pub enum MdImageMode {
     All,
     Small,
@@ -463,7 +482,7 @@ impl std::fmt::Display for ImageProtocol {
     }
 }
 
-#[derive(ValueEnum, Clone, Default)]
+#[derive(ValueEnum, Clone, Default, Debug)]
 pub enum SortMode {
     #[default]
     Name,

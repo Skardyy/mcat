@@ -12,7 +12,7 @@ use signal_hook::flag;
 
 use crate::{error::RasterError, get_tmux_terminal_name};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Wininfo {
     pub sc_width: u16,
     pub sc_height: u16,

@@ -170,7 +170,12 @@ impl ChromeHeadless {
         let screenshot_data = response["data"]
             .as_str()
             .context("failed to get screenshot")?;
-        Ok(general_purpose::STANDARD.decode(screenshot_data)?)
+        let bytes = general_purpose::STANDARD.decode(screenshot_data)?;
+        tracing::info!(
+            size = bytes.len(),
+            "captured screenshot via headless chrome"
+        );
+        Ok(bytes)
     }
 
     async fn get_websocket_endpoint(&self) -> Result<String> {
