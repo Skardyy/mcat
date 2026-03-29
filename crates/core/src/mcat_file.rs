@@ -439,7 +439,7 @@ pub fn html_to_image(source: &McatFile) -> Result<DynamicImage> {
             .map_err(|_| anyhow::anyhow!("failed to create url for chromium"))?;
         (None, url)
     } else {
-        let html = std::str::from_utf8(&source.bytes)?;
+        let (html, _, _) = encoding_rs::UTF_8.decode(&source.bytes);
         let mut tmp_file = NamedTempFile::with_suffix(".html")?;
         tmp_file.write_all(html.as_bytes())?;
         let url = Url::from_file_path(tmp_file.path())
