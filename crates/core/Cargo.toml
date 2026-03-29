@@ -64,6 +64,7 @@ tracing-subscriber.workspace = true
 flate2.workspace = true
 lzma-rust2.workspace = true
 encoding_rs.workspace = true
+hayro.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 winreg.workspace = true

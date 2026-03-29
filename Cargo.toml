@@ -24,6 +24,7 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 tokio = { version = "1.49.0", default-features = false, features = ["macros"] }
 tokio-tungstenite = "0.28.0"
 
+hayro = "0.5.0"
 encoding_rs = "0.8.35"
 infer = "0.19.0"
 strip-ansi-escapes = "0.2.1"

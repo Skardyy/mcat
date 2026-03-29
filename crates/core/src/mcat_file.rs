@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use flate2::read::GzDecoder;
+use hayro::hayro_syntax::Pdf;
 use image::{DynamicImage, GenericImage};
 use infer::{app::is_exe, archive::is_pdf, image::is_gif, is_video};
 use lzma_rust2::XzReader;
@@ -19,6 +20,7 @@ use std::{
     fs::{self},
     io::{Read, Write},
     path::{Path, PathBuf},
+    sync::Arc,
 };
 use tempfile::NamedTempFile;
 
@@ -168,7 +170,7 @@ impl McatFile {
             McatKind::Url => url_to_image(&self.bytes)?,
             McatKind::Exe => exe_to_image(&self.bytes)?,
             McatKind::Lnk => lnk_to_image(&self.bytes)?,
-            McatKind::Pdf => todo!(),
+            McatKind::Pdf => pdf_to_image(&self.bytes, 0)?,
             McatKind::Tex => todo!(),
             McatKind::Typst => todo!(),
         };
@@ -201,6 +203,28 @@ impl McatFile {
             .map(|e| e.to_lowercase());
 
         Ok(input)
+    }
+
+    pub fn to_album(&self, config: &McatConfig) -> Result<Vec<DynamicImage>> {
+        match self.kind {
+            McatKind::PreMarkdown
+            | McatKind::Markdown
+            | McatKind::Html
+            | McatKind::Gif
+            | McatKind::Image
+            | McatKind::Svg
+            | McatKind::Url
+            | McatKind::Exe
+            | McatKind::Lnk => {
+                let img = self.to_image(config, false, false)?;
+                let dyn_img = image::load_from_memory(&img.0)?;
+                Ok(vec![dyn_img])
+            }
+            McatKind::Pdf => pdf_to_album(&self.bytes),
+            McatKind::Tex => todo!(),
+            McatKind::Typst => todo!(),
+            McatKind::Video => anyhow::bail!("interactive mode isn't supported with videos"),
+        }
     }
 
     pub fn to_frames(&self) -> Result<Box<dyn Iterator<Item = VideoFrames>>> {
@@ -325,6 +349,59 @@ pub fn svg_to_image(
     }
 
     Ok((buf, target_width, target_height))
+}
+
+fn render_pdf_page(pdf: &Pdf, page_index: usize) -> Result<DynamicImage> {
+    let pages = pdf.pages();
+    let page = pages
+        .get(page_index)
+        .context("PDF page index out of bounds")?;
+
+    let render_settings = hayro::RenderSettings {
+        bg_color: hayro::vello_cpu::color::AlphaColor::WHITE,
+        ..Default::default()
+    };
+    let pixmap = hayro::render(
+        page,
+        &hayro::hayro_interpret::InterpreterSettings::default(),
+        &render_settings,
+    );
+
+    let width = pixmap.width() as u32;
+    let height = pixmap.height() as u32;
+    let rgba: Vec<u8> = pixmap
+        .data()
+        .iter()
+        .flat_map(|p| {
+            let a = p.a;
+            if a == 0 {
+                [0, 0, 0, 0]
+            } else {
+                // unpremultiply
+                let r = ((p.r as u16 * 255) / a as u16) as u8;
+                let g = ((p.g as u16 * 255) / a as u16) as u8;
+                let b = ((p.b as u16 * 255) / a as u16) as u8;
+                [r, g, b, a]
+            }
+        })
+        .collect();
+
+    let img = image::RgbaImage::from_raw(width, height, rgba)
+        .context("failed to create image from PDF pixmap")?;
+    Ok(DynamicImage::ImageRgba8(img))
+}
+
+fn pdf_to_image(bytes: &[u8], page_index: usize) -> Result<DynamicImage> {
+    let pdf = Pdf::new(Arc::new(bytes.to_vec()))
+        .map_err(|e| anyhow::anyhow!("failed to load PDF: {e:?}"))?;
+    render_pdf_page(&pdf, page_index)
+}
+
+fn pdf_to_album(bytes: &[u8]) -> Result<Vec<DynamicImage>> {
+    let pdf = Pdf::new(Arc::new(bytes.to_vec()))
+        .map_err(|e| anyhow::anyhow!("failed to load PDF: {e:?}"))?;
+    let page_count = pdf.pages().len();
+    (0..page_count).map(|i| render_pdf_page(&pdf, i)).collect()
 }
 
 pub fn exe_to_image(bytes: &[u8]) -> Result<DynamicImage> {

@@ -20,28 +20,6 @@ use crate::{
     mcat_file::{McatFile, McatKind},
 };
 
-pub fn get_album(file: &McatFile, config: &McatConfig) -> Result<Vec<DynamicImage>> {
-    match file.kind {
-        McatKind::PreMarkdown
-        | McatKind::Markdown
-        | McatKind::Html
-        | McatKind::Gif
-        | McatKind::Image
-        | McatKind::Svg
-        | McatKind::Url
-        | McatKind::Exe
-        | McatKind::Lnk => {
-            let img = file.to_image(config, false, false)?;
-            let dyn_img = image::load_from_memory(&img.0)?;
-            Ok(vec![dyn_img])
-        }
-        McatKind::Pdf => todo!(),
-        McatKind::Tex => todo!(),
-        McatKind::Typst => todo!(),
-        McatKind::Video => anyhow::bail!("interactive mode isn't supported with videos"),
-    }
-}
-
 pub fn cat(files: Vec<McatFile>, out: &mut impl Write, config: &McatConfig) -> Result<()> {
     let mf = files
         .first()
@@ -74,7 +52,7 @@ pub fn cat(files: Vec<McatFile>, out: &mut impl Write, config: &McatConfig) -> R
             interact_with_image(images, config, out)?;
             return Ok(());
         }
-        let images = get_album(mf, config)?;
+        let images = mf.to_album(config)?;
         interact_with_image(images, config, out)?;
         return Ok(());
     }
