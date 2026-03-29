@@ -18,7 +18,7 @@ use std::path::Path;
 
 pub fn md_to_ansi(
     md: &str,
-    config: McatConfig,
+    mut config: McatConfig,
     markdown_file_path: Option<&Path>,
 ) -> Result<String> {
     let md = html_preprocessor::process(md);
@@ -28,11 +28,11 @@ pub fn md_to_ansi(
     let root = comrak::parse_document(&arena, &md, &opts);
 
     // changing to forced inline in case of images rendered
-    let mut wininfo = config
+    config
         .wininfo
-        .clone()
-        .context("this is likely a bug, wininfo isn't set at the md_to_ansi")?;
-    wininfo.needs_inline = true;
+        .as_mut()
+        .context("this is likely a bug, wininfo isn't set at the md_to_ansi")?
+        .needs_inline = true;
 
     let ps = SyntaxSet::load_defaults_newlines();
     let theme = CustomTheme::from(&config.theme);
@@ -40,7 +40,7 @@ pub fn md_to_ansi(
     let mut ctx = AnsiContext {
         ps,
         theme,
-        wininfo: &wininfo,
+        wininfo: &config.wininfo.unwrap(),
         hide_line_numbers: config.no_linenumbers,
         center: false,
         image_preprocessor: &image_preprocessor,
