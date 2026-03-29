@@ -20,23 +20,26 @@ use crate::{
     mcat_file::{McatFile, McatKind},
 };
 
-pub fn get_album(_file: &McatFile) -> Option<Vec<DynamicImage>> {
-    // let ext = path
-    //     .extension()
-    //     .unwrap_or_default()
-    //     .to_string_lossy()
-    //     .into_owned();
-    //
-    // // pdf
-    // if matches!(ext.as_ref(), "pdf" | "tex" | "typ") && converter::get_pdf_command().is_ok() {
-    //     let (path, _tmpfile, _tmpfolder) = converter::get_pdf(path);
-    //     let images = converter::pdf_to_vec(&path.to_string_lossy().to_string()).ok()?;
-    //     if !images.is_empty() {
-    //         return Some(images);
-    //     }
-    // }
-
-    todo!()
+pub fn get_album(file: &McatFile, config: &McatConfig) -> Result<Vec<DynamicImage>> {
+    match file.kind {
+        McatKind::PreMarkdown
+        | McatKind::Markdown
+        | McatKind::Html
+        | McatKind::Gif
+        | McatKind::Image
+        | McatKind::Svg
+        | McatKind::Url
+        | McatKind::Exe
+        | McatKind::Lnk => {
+            let img = file.to_image(config, false, true)?;
+            let dyn_img = image::load_from_memory(&img.0)?;
+            Ok(vec![dyn_img])
+        }
+        McatKind::Pdf => todo!(),
+        McatKind::Tex => todo!(),
+        McatKind::Typst => todo!(),
+        McatKind::Video => anyhow::bail!("interactive mode isn't supported with videos"),
+    }
 }
 
 pub fn cat(files: Vec<McatFile>, out: &mut impl Write, config: &McatConfig) -> Result<()> {
@@ -71,10 +74,9 @@ pub fn cat(files: Vec<McatFile>, out: &mut impl Write, config: &McatConfig) -> R
             interact_with_image(images, config, out)?;
             return Ok(());
         }
-        if let Some(images) = get_album(mf) {
-            interact_with_image(images, config, out)?;
-            return Ok(());
-        }
+        let images = get_album(mf, config)?;
+        interact_with_image(images, config, out)?;
+        return Ok(());
     }
 
     let inline_images = config
