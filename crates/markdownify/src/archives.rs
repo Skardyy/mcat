@@ -7,7 +7,10 @@ use std::{
 use tar::Archive;
 use zip::ZipArchive;
 
-pub fn parse_zip(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
+pub fn parse_zip(
+    content: impl AsRef<[u8]>,
+    allow_inline_images: bool,
+) -> Result<String, ParsingError> {
     let mut archive = ZipArchive::new(Cursor::new(content))
         .map_err(|e| ParsingError::ArchiveError(e.to_string()))?;
     let mut tree = FileTree::default();
@@ -32,6 +35,7 @@ pub fn parse_zip(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
             .map_err(|e| ParsingError::ArchiveError(e.to_string()))?;
 
         let mut input = MarkdownifyInput::from_bytes(contents, name.clone())?;
+        input.allow_inline_images(allow_inline_images);
         input.ext = Path::new(&name)
             .extension()
             .and_then(|e| e.to_str())
@@ -43,7 +47,10 @@ pub fn parse_zip(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
     tree.render()
 }
 
-pub fn parse_tar(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
+pub fn parse_tar(
+    content: impl AsRef<[u8]>,
+    allow_inline_images: bool,
+) -> Result<String, ParsingError> {
     let mut archive = Archive::new(Cursor::new(content));
     let mut tree = FileTree::default();
 
@@ -68,6 +75,7 @@ pub fn parse_tar(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
             .map_err(|e| ParsingError::ArchiveError(e.to_string()))?;
 
         let mut input = MarkdownifyInput::from_bytes(contents, name.clone())?;
+        input.allow_inline_images(allow_inline_images);
         input.ext = Path::new(&name)
             .extension()
             .and_then(|e| e.to_str())

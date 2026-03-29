@@ -34,7 +34,7 @@ pub struct MarkdownifyInput {
 }
 
 type Checker = fn(&[u8]) -> bool;
-type Parser = fn(&[u8]) -> Result<String, ParsingError>;
+type Parser<'a> = &'a dyn Fn() -> Result<String, ParsingError>;
 
 impl MarkdownifyInput {
     /// Wrapper around  [`MarkdownifyInput::from_bytes`]
@@ -114,38 +114,36 @@ impl MarkdownifyInput {
 
     pub fn convert(&self) -> Result<String, ParsingError> {
         // add more here, also add ext checking in too
+        let inline = self.allow_inline_images;
+        let bytes = &self.bytes;
         let handlers: &[(Checker, &str, Parser)] = &[
-            (is_tar, "tar", |b| archives::parse_tar(b)),
-            (is_zip, "zip", |b| archives::parse_zip(b)),
-            (is_docx, "docx", |b| docx::parse_docx(b)),
-            (is_pptx, "pptx", |b| pptx::parse_pptx(b)),
-            (is_odt, "odt", |b| opendoc::parse_opendoc(b)),
-            (is_odp, "odp", |b| opendoc::parse_opendoc(b)),
-            (is_ods, "ods", |b| sheets::parse_sheets(b)),
-            (is_xlsx, "xlsx", |b| sheets::parse_sheets(b)),
-            (is_xls, "xls", |b| sheets::parse_sheets(b)),
-            (|_| false, "csv", |b| sheets::parse_csv(b)),
-            (|_| false, "xlsm", |b| sheets::parse_sheets(b)),
-            (|_| false, "xlsb", |b| sheets::parse_sheets(b)),
-            (|_| false, "xla", |b| sheets::parse_sheets(b)),
-            (|_| false, "xlam", |b| sheets::parse_sheets(b)),
-            (
-                |_| false,
-                "html",
-                |b| {
-                    let html = parse_text(b)?;
-                    let md = format!("```html\n{html}\n```");
-                    Ok(md)
-                },
-            ),
-            (|_| false, "md", |b| parse_text(b)),
+            (is_tar, "tar", &|| archives::parse_tar(bytes, inline)),
+            (is_zip, "zip", &|| archives::parse_zip(bytes, inline)),
+            (is_docx, "docx", &|| docx::parse_docx(bytes)),
+            (is_pptx, "pptx", &|| pptx::parse_pptx(bytes)),
+            (is_odt, "odt", &|| opendoc::parse_opendoc(bytes)),
+            (is_odp, "odp", &|| opendoc::parse_opendoc(bytes)),
+            (is_ods, "ods", &|| sheets::parse_sheets(bytes)),
+            (is_xlsx, "xlsx", &|| sheets::parse_sheets(bytes)),
+            (is_xls, "xls", &|| sheets::parse_sheets(bytes)),
+            (|_| false, "csv", &|| sheets::parse_csv(bytes)),
+            (|_| false, "xlsm", &|| sheets::parse_sheets(bytes)),
+            (|_| false, "xlsb", &|| sheets::parse_sheets(bytes)),
+            (|_| false, "xla", &|| sheets::parse_sheets(bytes)),
+            (|_| false, "xlam", &|| sheets::parse_sheets(bytes)),
+            (|_| false, "html", &|| {
+                let html = parse_text(bytes)?;
+                let md = format!("```html\n{html}\n```");
+                Ok(md)
+            }),
+            (|_| false, "md", &|| parse_text(bytes)),
         ];
 
         let ext = self.ext.clone().unwrap_or_default();
         let result = handlers
             .iter()
-            .find(|(check, e, _)| check(&self.bytes) || ext == **e)
-            .map(|(_, _, parse)| parse(&self.bytes));
+            .find(|(check, e, _)| check(bytes) || ext == **e)
+            .map(|(_, _, parse)| parse());
 
         if let Some(result) = result {
             Ok(result?)

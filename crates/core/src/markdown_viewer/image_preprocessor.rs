@@ -2,6 +2,7 @@ use std::{collections::HashMap, path::Path};
 
 use anyhow::Context;
 use anyhow::Result;
+use base64::Engine;
 use comrak::nodes::{AstNode, NodeValue};
 use image::GenericImageView;
 use itertools::Itertools;
@@ -27,6 +28,15 @@ use super::render::UNDERLINE_OFF;
 
 fn is_local_path(url: &str) -> bool {
     !url.starts_with("http://") && !url.starts_with("https://") && !url.starts_with("data:")
+}
+
+fn handle_data_uri(url: &str) -> Option<McatFile> {
+    let rest = url.strip_prefix("data:")?;
+    let (_, data) = rest.split_once("base64,")?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data)
+        .ok()?;
+    McatFile::from_bytes(bytes, None).ok()
 }
 
 fn handle_local_image(path: &str, markdown_file_dir: Option<&Path>) -> Result<McatFile> {
@@ -108,7 +118,9 @@ impl ImagePreprocessor {
                     return None;
                 }
 
-                let tmp = if is_local_path(&url.base_url) {
+                let tmp = if url.base_url.starts_with("data:") {
+                    handle_data_uri(&url.base_url)?
+                } else if is_local_path(&url.base_url) {
                     handle_local_image(&url.base_url, markdown_dir).ok()?
                 } else {
                     scrape_biggest_media(&url.base_url, &scrape_opts).ok()?

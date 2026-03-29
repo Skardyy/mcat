@@ -120,6 +120,12 @@ pub struct McatConfig {
     #[arg(short = 'f', help_heading = "Markdown Viewing")]
     fast: bool,
 
+    /// Embed images as base64 in markdown. Images inside archives lack file paths and are
+    /// normally dropped. This embeds them as data URIs for a complete output, useful when
+    /// saving markdown for an external renderer. Enabled automatically when rendering images.
+    #[arg(long, help_heading = "Markdown Viewing")]
+    pub force_embed_images: bool,
+
     /// Shows YAML headers too
     #[arg(long, help_heading = "Markdown Viewing")]
     pub header: bool,

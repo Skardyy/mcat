@@ -79,12 +79,13 @@ pub fn cat(files: Vec<McatFile>, out: &mut impl Write, config: &McatConfig) -> R
         return Ok(());
     }
 
-    let inline_images = config
-        .output
-        .as_ref()
-        .is_none_or(|v| !matches!(v, OutputFormat::Html | OutputFormat::Md))
-        && config.color != ColorMode::Never
-        && config.md_image != MdImageMode::None;
+    let inline_images = config.force_embed_images
+        || (config
+            .output
+            .as_ref()
+            .is_none_or(|v| !matches!(v, OutputFormat::Html | OutputFormat::Md))
+            && config.color != ColorMode::Never
+            && config.md_image != MdImageMode::None);
 
     let mcat_file = if files.len() > 1 {
         if config.output.as_ref() == Some(&OutputFormat::Image) {
