@@ -24,7 +24,7 @@ use tracing::debug;
 #[derive(Clone)]
 pub struct McatConfig {
     /// Input source (file/dir/url/ls)
-    #[arg(num_args = 1..)]
+    #[arg(num_args = 1.., required = true)]
     pub input: Vec<String>,
 
     // ## Core Options ##
