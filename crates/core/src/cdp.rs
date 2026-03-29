@@ -41,8 +41,6 @@ impl ChromeHeadless {
                 "--hide-scrollbars",
                 "--force-color-profile=srgb",
                 "--disable-dev-shm-usage",
-                "--single-process",
-                "--no-zygote",
                 "--no-sandbox",
                 uri,
             ])

@@ -434,15 +434,17 @@ pub fn url_to_image(bytes: &[u8]) -> Result<DynamicImage> {
 }
 
 pub fn html_to_image(source: &McatFile) -> Result<DynamicImage> {
-    let url = if let Some(path) = &source.path {
-        Url::from_file_path(path)
-            .map_err(|_| anyhow::anyhow!("failed to create url for chromium"))?
+    let (_tmp_file, url) = if let Some(path) = &source.path {
+        let url = Url::from_file_path(path)
+            .map_err(|_| anyhow::anyhow!("failed to create url for chromium"))?;
+        (None, url)
     } else {
         let html = std::str::from_utf8(&source.bytes)?;
         let mut tmp_file = NamedTempFile::with_suffix(".html")?;
         tmp_file.write_all(html.as_bytes())?;
-        Url::from_file_path(tmp_file.path())
-            .map_err(|_| anyhow::anyhow!("failed to create url for chromium"))?
+        let url = Url::from_file_path(tmp_file.path())
+            .map_err(|_| anyhow::anyhow!("failed to create url for chromium"))?;
+        (Some(tmp_file), url)
     };
 
     // TODO: do something about that, we don't want to recreate runtime everytime..
