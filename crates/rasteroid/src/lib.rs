@@ -100,7 +100,9 @@ impl Encoder for RasterEncoder {
         print_at: Option<(u16, u16)>,
     ) -> Result<(), RasterError> {
         match self {
-            RasterEncoder::Kitty => match stdout().is_tty() {
+            // macos max shm obj is like 32 i think, if we'll try this on macos, the app will be
+            // killed and the shm objs leaked..
+            RasterEncoder::Kitty => match stdout().is_tty() && !cfg!(target_os = "macos") {
                 true => unsafe {
                     kitty_encoder::encode_frames_fast(frames, out, wininfo, offset, print_at)
                 },
