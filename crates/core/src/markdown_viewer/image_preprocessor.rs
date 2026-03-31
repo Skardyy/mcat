@@ -122,12 +122,30 @@ impl ImagePreprocessor {
                 let tmp = if url.base_url.starts_with("data:") {
                     handle_data_uri(&url.base_url)?
                 } else if is_local_path(&url.base_url) {
-                    handle_local_image(&url.base_url, markdown_dir).ok()?
+                    match handle_local_image(&url.base_url, markdown_dir) {
+                        Ok(f) => Some(f),
+                        Err(e) => {
+                            warn!(url = %url.base_url, error = %e, "failed to load local image");
+                            None
+                        }
+                    }?
                 } else {
-                    scrape_biggest_media(&url.base_url, &scrape_opts).ok()?
+                    match scrape_biggest_media(&url.base_url, &scrape_opts) {
+                        Ok(f) => Some(f),
+                        Err(e) => {
+                            warn!(url = %url.base_url, error = %e, "failed to scrape image");
+                            None
+                        }
+                    }?
                 };
 
-                let img = tmp.to_image(conf, false, false).ok()?;
+                let img = match tmp.to_image(conf, false, false) {
+                    Ok(img) => img,
+                    Err(e) => {
+                        warn!(url = %url.base_url, error = %e, "failed to convert image");
+                        return None;
+                    }
+                };
 
                 let (width, height) = img.dimensions();
                 let width = url.width.map(|v| v as u32).unwrap_or(width);
@@ -149,9 +167,14 @@ impl ImagePreprocessor {
                     &format!("{height}px")
                 };
 
-                let img = img
-                    .resize_plus(wininfo, Some(width_fm), Some(height_fm), false, false)
-                    .ok()?;
+                let img =
+                    match img.resize_plus(wininfo, Some(width_fm), Some(height_fm), false, false) {
+                        Ok(img) => img,
+                        Err(e) => {
+                            warn!(url = %url.base_url, error = %e, "failed to resize image");
+                            return None;
+                        }
+                    };
 
                 Some((url, img))
             })

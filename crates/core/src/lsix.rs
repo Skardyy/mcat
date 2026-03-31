@@ -8,7 +8,7 @@ use rayon::prelude::*;
 use std::io::Write;
 use std::path::Path;
 
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::mcat_file::{McatFile, McatKind};
 use crate::{
@@ -287,28 +287,51 @@ pub fn lsix(input: impl AsRef<str>, out: &mut impl Write, mut ctx: McatConfig) -
     let images: Vec<_> = paths
         .into_par_iter()
         .filter_map(|(path, ext, filename)| {
-            let mcat_file = McatFile::from_path(&path).ok()?;
-            let img = match mcat_file.kind {
-                McatKind::Gif
-                | McatKind::Image
-                | McatKind::Svg
-                | McatKind::Url
-                | McatKind::Exe
-                | McatKind::Lnk => mcat_file.to_image(&ctx, true, true).ok(),
-                _ => None,
+            let (img, kind) = if path.is_dir() {
+                (None, McatKind::PreMarkdown)
+            } else {
+                let mcat_file = match McatFile::from_path(&path) {
+                    Ok(f) => f,
+                    Err(e) => {
+                        warn!(path = %path.display(), error = %e, "failed to read file");
+                        return None;
+                    }
+                };
+                let kind = mcat_file.kind.clone();
+                let img = match kind {
+                    McatKind::Gif
+                    | McatKind::Image
+                    | McatKind::Svg
+                    | McatKind::Url
+                    | McatKind::Exe
+                    | McatKind::Lnk => mcat_file.to_image(&ctx, true, true).ok(),
+                    _ => None,
+                };
+                (img, kind)
             };
 
             match img {
                 Some(img) => Some((img, filename, path)),
                 None => {
-                    let svg = if mcat_file.kind == McatKind::Video {
+                    let svg = if kind == McatKind::Video {
                         include_str!("../assets/video.svg")
                     } else {
                         ext_to_svg(&ext)
                     };
-                    let new_file =
-                        McatFile::from_bytes(svg.as_bytes().to_owned(), Some("svg")).ok()?;
-                    let img = new_file.to_image(&ctx, true, true).ok()?;
+                    let new_file = match McatFile::from_bytes(svg.as_bytes().to_owned(), Some("svg")) {
+                        Ok(f) => f,
+                        Err(e) => {
+                            warn!(path = %path.display(), error = %e, "failed to create svg fallback");
+                            return None;
+                        }
+                    };
+                    let img = match new_file.to_image(&ctx, true, true) {
+                        Ok(img) => img,
+                        Err(e) => {
+                            warn!(path = %path.display(), error = %e, "failed to render svg fallback");
+                            return None;
+                        }
+                    };
 
                     Some((img, filename, path))
                 }
