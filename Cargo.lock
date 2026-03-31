@@ -3145,7 +3145,7 @@ dependencies = [
 [[package]]
 name = "shared_memory"
 version = "0.12.5"
-source = "git+https://github.com/elast0ny/shared_memory?rev=fda413410857e295fa7440691a79296e84bed525#fda413410857e295fa7440691a79296e84bed525"
+source = "git+https://github.com/elast0ny/shared_memory?rev=fda41341#fda413410857e295fa7440691a79296e84bed525"
 dependencies = [
  "cfg-if",
  "libc",
