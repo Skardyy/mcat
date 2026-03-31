@@ -14,7 +14,7 @@ edition = "2024"
 
 [dependencies]
 crossterm.workspace = true
-shared_memory.workspace = true
+shared_memory_fork.workspace = true
 image.workspace = true
 color_quant.workspace = true
 base64.workspace = true

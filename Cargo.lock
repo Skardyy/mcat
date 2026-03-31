@@ -2658,7 +2658,7 @@ dependencies = [
  "image",
  "libc",
  "rand 0.10.0",
- "shared_memory",
+ "shared_memory_fork",
  "signal-hook 0.4.3",
  "thiserror 2.0.18",
  "windows 0.62.2",
@@ -3143,9 +3143,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "shared_memory"
+name = "shared_memory_fork"
 version = "0.12.5"
-source = "git+https://github.com/elast0ny/shared_memory?rev=fda41341#fda413410857e295fa7440691a79296e84bed525"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e26dece6b81cc5ed0173e216783d355f6e99ddb0170c39cb919739511ed7fa69"
 dependencies = [
  "cfg-if",
  "libc",

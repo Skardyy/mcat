@@ -7,7 +7,7 @@ use std::{
 
 use base64::{Engine, engine::general_purpose};
 use image::{DynamicImage, GenericImageView};
-use shared_memory::ShmemConf;
+use shared_memory_fork::ShmemConf;
 
 use crate::{
     VideoFrame,

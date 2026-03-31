@@ -27,7 +27,7 @@ pub enum RasterError {
     InvalidImage,
 
     #[error("shared memory error: {0}")]
-    ShmemError(#[from] shared_memory::ShmemError),
+    ShmemError(#[from] shared_memory_fork::ShmemError),
 
     #[error("resize error: {0}")]
     ResizeError(#[from] fast_image_resize::ResizeError),
