@@ -1,6 +1,6 @@
 [package]
 name = "rasteroid"
-version = "0.3.0"
+version = "0.3.1"
 authors = ["Meron Bossin"]
 description = "terminal image / video graphics ( iterm / kitty / sixel )"
 keywords = ["sixel", "iterm", "kitty", "terminal", "terminal-graphics"]
@@ -14,15 +14,17 @@ edition = "2024"
 
 [dependencies]
 crossterm.workspace = true
-shared_memory_fork.workspace = true
 image.workspace = true
 color_quant.workspace = true
 base64.workspace = true
 rand.workspace = true
 fast_image_resize.workspace = true
 signal-hook.workspace = true
-libc.workspace = true
 thiserror.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+shared_memory_fork.workspace = true
+libc.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows.workspace = true

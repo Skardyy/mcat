@@ -7,7 +7,6 @@ use std::{
 
 use base64::{Engine, engine::general_purpose};
 use image::{DynamicImage, GenericImageView};
-use shared_memory_fork::ShmemConf;
 
 use crate::{
     VideoFrame,
@@ -17,6 +16,7 @@ use crate::{
     },
 };
 
+#[cfg(target_os = "linux")]
 fn transmit_shm(
     data: &[u8],
     mut out: impl Write,
@@ -34,7 +34,10 @@ fn transmit_shm(
     let s = data.len();
     opts_string.push_str(&format!(",q=2,t=s,S={s}"));
 
-    let mut shmem = ShmemConf::new().size(s).os_id(shm_name).create()?;
+    let mut shmem = shared_memory_fork::ShmemConf::new()
+        .size(s)
+        .os_id(shm_name)
+        .create()?;
     let shmem_slice = unsafe { shmem.as_slice_mut() };
     shmem_slice[..data.len()].copy_from_slice(data);
     let shm_name = general_purpose::STANDARD.encode(shm_name);
@@ -252,6 +255,7 @@ fn create_unicode_placeholder(
     Ok(result)
 }
 
+#[allow(unused_variables)]
 fn process_frame(
     data: &[u8],
     out: &mut impl Write,
@@ -261,19 +265,20 @@ fn process_frame(
     shm_name: &str,
     tmux: bool,
 ) -> Result<(), RasterError> {
+    #[cfg(target_os = "linux")]
     if use_shm {
         transmit_shm(data, out, first_opts, shm_name, tmux)?;
-    } else {
-        let base64 = general_purpose::STANDARD.encode(data);
-        chunk_base64(
-            &base64,
-            out,
-            4096,
-            first_opts,
-            sub_opts.unwrap_or_default(),
-            tmux,
-        )?;
+        return Ok(());
     }
+    let base64 = general_purpose::STANDARD.encode(data);
+    chunk_base64(
+        &base64,
+        out,
+        4096,
+        first_opts,
+        sub_opts.unwrap_or_default(),
+        tmux,
+    )?;
     Ok(())
 }
 
@@ -283,6 +288,7 @@ fn process_frame(
 /// terminals such as kitty clear the shared memory after consuming, but it won't be certain on
 /// every terminal. also saving the video for future use will include having memory spent on this
 /// and not storage.
+#[cfg(target_os = "linux")]
 pub unsafe fn encode_frames_fast(
     frames: &mut dyn Iterator<Item = VideoFrame>,
     out: &mut impl Write,
@@ -293,9 +299,12 @@ pub unsafe fn encode_frames_fast(
     let id = encode_frames_sep(frames, out, true, wininfo, offset, print_at)?;
 
     // fork a cleanup process that gives the terminal time to consume the shm objects
-    // before removing them. this only runs on linux (macos doesn't use this path).
     let first_shm = format!("mcat-video-{id}-0");
-    if ShmemConf::new().os_id(&first_shm).open().is_ok() {
+    if shared_memory_fork::ShmemConf::new()
+        .os_id(&first_shm)
+        .open()
+        .is_ok()
+    {
         let pid = unsafe { libc::fork() };
         if pid == 0 {
             unsafe { libc::setsid() };
@@ -303,7 +312,7 @@ pub unsafe fn encode_frames_fast(
             let mut index = 0;
             loop {
                 let name = format!("mcat-video-{id}-{index}");
-                match ShmemConf::new().os_id(&name).open() {
+                match shared_memory_fork::ShmemConf::new().os_id(&name).open() {
                     Ok(mut shmem) => {
                         shmem.set_owner(true);
                         drop(shmem);

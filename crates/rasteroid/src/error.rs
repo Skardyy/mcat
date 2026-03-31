@@ -26,6 +26,7 @@ pub enum RasterError {
     #[error("Couldn't identify the image color type")]
     InvalidImage,
 
+    #[cfg(target_os = "linux")]
     #[error("shared memory error: {0}")]
     ShmemError(#[from] shared_memory_fork::ShmemError),
 
