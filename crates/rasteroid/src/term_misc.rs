@@ -257,7 +257,7 @@ impl Wininfo {
     /// use rasteroid::term_misc::{EnvIdentifiers, Wininfo, SizeDirection};
     ///
     /// let env = EnvIdentifiers::new();
-    /// let wininfo = Wininfo::new(None, None, None, None, &env).unwrap();
+    /// let wininfo = Wininfo::new(Some("1920x1080"), Some("100x50"), None, None, &env).unwrap();
     ///
     /// let cells = wininfo.dim_to_cells("80%", SizeDirection::Width).unwrap();
     /// let cells = wininfo.dim_to_cells("40c", SizeDirection::Height).unwrap();

@@ -40,7 +40,7 @@ pub trait InlineImage {
     /// let env = EnvIdentifiers::new();
     /// let wininfo = Wininfo::new(None, None, None, None, &env).unwrap();
     /// let dyn_img = image::load_from_memory(&buf).unwrap();
-    /// let (img_data, width, height) = dyn_img.resize_plus(&wininfo, Some("80%"), Some("200c"), false, false).unwrap();
+    /// let img = dyn_img.resize_plus(&wininfo, Some("80%"), Some("200c"), false, false).unwrap();
     /// ```
     fn resize_plus(
         &self,
