@@ -20,6 +20,7 @@ use std::{
     fs::{self},
     io::{Cursor, Read, Write},
     path::{Path, PathBuf},
+    process::Command,
     sync::Arc,
 };
 use tempfile::NamedTempFile;
@@ -177,8 +178,8 @@ impl McatFile {
             McatKind::Exe => exe_to_image(&self.bytes)?,
             McatKind::Lnk => lnk_to_image(&self.bytes)?,
             McatKind::Pdf => pdf_to_image(&self.bytes, 0)?,
-            McatKind::Tex => todo!(),
-            McatKind::Typst => todo!(),
+            McatKind::Tex => return self.tex_to_pdf()?.to_image(config, pad, resize),
+            McatKind::Typst => return self.typst_to_pdf()?.to_image(config, pad, resize),
         };
 
         if resize {
@@ -223,10 +224,122 @@ impl McatFile {
                 Ok(vec![img])
             }
             McatKind::Pdf => pdf_to_album(&self.bytes),
-            McatKind::Tex => todo!(),
-            McatKind::Typst => todo!(),
+            McatKind::Tex => self.tex_to_pdf()?.to_album(config),
+            McatKind::Typst => self.typst_to_pdf()?.to_album(config),
             McatKind::Video => anyhow::bail!("interactive mode isn't supported with videos"),
         }
+    }
+
+    fn tex_to_pdf(&self) -> Result<McatFile> {
+        let _temp_input;
+        let path = match &self.path {
+            Some(p) => p.clone(),
+            None => {
+                _temp_input = NamedTempFile::with_suffix(".tex")?;
+                fs::write(_temp_input.path(), &self.bytes)?;
+                _temp_input.path().to_path_buf()
+            }
+        };
+
+        let temp_dir = tempfile::tempdir()?;
+        let name = path.file_stem().context("no file stem")?.to_string_lossy();
+        let temp_pdf = temp_dir.path().join(format!("{name}.pdf"));
+
+        // try tectonic first
+        let mut last_stderr = String::new();
+        let compiled = match Command::new("tectonic")
+            .args([
+                "--outdir",
+                &temp_dir.path().to_string_lossy(),
+                &path.to_string_lossy(),
+            ])
+            .output()
+        {
+            Ok(o) if o.status.success() && temp_pdf.exists() => true,
+            Ok(o) => {
+                last_stderr = String::from_utf8_lossy(&o.stderr).into_owned();
+                false
+            }
+            Err(_) => false,
+        };
+
+        // fallback to pdflatex
+        let compiled = compiled
+            || match Command::new("pdflatex")
+                .args([
+                    &format!("-output-directory={}", temp_dir.path().to_string_lossy()),
+                    "-interaction=nonstopmode",
+                    &path.to_string_lossy(),
+                ])
+                .output()
+            {
+                Ok(o) if o.status.success() && temp_pdf.exists() => true,
+                Ok(o) => {
+                    last_stderr = String::from_utf8_lossy(&o.stderr).into_owned();
+                    false
+                }
+                Err(_) => false,
+            };
+
+        if !compiled {
+            if last_stderr.is_empty() {
+                anyhow::bail!("failed to compile tex to pdf. install tectonic or pdflatex");
+            } else {
+                anyhow::bail!("failed to compile tex to pdf:\n{last_stderr}");
+            }
+        }
+
+        let bytes = fs::read(&temp_pdf)?;
+        Ok(McatFile {
+            bytes,
+            kind: McatKind::Pdf,
+            path: None,
+        })
+    }
+
+    fn typst_to_pdf(&self) -> Result<McatFile> {
+        let _temp_input;
+        let path = match &self.path {
+            Some(p) => p.clone(),
+            None => {
+                _temp_input = NamedTempFile::with_suffix(".typ")?;
+                fs::write(_temp_input.path(), &self.bytes)?;
+                _temp_input.path().to_path_buf()
+            }
+        };
+
+        let temp_pdf = NamedTempFile::with_suffix(".pdf")?;
+        let output_path = temp_pdf.path().to_path_buf();
+
+        let output = Command::new("typst")
+            .args([
+                "compile",
+                "--format",
+                "pdf",
+                &path.to_string_lossy(),
+                &output_path.to_string_lossy(),
+            ])
+            .output();
+
+        match output {
+            Ok(o) if o.status.success() && output_path.exists() => {}
+            Ok(o) => {
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                if stderr.is_empty() {
+                    anyhow::bail!("typst failed to compile");
+                } else {
+                    anyhow::bail!("typst failed to compile:\n{stderr}");
+                }
+            }
+            Err(_) => anyhow::bail!("failed to run typst. is it installed?"),
+        }
+
+        let bytes = fs::read(&output_path)?;
+        Ok(McatFile {
+            bytes,
+            kind: McatKind::Pdf,
+            path: Some(output_path),
+        })
     }
 
     pub fn to_frames(&self) -> Result<(Box<dyn Iterator<Item = rasteroid::VideoFrame>>, u32, u32)> {
