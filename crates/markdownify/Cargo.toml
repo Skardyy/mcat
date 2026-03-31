@@ -25,3 +25,7 @@ calamine.workspace = true
 csv.workspace = true
 
 quick-xml.workspace = true
+
+infer.workspace = true
+encoding_rs.workspace = true
+base64.workspace = true

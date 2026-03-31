@@ -1,4 +1,4 @@
-use crate::error::ParsingError;
+use crate::{error::ParsingError, parse_text};
 
 use super::sheets;
 use quick_xml::events::Event;
@@ -104,16 +104,16 @@ pub fn parse_docx(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
                     if styles.header || styles.title {
                         continue;
                     }
-                    if let Some(val) = get_attr(&e, b"w:val") {
-                        if let Ok(val) = val.parse::<i8>() {
-                            styles.indent = val + 1
-                        }
+                    if let Some(val) = get_attr(&e, b"w:val")
+                        && let Ok(val) = val.parse::<i8>()
+                    {
+                        styles.indent = val + 1
                     }
                 }
                 _ => {}
             },
             Ok(Event::Text(e)) => {
-                let mut text = String::from_utf8_lossy(&e).to_string();
+                let mut text = parse_text(&*e)?;
 
                 if styles.bold {
                     text = format!("**{}** ", text.trim());
@@ -186,9 +186,11 @@ pub fn parse_docx(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
             },
             Ok(Event::Eof) => break,
             Err(e) => {
-                return Err(ParsingError::ParsingError(
-                    format!("Error at position {}: {:?}", reader.buffer_position(), e).into(),
-                ));
+                return Err(ParsingError::ParsingError(format!(
+                    "Error at position {}: {:?}",
+                    reader.buffer_position(),
+                    e
+                )));
             }
             _ => {}
         }

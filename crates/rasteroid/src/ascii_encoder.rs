@@ -1,49 +1,23 @@
+use image::DynamicImage;
+
 use crate::{
-    Frame,
-    term_misc::{self, ensure_space},
+    VideoFrame,
+    error::RasterError,
+    image_extended::InlineImage,
+    term_misc::{self, Wininfo, ensure_space},
 };
 use std::{
     io::{BufRead, Write},
     time::Duration,
 };
 
-/// Renders an image as colored ASCII in the terminal using upper/lower half-blocks.
-///
-/// This function converts an RGBA image into a terminal-friendly representation
-/// using ANSI escape codes and colored Unicode half-block characters. It filters
-/// out low-luminance, low-opacity pixels to suppress thin outlines and noise,
-/// keeping only visually meaningful parts of the image.
-///
-/// # Arguments
-/// - `img`: Image byte slice (any format supported by `image` crate, e.g., PNG, JPEG)
-/// - `out`: A writer to send output to (e.g., `std::io::stdout`)
-/// - `offset`: Optional horizontal offset in terminal columns (used for centering)
-/// - `print_at`: Optional locaiton the image should be printed at
-///
-/// # Example
-/// ```
-/// use std::path::Path;
-/// use std::io::{self, Write};
-/// use rasteroid::ascii_encoder::encode_image;
-///
-/// let path = Path::new("image.png");
-/// let bytes = match std::fs::read(path) {
-///     Ok(bytes) => bytes,
-///     Err(_) => return,
-/// };
-///
-/// let mut stdout = io::stdout();
-/// encode_image(&bytes, &mut stdout, Some(80), None).unwrap();
-/// stdout.flush().unwrap();
-/// ```
 pub fn encode_image(
-    img: &[u8],
+    img: &DynamicImage,
     out: &mut impl Write,
     offset: Option<u16>,
     print_at: Option<(u16, u16)>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let image = image::load_from_memory(img)?;
-    let rgba_image = image.to_rgba8();
+) -> Result<(), RasterError> {
+    let rgba_image = img.to_rgba8();
 
     let w = rgba_image.width() as usize;
     let h = rgba_image.height() as usize;
@@ -147,117 +121,28 @@ fn visual_weight(r: u8, g: u8, b: u8, a: u8) -> f32 {
     }
 }
 
-/// Streams a sequence of video frames to the terminal as colored ASCII art.
-///
-/// This function takes an iterator over video frames and renders them
-/// to the terminal using ANSI escape codes and ASCII half-block characters.
-/// It respects frame timestamps for playback timing, optionally centers
-/// each frame horizontally, and avoids flickering by redrawing only the
-/// image area.
-///
-/// # Arguments
-/// - `frames`: A mutable iterator over items implementing the `Frame` trait.
-/// - `out`: A writer to send output to (e.g., `std::io::stdout()`).
-/// - `center`: If `true`, horizontally centers each frame in the terminal.
-/// - `cycle`: If `true`, will loop over the animation until interrupted.
-///
-/// # Notes
-/// Each frame is expected to contain encoded image bytes (e.g., PNG, JPEG).
-/// This should include any kind of img that the image crate supports.
-/// This function decodes the image using the `image` crate before rendering.
-///
-/// # Example
-/// first make sure you can supply a iter of Frames (using ffmpeg-sidecar here)
-/// ```rust,no_run
-/// use ffmpeg_sidecar::command::FfmpegCommand;
-/// use rasteroid::Frame;
-/// use ffmpeg_sidecar::event::OutputVideoFrame;
-/// use rasteroid::kitty_encoder::encode_frames;
-/// use rasteroid::image_extended::calc_fit;
-/// use ffmpeg_sidecar::event::FfmpegEvent;
-/// use rasteroid::image_extended::InlineImage;
-///
-/// pub struct AsciiFrames {
-///     frame: OutputVideoFrame,
-///     img: Vec<u8>,
-/// }
-/// impl Frame for AsciiFrames {
-///     fn timestamp(&self) -> f32 {
-///         self.frame.timestamp
-///     }
-///     // needs to be something image crate can load.
-///     fn data(&self) -> &[u8] {
-///         &self.img
-///     }
-///     // doesn't matter here
-///     fn width(&self) -> u16 {
-///         0
-///     }
-///     // doesn't matter here
-///     fn height(&self) -> u16 {
-///         0
-///     }
-/// }
-/// // next get the frames (taken from ffmpeg-sidecar)
-///
-/// let mut out = std::io::stdout();
-/// let iter = match FfmpegCommand::new() // <- Builder API like `std::process::Command`
-///   .testsrc()  // <- Discoverable aliases for FFmpeg args
-///   .rawvideo() // <- Convenient argument presets
-///   .spawn()    // <- Ordinary `std::process::Child`
-///    {
-///        Ok(res) => res,
-///        Err(e) => return,
-/// }.iter().unwrap();   // <- Blocking iterator over logs and output
-/// // now convert to compatible frames
-/// let width = Some("80%");
-/// let height = Some("80%");
-/// let center = true;
-/// let mut ascii_frames = iter.filter_map(|event| {
-///     if let FfmpegEvent::OutputFrame(f) = event {
-///        let rgb_image = image::RgbImage::from_raw(f.width, f.height, f.data.clone())
-///            .unwrap();
-///        let img = image::DynamicImage::ImageRgb8(rgb_image);
-///        let (img, _, _, _) = img.resize_plus(width, height, true, false).unwrap();
-///        Some(AsciiFrames { frame: f, img })
-///     } else {
-///        None
-///     }
-/// });
-/// rasteroid::ascii_encoder::encode_frames(&mut ascii_frames, out, center, false).unwrap();
-/// ```
 pub fn encode_frames(
-    frames: &mut dyn Iterator<Item = impl Frame>,
+    frames: &mut dyn Iterator<Item = VideoFrame>,
     mut out: impl Write,
-    center: bool,
-    cycle: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+    wininfo: &Wininfo,
+    offset: Option<u16>,
+    print_at: Option<(u16, u16)>,
+) -> Result<(), RasterError> {
     let mut last_timestamp = None;
     let mut frame_outputs = Vec::new();
     let mut start = true;
 
-    for frame in frames {
-        let data = frame.data();
-        if data.is_empty() {
-            continue;
-        }
-        let img = image::load_from_memory(data)?;
-        let offset = term_misc::center_image(img.width() as u16, true);
-
-        let target_delay = match (frame.timestamp(), last_timestamp) {
+    for (img, timestamp) in frames {
+        let target_delay = match (timestamp, last_timestamp) {
             (ts, Some(last)) if ts > last => Duration::from_secs_f32(ts - last),
-            _ => Duration::from_millis(33), // default ~30fps
+            _ => Duration::from_millis(33), // ~30fps
         };
-        last_timestamp = Some(frame.timestamp());
+        last_timestamp = Some(timestamp);
 
+        let resized = img.resize_plus(wininfo, Some("80%"), Some("40%"), true, false)?;
         let mut buffer = Vec::new();
 
-        encode_image(
-            data,
-            &mut buffer,
-            if center { Some(offset) } else { None },
-            None,
-        )?;
+        encode_image(&resized, &mut buffer, offset, print_at)?;
 
         clear_write_frame(&mut out, &buffer, start)?;
         start = false;
@@ -272,24 +157,16 @@ pub fn encode_frames(
         return Ok(());
     }
 
-    if cycle {
-        loop {
-            for (output, delay) in &frame_outputs {
-                clear_write_frame(&mut out, output, false)?;
-                out.flush()?;
-                std::thread::sleep(*delay);
-            }
+    loop {
+        for (output, delay) in &frame_outputs {
+            clear_write_frame(&mut out, output, false)?;
+            out.flush()?;
+            std::thread::sleep(*delay);
         }
-    } else {
-        return Ok(());
     }
 }
 
-fn clear_write_frame(
-    mut out: impl Write,
-    val: &Vec<u8>,
-    start: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
+fn clear_write_frame(mut out: impl Write, val: &[u8], start: bool) -> Result<(), RasterError> {
     let mut buf = Vec::new();
     if start {
         let image_height = val.lines().count();

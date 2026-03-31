@@ -1,101 +1,141 @@
 use std::{
-    io::{self, Write},
+    io::{self, Write, stdout},
     process::Command,
 };
 
-use image::load_from_memory;
+use crossterm::tty::IsTty;
+use image::DynamicImage;
 use term_misc::{EnvIdentifiers, ensure_space};
 
+use crate::{error::RasterError, term_misc::Wininfo};
+
 pub mod ascii_encoder;
+pub mod error;
 pub mod image_extended;
 pub mod iterm_encoder;
 pub mod kitty_encoder;
 pub mod sixel_encoder;
 pub mod term_misc;
 
-/// encode an image bytes into inline image using the given encoder
-/// # example:
-/// ```
-/// use std::path::Path;
-/// use rasteroid::InlineEncoder;
-/// use rasteroid::inline_an_image;
-/// use std::io::Write;
-/// use rasteroid::term_misc::EnvIdentifiers;
-///
-/// let path = Path::new("image.png");
-/// let bytes = match std::fs::read(path) {
-///     Ok(bytes) => bytes,
-///     Err(e) => return,
-/// };
-/// let mut stdout = std::io::stdout();
-/// let mut env = EnvIdentifiers::new();
-/// let encoder = InlineEncoder::auto_detect(true, false, false, false, &mut env); // force kitty as fallback
-/// inline_an_image(&bytes, &mut stdout, None, None, &encoder).unwrap();
-/// stdout.flush().unwrap();
-/// ```
-/// MENTION: it should work for Iterm Gifs too.
-pub fn inline_an_image(
-    img: &[u8],
-    out: &mut impl Write,
-    offset: Option<u16>,
-    print_at: Option<(u16, u16)>,
-    inline_encoder: &InlineEncoder,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let is_tmux = term_misc::get_wininfo().is_tmux;
-    let self_handle = match inline_encoder {
-        InlineEncoder::Iterm | InlineEncoder::Sixel => true,
-        InlineEncoder::Kitty | InlineEncoder::Ascii => false,
-    } && is_tmux;
-    let mut img_cells = 0;
-    if self_handle {
-        let img_px = load_from_memory(img)?.height();
-        img_cells =
-            term_misc::dim_to_cells(&format!("{img_px}px"), term_misc::SizeDirection::Height)?;
-        ensure_space(out, img_cells as u16)?;
-    }
-    match inline_encoder {
-        InlineEncoder::Kitty => kitty_encoder::encode_image(img, out, offset, print_at),
-        InlineEncoder::Iterm => iterm_encoder::encode_image(img, out, offset, print_at),
-        InlineEncoder::Sixel => sixel_encoder::encode_image(img, out, offset, print_at),
-        InlineEncoder::Ascii => ascii_encoder::encode_image(img, out, offset, print_at),
-    }?;
-    if self_handle {
-        write!(out, "\x1B[{img_cells}B")?;
-    }
-
-    Ok(())
+/// Writes images and video frames to a terminal using a specific graphics protocol.
+pub trait Encoder {
+    /// Returns `true` if this encoder's protocol is supported by the current terminal.
+    fn is_capable(&self, env: &EnvIdentifiers) -> bool;
+    /// Writes a single image to `out`.
+    fn encode_image(
+        &self,
+        img: &DynamicImage,
+        out: &mut impl Write,
+        wininfo: &Wininfo,
+        offset: Option<u16>,
+        print_at: Option<(u16, u16)>,
+    ) -> Result<(), RasterError>;
+    /// Streams video frames to `out`. Loops forever after the first pass.
+    fn encode_frames(
+        &self,
+        frames: &mut dyn Iterator<Item = VideoFrame>,
+        out: &mut impl Write,
+        wininfo: &Wininfo,
+        offset: Option<u16>,
+        print_at: Option<(u16, u16)>,
+    ) -> Result<(), RasterError>;
 }
 
-#[derive(Clone, Copy, PartialEq)]
-pub enum InlineEncoder {
+impl Encoder for RasterEncoder {
+    fn is_capable(&self, env: &EnvIdentifiers) -> bool {
+        match self {
+            RasterEncoder::Kitty => kitty_encoder::is_kitty_capable(env),
+            RasterEncoder::Iterm => iterm_encoder::is_iterm_capable(env),
+            RasterEncoder::Sixel => sixel_encoder::is_sixel_capable(env),
+            RasterEncoder::Ascii => true,
+        }
+    }
+
+    fn encode_image(
+        &self,
+        img: &DynamicImage,
+        out: &mut impl Write,
+        wininfo: &Wininfo,
+        offset: Option<u16>,
+        print_at: Option<(u16, u16)>,
+    ) -> Result<(), RasterError> {
+        let is_tmux = wininfo.is_tmux;
+        let self_handle = match self {
+            RasterEncoder::Iterm | RasterEncoder::Sixel => true,
+            RasterEncoder::Kitty | RasterEncoder::Ascii => false,
+        } && is_tmux;
+        let mut img_cells = 0;
+        if self_handle {
+            img_cells = wininfo.dim_to_cells(
+                &format!("{}px", img.height()),
+                term_misc::SizeDirection::Height,
+            )?;
+            ensure_space(out, img_cells as u16)?;
+        }
+        match self {
+            RasterEncoder::Kitty => {
+                kitty_encoder::encode_image(img, out, offset, print_at, wininfo)
+            }
+            RasterEncoder::Iterm => {
+                iterm_encoder::encode_image(img, out, offset, print_at, wininfo)
+            }
+            RasterEncoder::Sixel => {
+                sixel_encoder::encode_image(img, out, offset, print_at, wininfo)
+            }
+            RasterEncoder::Ascii => ascii_encoder::encode_image(img, out, offset, print_at),
+        }?;
+        if self_handle {
+            write!(out, "\x1B[{img_cells}B")?;
+        }
+
+        Ok(())
+    }
+
+    fn encode_frames(
+        &self,
+        frames: &mut dyn Iterator<Item = VideoFrame>,
+        out: &mut impl Write,
+        wininfo: &Wininfo,
+        offset: Option<u16>,
+        print_at: Option<(u16, u16)>,
+    ) -> Result<(), RasterError> {
+        match self {
+            // macos max shm obj is like 32 i think, if we'll try this on macos, the app will be
+            // killed and the shm objs leaked..
+            RasterEncoder::Kitty => match stdout().is_tty() && !cfg!(target_os = "macos") {
+                true => unsafe {
+                    kitty_encoder::encode_frames_fast(frames, out, wininfo, offset, print_at)
+                },
+                false => kitty_encoder::encode_frames(frames, out, wininfo, offset, print_at),
+            },
+            // iterm gif rendering might be abit smarter, just requires to convert the frames into
+            // gif, which takes time, time that now frames are rendered..
+            RasterEncoder::Iterm => {
+                iterm_encoder::encode_frames(frames, out, wininfo, offset, print_at)
+            }
+            // sixel is imo pretty bad, its slow, colors are bad too.
+            // should be considered to just make it ascii frames instead.
+            RasterEncoder::Sixel => {
+                sixel_encoder::encode_frames(frames, out, wininfo, offset, print_at)
+            }
+            RasterEncoder::Ascii => {
+                ascii_encoder::encode_frames(frames, out, wininfo, offset, print_at)
+            }
+        }
+    }
+}
+
+/// Supported terminal image protocols.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum RasterEncoder {
     Kitty,
     Iterm,
     Sixel,
     Ascii,
 }
-impl InlineEncoder {
-    /// auto detect which Encoder works for the current terminal
-    /// allows forcing certain encoders (sort of a fallback).
-    pub fn auto_detect(
-        force_kitty: bool,
-        force_iterm: bool,
-        force_sixel: bool,
-        force_ascii: bool,
-        env: &mut EnvIdentifiers,
-    ) -> Self {
-        if force_kitty {
-            return Self::Kitty;
-        }
-        if force_iterm {
-            return Self::Iterm;
-        }
-        if force_sixel {
-            return Self::Sixel;
-        }
-        if force_ascii {
-            return Self::Ascii;
-        }
-
+impl RasterEncoder {
+    /// Picks the best protocol for the current terminal. Falls back to Ascii.
+    pub fn auto_detect(env: &EnvIdentifiers) -> Self {
         if kitty_encoder::is_kitty_capable(env) {
             return Self::Kitty;
         }
@@ -110,6 +150,7 @@ impl InlineEncoder {
     }
 }
 
+/// Toggles tmux's `allow-passthrough` setting so graphics escapes reach the outer terminal.
 pub fn set_tmux_passthrough(enabled: bool) {
     let status = if enabled { "on" } else { "off" };
     let _ = Command::new("tmux")
@@ -132,16 +173,9 @@ fn get_tmux_terminal_name() -> Result<(String, String), io::Error> {
     if parts.len() == 2 {
         Ok((parts[0].to_string(), parts[1].to_string()))
     } else {
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            "Failed to parse tmux output",
-        ))
+        Err(io::Error::other("Failed to parse tmux output"))
     }
 }
 
-pub trait Frame {
-    fn timestamp(&self) -> f32;
-    fn data(&self) -> &[u8];
-    fn width(&self) -> u16;
-    fn height(&self) -> u16;
-}
+/// A video frame: the image and its timestamp in seconds.
+pub type VideoFrame = (DynamicImage, f32);

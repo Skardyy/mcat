@@ -1,15 +1,17 @@
 use std::{
-    env, error,
+    env,
     fs::{self, File},
     io::{BufWriter, Write},
     path::{Path, PathBuf},
 };
 
+use anyhow::{Context, Result};
 use ffmpeg_sidecar::{
     command::FfmpegCommand,
     download::{download_ffmpeg_package, ffmpeg_download_url, unpack_ffmpeg},
 };
 use tokio::runtime::Builder;
+use tracing::{debug, info, warn};
 use zip::ZipArchive;
 
 pub fn is_chromium_installed() -> bool {
@@ -27,11 +29,11 @@ pub fn is_ffmpeg_installed() -> bool {
     ffmpeg_sidecar::command::ffmpeg_is_installed()
 }
 
-pub fn fetch_chromium() -> Result<(), Box<dyn error::Error>> {
+pub fn fetch_chromium() -> Result<()> {
     let cr = ChromeRevision::default();
     match cr {
         Some(cr) => cr.download(),
-        None => Err("Platform isn't supported for fetching chromium".into()),
+        None => anyhow::bail!("Platform isn't supported for fetching chromium"),
     }
 }
 
@@ -39,7 +41,7 @@ pub fn is_poppler_installed() -> bool {
     which::which("pdftocairo").is_ok() || which::which("pdftoppm").is_ok()
 }
 
-pub fn fetch_ffmpeg() -> Result<(), Box<dyn error::Error>> {
+pub fn fetch_ffmpeg() -> Result<()> {
     let cache_path = get_cache_path();
     let des = cache_path.join("ffmpeg");
     if !des.exists() {
@@ -57,7 +59,7 @@ pub fn fetch_ffmpeg() -> Result<(), Box<dyn error::Error>> {
     Ok(())
 }
 
-pub fn clean() -> Result<(), Box<dyn error::Error>> {
+pub fn clean() -> Result<()> {
     let cache_path = get_cache_path();
     eprintln!("deleting: {}", cache_path.display());
     if cache_path.exists() {
@@ -77,6 +79,7 @@ pub fn get_cache_path() -> PathBuf {
 
 pub fn get_ffmpeg() -> Option<FfmpegCommand> {
     if ffmpeg_sidecar::command::ffmpeg_is_installed() {
+        info!("using system ffmpeg");
         return Some(FfmpegCommand::new());
     }
     let cache_path = get_cache_path();
@@ -85,8 +88,10 @@ pub fn get_ffmpeg() -> Option<FfmpegCommand> {
         ffmpeg_path.set_extension("exe");
     }
     if ffmpeg_path.exists() {
+        info!(path = %ffmpeg_path.display(), "using cached ffmpeg");
         return Some(FfmpegCommand::new_with_path(ffmpeg_path));
     }
+    debug!("ffmpeg not found");
     None
 }
 
@@ -102,37 +107,43 @@ impl BrowserConfig {
 
     fn auto_detect_path() -> Option<PathBuf> {
         if let Some(path) = get_by_env_var() {
+            info!(path = %path.display(), "found browser via CHROME env var");
             return Some(path);
         }
 
         if let Some(path) = get_by_name() {
+            info!(path = %path.display(), "found browser in PATH");
             return Some(path);
         }
 
         #[cfg(windows)]
         if let Some(path) = get_by_registry() {
+            info!(path = %path.display(), "found browser via registry");
             return Some(path);
         }
 
         if let Some(path) = get_by_path() {
+            info!(path = %path.display(), "found browser at known path");
             return Some(path);
         }
 
         let cr = ChromeRevision::default()?;
         let p = cr.path();
         if p.exists() {
+            info!(path = %p.display(), "found cached chromium");
             return Some(p);
         }
 
+        warn!("no browser found");
         None
     }
 }
 
 fn get_by_env_var() -> Option<PathBuf> {
-    if let Ok(path) = env::var("CHROME") {
-        if Path::new(&path).exists() {
-            return Some(path.into());
-        }
+    if let Ok(path) = env::var("CHROME")
+        && Path::new(&path).exists()
+    {
+        return Some(path.into());
     }
 
     None
@@ -217,7 +228,7 @@ impl ChromeRevision {
             host: "https://storage.googleapis.com".to_owned(),
         })
     }
-    pub fn download(&self) -> Result<(), Box<dyn error::Error>> {
+    pub fn download(&self) -> Result<()> {
         let url = self.platform.as_url(&self.host, self.revision);
         eprintln!("Downloading {url}");
 
@@ -231,39 +242,33 @@ impl ChromeRevision {
         }
 
         // Create Archive
-        let file = File::create(&archive_path).map_err(|_| "Failed to create archive file")?;
+        let file = File::create(&archive_path).context("Failed to create archive file")?;
         let mut file = BufWriter::new(file);
 
         // Download and Unzip
-        let url = url
-            .parse::<reqwest::Url>()
-            .map_err(|_| "Invalid archive url")?;
+        let url = url.parse::<reqwest::Url>().context("Invalid archive url")?;
         let rt = Builder::new_current_thread().enable_all().build()?;
         rt.block_on(async {
             // Download
             let mut res = reqwest::get(url)
                 .await
-                .map_err(|_| "Failed to send request to host")?;
+                .context("Failed to send request to host")?;
             if res.status() != reqwest::StatusCode::OK {
-                return Err("Invalid archive url".into());
+                anyhow::bail!("Invalid archive url");
             }
 
-            while let Some(chunk) = res
-                .chunk()
-                .await
-                .map_err(|_| "Failed to read response chunk")?
-            {
+            while let Some(chunk) = res.chunk().await.context("Failed to read response chunk")? {
                 file.write(&chunk)
-                    .map_err(|_| "Failed to write to archive file")?;
+                    .context("Failed to write to archive file")?;
             }
-            file.flush().map_err(|_| "Failed to flush to disk")?;
+            file.flush().context("Failed to flush to disk")?;
             eprintln!("Finished Downloading!");
 
             // Unzip
             eprintln!("Unziping");
-            fs::create_dir_all(&folder_path).map_err(|_| "Failed to create folder")?;
-            let file = fs::File::open(&archive_path).map_err(|_| "Failed to open archive")?;
-            let mut archive = ZipArchive::new(file).map_err(|_| "Failed to unzip archive")?;
+            fs::create_dir_all(&folder_path).context("Failed to create folder")?;
+            let file = fs::File::open(&archive_path).context("Failed to open archive")?;
+            let mut archive = ZipArchive::new(file).context("Failed to unzip archive")?;
             archive.extract(folder_path)?;
             let _ = fs::remove_file(archive_path);
 

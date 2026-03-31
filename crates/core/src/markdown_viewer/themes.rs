@@ -2,6 +2,8 @@ use std::str::FromStr;
 
 use syntect::highlighting::{Color, ScopeSelectors, StyleModifier, Theme, ThemeSettings};
 
+use crate::config;
+
 #[derive(Debug, Clone)]
 pub struct ThemeColor {
     value: String,
@@ -12,7 +14,7 @@ pub struct ThemeColor {
 
 impl From<&str> for ThemeColor {
     fn from(hex_color: &str) -> Self {
-        let color = hex_to_rgba(&hex_color);
+        let color = hex_to_rgba(hex_color);
         let (r, g, b) = (color.r, color.g, color.b);
 
         ThemeColor {
@@ -24,38 +26,31 @@ impl From<&str> for ThemeColor {
     }
 }
 
-impl From<&str> for CustomTheme {
-    fn from(s: &str) -> Self {
+impl From<&config::Theme> for CustomTheme {
+    fn from(s: &config::Theme) -> Self {
         match s {
-            "catppuccin" => CustomTheme::catppuccin(),
-            "nord" => CustomTheme::nord(),
-            "monokai" => CustomTheme::monokai(),
-            "dracula" => CustomTheme::dracula(),
-            "gruvbox" => CustomTheme::gruvbox(),
-            "one_dark" => CustomTheme::one_dark(),
-            "solarized" => CustomTheme::solarized(),
-            "tokyo_night" => CustomTheme::tokyo_night(),
-            "makurai_light" => CustomTheme::makurai_light(),
-            "makurai_dark" => CustomTheme::makurai_dark(),
-            "ayu" => CustomTheme::ayu(),
-            "ayu_mirage" => CustomTheme::ayu_mirage(),
-            "github" => CustomTheme::github(),
-            "synthwave" => CustomTheme::synthwave(),
-            "material" => CustomTheme::material(),
-            "rose_pine" => CustomTheme::rose_pine(),
-            "kanagawa" => CustomTheme::kanagawa(),
-            "vscode" => CustomTheme::vscode(),
-            "everforest" => CustomTheme::everforest(),
-            "autumn" => CustomTheme::autumn(),
-            "spring" => CustomTheme::spring(),
-            _ => CustomTheme::github(),
+            config::Theme::Catppuccin => CustomTheme::catppuccin(),
+            config::Theme::Nord => CustomTheme::nord(),
+            config::Theme::Monokai => CustomTheme::monokai(),
+            config::Theme::Dracula => CustomTheme::dracula(),
+            config::Theme::Gruvbox => CustomTheme::gruvbox(),
+            config::Theme::OneDark => CustomTheme::one_dark(),
+            config::Theme::Solarized => CustomTheme::solarized(),
+            config::Theme::TokyoNight => CustomTheme::tokyo_night(),
+            config::Theme::MakuraiLight => CustomTheme::makurai_light(),
+            config::Theme::MakuraiDark => CustomTheme::makurai_dark(),
+            config::Theme::Ayu => CustomTheme::ayu(),
+            config::Theme::AyuMirage => CustomTheme::ayu_mirage(),
+            config::Theme::Github => CustomTheme::github(),
+            config::Theme::Synthwave => CustomTheme::synthwave(),
+            config::Theme::Material => CustomTheme::material(),
+            config::Theme::RosePine => CustomTheme::rose_pine(),
+            config::Theme::Kanagawa => CustomTheme::kanagawa(),
+            config::Theme::Vscode => CustomTheme::vscode(),
+            config::Theme::Everforest => CustomTheme::everforest(),
+            config::Theme::Autumn => CustomTheme::autumn(),
+            config::Theme::Spring => CustomTheme::spring(),
         }
-    }
-}
-
-impl From<String> for CustomTheme {
-    fn from(s: String) -> Self {
-        CustomTheme::from(s.as_ref())
     }
 }
 
@@ -642,10 +637,12 @@ impl CustomTheme {
     }
 
     pub fn to_syntect_theme(&self) -> Theme {
-        let mut settings = ThemeSettings::default();
-        settings.foreground = Some(self.foreground.color);
-        settings.background = Some(self.surface.color);
-        settings.guide = Some(self.guide.color);
+        let settings = ThemeSettings {
+            foreground: Some(self.foreground.color),
+            background: Some(self.surface.color),
+            guide: Some(self.guide.color),
+            ..Default::default()
+        };
 
         let mut theme = Theme {
             name: None,

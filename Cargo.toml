@@ -6,7 +6,6 @@ members = [
 ]
 resolver = "3"
 
-# The profile that 'dist' will build with
 [profile.dist]
 inherits = "release"
 codegen-units = 1
@@ -14,10 +13,21 @@ lto = "fat"
 
 [workspace.dependencies]
 markdownify = { version = "0.3.0", path = "crates/markdownify" }
-rasteroid = { version = "0.1.9", path = "crates/rasteroid" }
+rasteroid = { version = "0.3.0", path = "crates/rasteroid" }
 
-strip-ansi-escapes = "0.2.1"
+anyhow = "1.0.102"
+clap = { version = "4.5.58", features = ["derive", "env"] }
 clap_complete = "4.5.66"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+
+tokio = { version = "1.49.0", default-features = false, features = ["macros"] }
+tokio-tungstenite = "0.28.0"
+
+hayro = "0.5.0"
+encoding_rs = "0.8.35"
+infer = "0.19.0"
+strip-ansi-escapes = "0.2.1"
 which = "8.0.0"
 rayon = "1.11.0"
 itertools = "0.14.0"
@@ -25,7 +35,6 @@ inquire = "0.9.3"
 shell-words = "1.1.1"
 ignore = "0.4.25"
 textwrap = "0.16.2"
-clap = "4.5.58"
 comrak = "0.50.0"
 crossterm = "0.29.0"
 pelite = { version = "0.10.0", default-features = false, features = ["std"] }
@@ -33,12 +42,11 @@ image = { version = "0.25.9", default-features = false, features = ["bmp", "dds"
 tempfile = "3.25.0"
 ffmpeg-sidecar = "2.4.0"
 syntect = "5.3.0"
+two-face = "0.5.1"
 resvg = "0.47.0"
 fontdb = "0.23.0"
 serde_json = "1.0.149"
 base64 = "0.22.1"
-tokio = { version = "1.49.0", default-features = false, features = ["macros"] }
-tokio-tungstenite = "0.28.0"
 futures = "0.3.31"
 unicode-width = "0.2.2"
 dirs = "6.0.0"
@@ -61,5 +69,6 @@ color_quant = "1.1.0"
 rand = "0.10.0"
 fast_image_resize = { version = "6.0.0", features = ["image"] }
 signal-hook = "0.4.3"
+libc = "0.2.183"
 windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
 winreg = "0.55.0"

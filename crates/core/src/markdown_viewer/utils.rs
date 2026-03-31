@@ -1,7 +1,6 @@
-use std::{collections::HashMap, sync::OnceLock, usize};
+use std::{collections::HashMap, sync::OnceLock};
 
 use itertools::Itertools;
-use rasteroid::term_misc;
 use regex::Regex;
 use strip_ansi_escapes::strip_str;
 use syntect::{
@@ -187,7 +186,7 @@ pub fn trim_ansi_string(mut str: String) -> String {
 }
 
 pub fn string_len(str: &str) -> usize {
-    strip_ansi_escapes::strip_str(&str).width()
+    strip_ansi_escapes::strip_str(str).width()
 }
 
 fn find_last_format(text: &str) -> Option<String> {
@@ -279,13 +278,14 @@ fn find_last_format(text: &str) -> Option<String> {
 }
 
 pub fn wrap_char_based(
+    ctx: &AnsiContext,
     original: &str,
     char: char,
     indent: usize,
     prefix: &str,
     sub_prefix: &str,
 ) -> String {
-    let (space, sub_space, indent, sub_indent) = info_for_wrapping(indent, prefix, sub_prefix);
+    let (space, sub_space, indent, sub_indent) = info_for_wrapping(ctx, indent, prefix, sub_prefix);
     let suffix = if original.ends_with("\n") { "\n" } else { "" };
 
     original
@@ -305,11 +305,12 @@ pub fn wrap_char_based(
 }
 
 fn info_for_wrapping(
+    ctx: &AnsiContext,
     indent: usize,
     prefix: &str,
     sub_prefix: &str,
 ) -> (usize, usize, String, String) {
-    let space = (term_misc::get_wininfo().sc_width as usize).saturating_sub(indent * 2);
+    let space = (ctx.wininfo.sc_width as usize).saturating_sub(indent * 2);
     let sub_space = space.saturating_sub(string_len(sub_prefix));
     let space = space.saturating_sub(string_len(prefix));
 
@@ -322,13 +323,14 @@ fn info_for_wrapping(
 
 /// for braindead indenting any element.
 pub fn wrap_lines(
+    ctx: &AnsiContext,
     original: &str,
     multi_line: bool,
     indent: usize,
     prefix: &str,
     sub_prefix: &str,
 ) -> String {
-    let (space, sub_space, indent, sub_indent) = info_for_wrapping(indent, prefix, sub_prefix);
+    let (space, sub_space, indent, sub_indent) = info_for_wrapping(ctx, indent, prefix, sub_prefix);
     let suffix = if original.ends_with("\n") { "\n" } else { "" };
 
     if multi_line {
@@ -360,7 +362,6 @@ fn wrap_with_sub(original: String, first_width: usize, sub_width: usize) -> Vec<
     };
     let sub_lines = lines.into_iter().skip(1).join(" ");
 
-    let sub_width = sub_width;
     let lines: Vec<String> = textwrap::wrap(&sub_lines, sub_width)
         .into_iter()
         .map(|cow| cow.into_owned())
@@ -414,9 +415,8 @@ pub fn wrap_highlighted_line(
             buf.push_str("\x1b]8;;\x1b\\");
         }
         // carry on formatting
-        match find_last_format(line) {
-            Some(ansi) => pre_format = ansi,
-            None => {}
+        if let Some(ansi) = find_last_format(line) {
+            pre_format = ansi
         }
         buf.push_str(RESET);
     }
@@ -425,7 +425,7 @@ pub fn wrap_highlighted_line(
     buf
 }
 
-pub fn format_code_simple<'a>(code: &str, lang: &str, ctx: &AnsiContext, indent: usize) -> String {
+pub fn format_code_simple(code: &str, lang: &str, ctx: &AnsiContext, indent: usize) -> String {
     let header = match get_lang_icon_and_color(lang) {
         Some((icon, color)) => &format!("{color}{icon} {lang}{RESET}",),
         None => lang,
@@ -434,7 +434,8 @@ pub fn format_code_simple<'a>(code: &str, lang: &str, ctx: &AnsiContext, indent:
     let ts = ctx.theme.to_syntect_theme();
     let syntax = ctx
         .ps
-        .find_syntax_by_token(lang)
+        .find_syntax_by_extension(lang)
+        .or_else(|| ctx.ps.find_syntax_by_token(lang))
         .unwrap_or_else(|| ctx.ps.find_syntax_plain_text());
     let mut highlighter = HighlightLines::new(syntax, &ts);
 
@@ -453,7 +454,7 @@ pub fn format_code_simple<'a>(code: &str, lang: &str, ctx: &AnsiContext, indent:
 
     let sub_indent = 4usize;
     let sub_indent = " ".repeat(sub_indent.saturating_sub(indent));
-    let (space, sub_space, indent, sub_indent) = info_for_wrapping(indent, "", &sub_indent);
+    let (space, sub_space, indent, sub_indent) = info_for_wrapping(ctx, indent, "", &sub_indent);
     let content = content
         .lines()
         .map(|line| {
@@ -467,11 +468,12 @@ pub fn format_code_simple<'a>(code: &str, lang: &str, ctx: &AnsiContext, indent:
     format!("{indent}{header}\n{content}{RESET}")
 }
 
-pub fn format_code_full<'a>(code: &str, lang: &str, ctx: &AnsiContext) -> String {
+pub fn format_code_full(code: &str, lang: &str, ctx: &AnsiContext) -> String {
     let ts = ctx.theme.to_syntect_theme();
     let syntax = ctx
         .ps
-        .find_syntax_by_token(lang)
+        .find_syntax_by_extension(lang)
+        .or_else(|| ctx.ps.find_syntax_by_token(lang))
         .unwrap_or_else(|| ctx.ps.find_syntax_plain_text());
     let mut highlighter = HighlightLines::new(syntax, &ts);
 
@@ -483,7 +485,7 @@ pub fn format_code_full<'a>(code: &str, lang: &str, ctx: &AnsiContext) -> String
     let max_lines = code.lines().count();
     let num_width = max_lines.to_string().chars().count() + 2;
     // -1 because the indent is 1 based
-    let term_width = term_misc::get_wininfo().sc_width;
+    let term_width = ctx.wininfo.sc_width;
     let text_size = (term_width as usize)
         .saturating_sub(num_width)
         .saturating_sub(3); // -2 for spacing both ways, -1 for the | char after line num
@@ -532,18 +534,19 @@ pub fn format_code_full<'a>(code: &str, lang: &str, ctx: &AnsiContext) -> String
         "─".repeat(term_width as usize - num_width - 1)
     );
     buffer.push_str(&last_border);
-    format!("{buffer}")
+    buffer
 }
 
-pub fn format_code_box<'a>(code: &str, lang: &str, title: &str, ctx: &AnsiContext) -> String {
-    let term_width = ctx.term_width;
+pub fn format_code_box(code: &str, lang: &str, title: &str, ctx: &AnsiContext) -> String {
+    let term_width = ctx.wininfo.sc_width as usize;
     let color = &ctx.theme.border.fg;
     let content = code.trim();
 
     let ts = ctx.theme.to_syntect_theme();
     let syntax = ctx
         .ps
-        .find_syntax_by_token(lang)
+        .find_syntax_by_extension(lang)
+        .or_else(|| ctx.ps.find_syntax_by_token(lang))
         .unwrap_or_else(|| ctx.ps.find_syntax_plain_text());
     let mut highlighter = HighlightLines::new(syntax, &ts);
 
@@ -610,11 +613,11 @@ pub fn format_code_box<'a>(code: &str, lang: &str, title: &str, ctx: &AnsiContex
         "─".repeat(box_width.saturating_sub(2))
     ));
 
-    format!("{buffer}")
+    buffer
 }
 
 pub fn format_tb(ctx: &AnsiContext, offset: usize) -> String {
-    let w = term_misc::get_wininfo().sc_width as usize;
+    let w = ctx.wininfo.sc_width as usize;
     let br = "━".repeat(w.saturating_sub(offset.saturating_sub(1)));
     let border = &ctx.theme.guide.fg;
     format!("{border}{br}{RESET}")

@@ -1,4 +1,4 @@
-use crate::{Converter, error::ParsingError};
+use crate::{MarkdownifyInput, error::ParsingError};
 use std::{
     collections::BTreeMap,
     io::{Cursor, Read},
@@ -7,10 +7,13 @@ use std::{
 use tar::Archive;
 use zip::ZipArchive;
 
-pub fn parse_zip(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
+pub fn parse_zip(
+    content: impl AsRef<[u8]>,
+    allow_inline_images: bool,
+) -> Result<String, ParsingError> {
     let mut archive = ZipArchive::new(Cursor::new(content))
         .map_err(|e| ParsingError::ArchiveError(e.to_string()))?;
-    let mut tree = FileTree::new();
+    let mut tree = FileTree::default();
 
     for i in 0..archive.len() {
         let mut entry = archive
@@ -22,28 +25,34 @@ pub fn parse_zip(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
         }
 
         let name = entry.name().to_string();
-
         if should_skip_file(&name) {
             continue;
         }
 
-        let ext = get_extension(&name);
         let mut contents = Vec::new();
         entry
             .read_to_end(&mut contents)
             .map_err(|e| ParsingError::ArchiveError(e.to_string()))?;
 
-        let convert_type = Converter::from_path(name.clone(), ext);
-        let text = crate::convert_from_bytes(contents, convert_type)?;
+        let mut input = MarkdownifyInput::from_bytes(contents, name.clone())?;
+        input.allow_inline_images(allow_inline_images);
+        input.ext = Path::new(&name)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_lowercase());
+        let text = input.convert()?;
         tree.add_file(name, text);
     }
 
     tree.render()
 }
 
-pub fn parse_tar(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
+pub fn parse_tar(
+    content: impl AsRef<[u8]>,
+    allow_inline_images: bool,
+) -> Result<String, ParsingError> {
     let mut archive = Archive::new(Cursor::new(content));
-    let mut tree = FileTree::new();
+    let mut tree = FileTree::default();
 
     for entry in archive
         .entries()
@@ -54,20 +63,24 @@ pub fn parse_tar(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
             continue;
         }
 
-        let path = entry
+        let name = entry
             .path()
-            .map_err(|e| ParsingError::ArchiveError(e.to_string()))?;
-        let name = path.to_string_lossy().to_string();
-        let ext = get_extension(&name);
+            .map_err(|e| ParsingError::ArchiveError(e.to_string()))?
+            .to_string_lossy()
+            .to_string();
 
         let mut contents = Vec::new();
         entry
             .read_to_end(&mut contents)
             .map_err(|e| ParsingError::ArchiveError(e.to_string()))?;
 
-        let convert_type = Converter::from_path(name.clone(), ext);
-        let text = crate::convert_from_bytes(contents, convert_type)?;
-
+        let mut input = MarkdownifyInput::from_bytes(contents, name.clone())?;
+        input.allow_inline_images(allow_inline_images);
+        input.ext = Path::new(&name)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_lowercase());
+        let text = input.convert()?;
         tree.add_file(name, text);
     }
 
@@ -79,28 +92,15 @@ fn should_skip_file(name: &str) -> bool {
         || name.contains("/._")
         || Path::new(name)
             .file_name()
-            .map_or(false, |f| f.to_string_lossy().starts_with("._"))
+            .is_some_and(|f| f.to_string_lossy().starts_with("._"))
 }
 
-fn get_extension(name: &str) -> String {
-    Path::new(name)
-        .extension()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_lowercase()
-}
-
+#[derive(Default)]
 pub struct FileTree {
     files: BTreeMap<String, String>,
 }
 
 impl FileTree {
-    pub fn new() -> Self {
-        Self {
-            files: BTreeMap::new(),
-        }
-    }
-
     pub fn add_file(&mut self, path: String, content: String) {
         self.files.insert(path, content);
     }

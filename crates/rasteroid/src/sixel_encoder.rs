@@ -1,93 +1,59 @@
-use crate::term_misc::{self, EnvIdentifiers, loc_to_terminal, offset_to_terminal};
-use color_quant::NeuQuant;
-use image::{ImageBuffer, Rgb};
-use std::{
-    error::Error,
-    io::{self, Write},
+use crate::{
+    VideoFrame,
+    error::RasterError,
+    term_misc::{self, EnvIdentifiers, Wininfo, loc_to_terminal, offset_to_terminal},
 };
+use color_quant::NeuQuant;
+use image::{DynamicImage, ImageBuffer, Rgb};
+use std::{io::Write, sync::atomic::Ordering, time::Duration};
 
-const SIXEL_MIN: u8 = 0x3f; // '?'
+const SIXEL_MIN: u8 = 0x3f;
 
-/// encode an image into inline image ()
-/// works with all the formats that the image crate supports
-/// # example:
-/// ```
-/// use std::path::Path;
-/// use std::io::Write;
-/// use rasteroid::sixel_encoder::encode_image;
-///
-/// let path = Path::new("image.png");
-/// let bytes = match std::fs::read(path) {
-///     Ok(bytes) => bytes,
-///     Err(e) => return,
-/// };
-/// let mut stdout = std::io::stdout();
-/// encode_image(&bytes, &mut stdout, None, None).unwrap();
-/// stdout.flush().unwrap();
-/// ```
-/// the option offset just offsets the image to the right by the amount of cells you specify
 pub fn encode_image(
-    img: &[u8],
+    img: &DynamicImage,
     out: &mut impl Write,
     offset: Option<u16>,
     print_at: Option<(u16, u16)>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let dyn_img = image::load_from_memory(img)?;
-    let rgb_img = dyn_img.to_rgb8();
+    wininfo: &Wininfo,
+) -> Result<(), RasterError> {
+    let rgb_img = img.to_rgb8();
 
     let center = offset_to_terminal(offset);
     let print_at_string = loc_to_terminal(print_at);
     out.write_all(print_at_string.as_ref())?;
     out.write_all(center.as_ref())?;
 
-    encode_sixel(&rgb_img, out)?;
+    encode_sixel(out, &rgb_img, wininfo.is_tmux)?;
 
     Ok(())
 }
 
-/// checks if the current terminal supports Sixel's graphic protocol
-/// # example:
-/// ```
-/// use rasteroid::sixel_encoder::is_sixel_capable;
-///
-/// let mut env = rasteroid::term_misc::EnvIdentifiers::new();
-/// let is_capable = is_sixel_capable(&mut env);
-/// println!("Sixel: {}", is_capable);
-/// ```
-pub fn is_sixel_capable(env: &mut EnvIdentifiers) -> bool {
+pub fn is_sixel_capable(env: &EnvIdentifiers) -> bool {
     // has way more support, i just think sixel is bad
-    env.term_contains("foot") 
-        || env.has_key("WT_PROFILE_ID") // windows-terminal
-        || env.term_contains("sixel-tmux")
+    env.term_contains("foot") || env.has_key("WT_PROFILE_ID") || env.term_contains("sixel-tmux")
 }
 
 fn encode_sixel(
+    out: &mut impl Write,
     img: &ImageBuffer<Rgb<u8>, Vec<u8>>,
-    mut out: impl Write,
-) -> Result<(), Box<dyn Error>> {
+    is_tmux: bool,
+) -> Result<(), RasterError> {
     let width = img.width() as usize;
     let height = img.height() as usize;
 
     if width == 0 || height == 0 {
-        return Err("image is empty".into());
+        return Err(RasterError::EmptyImage);
     }
 
-    write_sixel(&mut out, img)?;
-    Ok(())
-}
+    let prefix = if is_tmux {
+        "\x1bPtmux;\x1b\x1b"
+    } else {
+        "\x1b"
+    };
+    let suffix = if is_tmux { "\x1b\x1b\\\x1b\\" } else { "\x07" };
 
-fn write_sixel<W: Write>(out: &mut W, img: &ImageBuffer<Rgb<u8>, Vec<u8>>) -> io::Result<()> {
-    let width = img.width() as usize;
-    let height = img.height() as usize;
-
-    let tmux = term_misc::get_wininfo().is_tmux;
-    let prefix = if tmux { "\x1bPtmux;\x1b\x1b" } else { "\x1b" };
-    let suffix = if tmux { "\x1b\x1b\\\x1b\\" } else { "\x07" };
-
-    // DECSIXEL introducer and raster attributes
     write!(out, "{prefix}P0;1q\"1;1;{};{}", width, height)?;
 
-    // median quant works the best through testing
     let pixels: Vec<u8> = img.pixels().flat_map(|p| p.0[..3].to_vec()).collect();
     let nq = NeuQuant::new(10, 256, &pixels);
     let palette_vec: Vec<(u8, u8, u8)> = nq
@@ -98,9 +64,7 @@ fn write_sixel<W: Write>(out: &mut W, img: &ImageBuffer<Rgb<u8>, Vec<u8>>) -> io
     let palette = &palette_vec;
     let color_indices = map_to_palette(img, palette);
 
-    // Write palette
     for (i, &(r, g, b)) in palette.iter().enumerate() {
-        // Convert RGB to percentages (0-100)
         let r_pct = (r as f32 / 255.0 * 100.0) as u8;
         let g_pct = (g as f32 / 255.0 * 100.0) as u8;
         let b_pct = (b as f32 / 255.0 * 100.0) as u8;
@@ -111,19 +75,15 @@ fn write_sixel<W: Write>(out: &mut W, img: &ImageBuffer<Rgb<u8>, Vec<u8>>) -> io
     let mut color_used = vec![false; palette_size];
     let mut sixel_data = vec![0u8; width * palette_size];
 
-    // Process the image in 6-pixel strips
-    let sixel_rows = (height + 5) / 6;
+    let sixel_rows = height.div_ceil(6);
     for row in 0..sixel_rows {
-        // Graphics NL (new sixel line)
         if row > 0 {
             write!(out, "-")?;
         }
 
-        // Reset color usage flags and sixel data
         color_used.fill(false);
         sixel_data.fill(0);
 
-        // Buffer sixel row, track used colors
         for p in 0..6 {
             let y = (row * 6) + p;
             if y >= height {
@@ -137,28 +97,24 @@ fn write_sixel<W: Write>(out: &mut W, img: &ImageBuffer<Rgb<u8>, Vec<u8>>) -> io
             }
         }
 
-        // Render sixel row for each palette entry
         let mut first_color_written = false;
         for n in 0..palette_size {
             if !color_used[n] {
                 continue;
             }
 
-            // Graphics CR
             if first_color_written {
                 write!(out, "$")?;
             }
 
-            // Color Introducer
             write!(out, "#{}", n)?;
 
             let mut rle_count = 0;
-            let mut prev_sixel = 255; // Sentinel value
+            let mut prev_sixel = 255;
 
             for x in 0..width {
                 let next_sixel = sixel_data[(n * width) + x];
 
-                // RLE encode, write on value change
                 if prev_sixel != 255 && next_sixel != prev_sixel {
                     write_gri(out, rle_count, prev_sixel)?;
                     rle_count = 0;
@@ -168,7 +124,6 @@ fn write_sixel<W: Write>(out: &mut W, img: &ImageBuffer<Rgb<u8>, Vec<u8>>) -> io
                 rle_count += 1;
             }
 
-            // Write last sixel in line
             write_gri(out, rle_count, prev_sixel)?;
 
             first_color_written = true;
@@ -180,7 +135,6 @@ fn write_sixel<W: Write>(out: &mut W, img: &ImageBuffer<Rgb<u8>, Vec<u8>>) -> io
     Ok(())
 }
 
-// Map image pixels to the fixed palette
 fn map_to_palette(img: &ImageBuffer<Rgb<u8>, Vec<u8>>, palette: &[(u8, u8, u8)]) -> Vec<u8> {
     let width = img.width() as usize;
     let height = img.height() as usize;
@@ -191,7 +145,6 @@ fn map_to_palette(img: &ImageBuffer<Rgb<u8>, Vec<u8>>, palette: &[(u8, u8, u8)])
             let pixel = img.get_pixel(x as u32, y as u32);
             let rgb = (pixel[0], pixel[1], pixel[2]);
 
-            // Find closest color in palette
             let idx = find_closest_color(palette, &rgb);
             indices.push(idx);
         }
@@ -200,20 +153,16 @@ fn map_to_palette(img: &ImageBuffer<Rgb<u8>, Vec<u8>>, palette: &[(u8, u8, u8)])
     indices
 }
 
-// Graphics Repeat Introducer encoding
-fn write_gri<W: Write>(out: &mut W, repeat_count: usize, sixel: u8) -> io::Result<()> {
+fn write_gri<W: Write>(out: &mut W, repeat_count: usize, sixel: u8) -> Result<(), RasterError> {
     if repeat_count == 0 {
         return Ok(());
     }
 
-    // Mask with valid sixel bits, apply offset
     let sixel = SIXEL_MIN + (sixel & 0b111111);
 
     if repeat_count > 3 {
-        // Graphics Repeat Introducer
         write!(out, "!{}{}", repeat_count, sixel as char)?;
     } else {
-        // Just repeat the character
         for _ in 0..repeat_count {
             write!(out, "{}", sixel as char)?;
         }
@@ -222,7 +171,6 @@ fn write_gri<W: Write>(out: &mut W, repeat_count: usize, sixel: u8) -> io::Resul
     Ok(())
 }
 
-// Find the closest color in the palette
 fn find_closest_color(palette: &[(u8, u8, u8)], color: &(u8, u8, u8)) -> u8 {
     let mut closest = 0;
     let mut min_dist = u32::MAX;
@@ -240,4 +188,65 @@ fn find_closest_color(palette: &[(u8, u8, u8)], color: &(u8, u8, u8)) -> u8 {
     }
 
     closest as u8
+}
+
+pub fn encode_frames(
+    frames: &mut dyn Iterator<Item = VideoFrame>,
+    out: &mut impl Write,
+    wininfo: &Wininfo,
+    offset: Option<u16>,
+    print_at: Option<(u16, u16)>,
+) -> Result<(), RasterError> {
+    let shutdown = term_misc::setup_signal_handler();
+    let mut last_timestamp: Option<f32> = None;
+    let mut frame_cache: Vec<(Vec<u8>, Duration)> = Vec::new();
+    let (first_img, _) = frames.next().ok_or(RasterError::EmptyVideo)?;
+
+    let at = print_at.unwrap_or((0, 0));
+
+    // pre-encode first frame and ensure space
+    let mut first_buf = Vec::new();
+    encode_image(&first_img, &mut first_buf, offset, Some(at), wininfo)?;
+    term_misc::ensure_space(out, first_img.height() as u16)?;
+    out.write_all(&first_buf)?;
+    out.flush()?;
+
+    let delay = Duration::from_millis(33);
+    frame_cache.push((first_buf, delay));
+
+    for (img, timestamp) in frames {
+        if shutdown.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+
+        let delay = match (timestamp, last_timestamp) {
+            (ts, Some(last)) if ts > last => Duration::from_secs_f32(ts - last),
+            _ => Duration::from_millis(33),
+        };
+        last_timestamp = Some(timestamp);
+
+        let mut buf = Vec::new();
+        encode_image(&img, &mut buf, offset, Some(at), wininfo)?;
+
+        out.write_all(&buf)?;
+        out.flush()?;
+        frame_cache.push((buf, delay));
+        std::thread::sleep(delay);
+    }
+
+    if frame_cache.is_empty() {
+        return Err(RasterError::EmptyVideo);
+    }
+
+    // loop cached frames
+    loop {
+        for (buf, delay) in &frame_cache {
+            if shutdown.load(Ordering::SeqCst) {
+                return Ok(());
+            }
+            out.write_all(buf)?;
+            out.flush()?;
+            std::thread::sleep(*delay);
+        }
+    }
 }

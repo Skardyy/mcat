@@ -3,7 +3,7 @@ use std::io::{Cursor, Read};
 use quick_xml::events::Event;
 use zip::ZipArchive;
 
-use crate::error::ParsingError;
+use crate::{error::ParsingError, parse_text};
 
 use super::sheets;
 
@@ -69,14 +69,12 @@ pub fn parse_pptx(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
                         _ => {}
                     },
                     Ok(Event::Text(e)) => {
-                        let text = String::from_utf8_lossy(&e).to_string();
-                        if in_text_body {
-                            if !text.trim().is_empty() {
-                                if in_title {
-                                    markdown.push_str(&format!("### {}", text.trim()));
-                                } else {
-                                    markdown.push_str(&format!("{} ", text.trim()));
-                                }
+                        let text = parse_text(&*e)?;
+                        if in_text_body && !text.trim().is_empty() {
+                            if in_title {
+                                markdown.push_str(&format!("### {}", text.trim()));
+                            } else {
+                                markdown.push_str(&format!("{} ", text.trim()));
                             }
                         }
                         if in_cell {
@@ -121,10 +119,11 @@ pub fn parse_pptx(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
                     },
                     Ok(Event::Eof) => break,
                     Err(e) => {
-                        return Err(ParsingError::ParsingError(
-                            format!("Error at position {}: {:?}", reader.buffer_position(), e)
-                                .into(),
-                        ));
+                        return Err(ParsingError::ParsingError(format!(
+                            "Error at position {}: {:?}",
+                            reader.buffer_position(),
+                            e
+                        )));
                     }
                     _ => {}
                 }

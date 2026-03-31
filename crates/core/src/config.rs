@@ -1,458 +1,507 @@
-use std::{collections::HashMap, env};
+use clap::{
+    Parser, ValueEnum,
+    builder::{
+        Styles,
+        styling::{AnsiColor, Effects},
+    },
+};
+use clap_complete::Shell;
+use rasteroid::{
+    RasterEncoder,
+    term_misc::{self, EnvIdentifiers, Wininfo},
+};
+use tracing::debug;
 
-use clap::ArgMatches;
-use rasteroid::{InlineEncoder, term_misc};
-
-#[derive(Debug, Clone)]
-pub struct InlineOptions {
-    pub center: bool,
-    pub width: Option<String>,
-    pub height: Option<String>,
-    pub spx: String,
-    pub sc: String,
-    pub scalex: Option<f32>,
-    pub scaley: Option<f32>,
-    pub zoom: Option<usize>,
-    pub x: Option<i32>,
-    pub y: Option<i32>,
-    pub inline: bool,
-}
-
-impl Default for InlineOptions {
-    fn default() -> Self {
-        InlineOptions {
-            center: true,
-            width: Some("80%".into()),
-            height: Some("80%".into()),
-            spx: "1920x1080".into(),
-            sc: "100x20".into(),
-            scalex: None,
-            scaley: None,
-            zoom: None,
-            x: None,
-            y: None,
-            inline: false,
-        }
-    }
-}
-
-impl InlineOptions {
-    pub fn extend_from_string(&mut self, s: &str) -> &mut Self {
-        let map: HashMap<_, _> = s
-            .split(',')
-            .filter_map(|pair| {
-                let mut split = pair.splitn(2, '=');
-                let key = split.next()?.trim();
-                let value = split.next()?.trim();
-                Some((key, value))
-            })
-            .collect();
-
-        let get = |key: &str| map.get(key).copied();
-        let get_size = |key: &str, default: &Option<String>| match map.get(key) {
-            Some(v) => {
-                if v.eq_ignore_ascii_case("none") {
-                    None
-                } else {
-                    Some(v.to_string())
-                }
-            }
-            None => default.clone(),
-        };
-
-        self.width = get_size("width", &self.width);
-        self.height = get_size("height", &self.height);
-        if let Some(spx) = get("spx") {
-            self.spx = spx.to_string();
-        }
-        if let Some(sc) = get("sc") {
-            self.sc = sc.to_string();
-        }
-        self.scalex = get("scalex").and_then(|v| v.parse().ok()).or(self.scalex);
-        self.scalex = get("scale").and_then(|v| v.parse().ok()).or(self.scalex);
-        self.scaley = get("scaley").and_then(|v| v.parse().ok()).or(self.scaley);
-        self.scaley = get("scale").and_then(|v| v.parse().ok()).or(self.scaley);
-        self.zoom = get("zoom").and_then(|v| v.parse().ok()).or(self.zoom);
-        self.x = get("x").and_then(|v| v.parse().ok()).or(self.x);
-        self.y = get("y").and_then(|v| v.parse().ok()).or(self.y);
-        self.center = get("center")
-            .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
-            .unwrap_or(self.center);
-        self.inline = get("inline")
-            .map(|v| v.eq_ignore_ascii_case("true") || v == "1")
-            .unwrap_or(self.inline);
-        self
-    }
-}
-
-#[derive(Clone)]
-pub struct LsixOptions {
-    pub x_padding: String,
-    pub y_padding: String,
-    pub min_width: String,
-    pub max_width: String,
-    pub height: String,
-    pub max_items_per_row: usize,
-    pub hidden: bool,
-    pub create_hyprlink: bool,
-    pub reverse: bool,
-    pub sort_mode: SortMode,
-}
-
-impl Default for LsixOptions {
-    fn default() -> Self {
-        LsixOptions {
-            x_padding: "3c".into(),
-            y_padding: "2c".into(),
-            min_width: "2c".into(),
-            max_width: "16c".into(),
-            height: "2c".into(),
-            max_items_per_row: 20,
-            hidden: false,
-            create_hyprlink: false,
-            reverse: false,
-            sort_mode: SortMode::Name,
-        }
-    }
-}
-
-impl LsixOptions {
-    pub fn extend_from_string(&mut self, s: &str) -> &mut Self {
-        let map: HashMap<_, _> = s
-            .split(',')
-            .filter_map(|pair| {
-                let mut split = pair.splitn(2, '=');
-                let key = split.next()?.trim();
-                let value = split.next()?.trim();
-                Some((key, value))
-            })
-            .collect();
-
-        let get = |key: &str| map.get(key).copied();
-
-        if let Some(x_padding) = get("x_padding") {
-            self.x_padding = x_padding.to_string();
-        }
-        if let Some(y_padding) = get("y_padding") {
-            self.y_padding = y_padding.to_string();
-        }
-        if let Some(min_width) = get("min_width") {
-            self.min_width = min_width.to_string();
-        }
-        if let Some(max_width) = get("max_width") {
-            self.max_width = max_width.to_string();
-        }
-        if let Some(height) = get("height") {
-            self.height = height.to_string();
-        }
-        self.max_items_per_row = get("items_per_row")
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(self.max_items_per_row);
-        self
-    }
-}
-
+#[derive(Parser)]
+#[command(
+    name = "mcat",
+    version,
+    author,
+    about = "Terminal image, video, and Markdown viewer",
+    color = clap::ColorChoice::Always,
+    styles = get_styles(),
+)]
 #[derive(Clone)]
 pub struct McatConfig {
+    /// Input source (file/dir/url/ls)
+    #[arg(num_args = 1.., required_unless_present_any = ["report", "generate", "fetch_chromium", "fetch_ffmpeg", "fetch_clean", "stdin_piped"])]
     pub input: Vec<String>,
-    pub output: Option<String>,
-    pub is_ls: bool,
-    pub inline_encoder: InlineEncoder,
-    pub ls_options: LsixOptions,
-    pub inline_options: InlineOptions,
-    pub is_tmux: bool,
-    pub silent: bool,
-    pub hidden: bool,
+
+    #[arg(long, hide = true, env = "MCAT_STDIN_PIPED")]
+    stdin_piped: bool,
+
+    // ## Core Options ##
+    /// Color theme
+    #[arg(
+        long,
+        short = 't',
+        help_heading = "Core Options",
+        env = "MCAT_THEME",
+        default_value_t
+    )]
+    pub theme: Theme,
+
+    /// Output format
+    #[arg(
+        long,
+        short = 'o',
+        value_name = "format",
+        help_heading = "Core Options",
+        default_value_if("inline", "true", "inline"),
+        default_value_if("interactive", "true", "interactive")
+    )]
+    pub output: Option<OutputFormat>,
+
+    /// Shortcut for --output inline
+    #[arg(short = 'i', help_heading = "Core Options")]
+    inline: bool,
+
+    /// Shortcut for --output interactive
+    #[arg(short = 'I', help_heading = "Core Options")]
+    interactive: bool,
+
+    /// Show capabilities and terminal info
+    #[arg(long, help_heading = "Core Options")]
     pub report: bool,
+
+    /// Remove loading bars
+    #[arg(long, help_heading = "Core Options")]
+    pub silent: bool,
+
+    /// Pixel bounding box for image rendering, auto-detected by default
+    /// (e.g. 1920x1080, 1920xauto, autox1080)
+    #[arg(
+        long,
+        value_name = "WxH",
+        help_heading = "Core Options",
+        default_value = "autoxauto"
+    )]
+    pub spx: String,
+
+    /// Bounding box in columns x rows, auto-detected by default, affects both
+    /// image sizing and markdown rendering
+    /// (e.g. 100x20, 100xauto, autox20)
+    #[arg(
+        long,
+        value_name = "WxH",
+        help_heading = "Core Options",
+        default_value = "autoxauto"
+    )]
+    pub sc: String,
+
+    /// Scale multiplier applied over both spx and sc width
+    #[arg(
+        long,
+        value_name = "float",
+        help_heading = "Core Options",
+        default_value_t = 1.0
+    )]
+    pub scalex: f32,
+
+    /// Scale multiplier applied over both spx and sc height
+    #[arg(
+        long,
+        value_name = "float",
+        help_heading = "Core Options",
+        default_value_t = 1.0
+    )]
+    pub scaley: f32,
+
+    // ## Markdown Viewing ##
+    /// Disable line numbers in code blocks
+    #[arg(long, help_heading = "Markdown Viewing")]
     pub no_linenumbers: bool,
-    pub md_image_render: MdImageRender,
-    pub yaml_header: bool,
-    pub horizontal_image_stacking: bool,
-    pub style_html: bool,
-    pub theme: String,
-    pub fn_and_leave: Option<FnAndLeave>,
+
+    /// What images to render in the markdown
+    #[arg(long = "md-image", value_name = "mode", help_heading = "Markdown Viewing",
+        default_value_t = MdImageMode::Auto,
+        default_value_if("fast", "true", "none"),
+        env = "MCAT_MD_IMAGE")]
+    pub md_image: MdImageMode,
+
+    /// Shortcut for --md-image none
+    #[arg(short = 'f', help_heading = "Markdown Viewing")]
+    fast: bool,
+
+    /// Embed images as base64 in markdown. Images inside archives lack file paths and are
+    /// normally dropped. This embeds them as data URIs for a complete output, useful when
+    /// saving markdown for an external renderer. Enabled automatically when rendering images.
+    #[arg(long, help_heading = "Markdown Viewing")]
+    pub force_embed_images: bool,
+
+    /// Shows YAML headers too
+    #[arg(long, help_heading = "Markdown Viewing")]
+    pub header: bool,
+
+    #[arg(long = "color", help_heading = "Markdown Viewing",
+        hide = true,
+        default_value_t = ColorMode::Auto,
+        default_value_if("color_always", "true", "always"),
+        default_value_if("color_never", "true", "never"))]
+    pub color: ColorMode,
+
+    /// Force ANSI formatting on
+    #[arg(short = 'c', help_heading = "Markdown Viewing")]
+    color_always: bool,
+
+    /// Force ANSI formatting off
+    #[arg(short = 'C', help_heading = "Markdown Viewing")]
+    color_never: bool,
+
+    /// Modify the default pager
+    #[arg(
+        long,
+        value_name = "command",
+        help_heading = "Markdown Viewing",
+        env = "MCAT_PAGER",
+        default_value = "less -r"
+    )]
     pub pager: String,
-    pub color: AlwaysOrNever,
-    pub paging: AlwaysOrNever,
-    encoder_force: String,
+
+    #[arg(long = "paging", help_heading = "Markdown Viewing",
+        hide = true,
+        default_value_t = PagingMode::Auto,
+        default_value_if("paging_always", "true", "always"),
+        default_value_if("paging_never", "true", "never"))]
+    pub paging: PagingMode,
+
+    /// Force paging on
+    #[arg(short = 'p', help_heading = "Markdown Viewing")]
+    paging_always: bool,
+
+    /// Force paging off
+    #[arg(short = 'P', help_heading = "Markdown Viewing")]
+    paging_never: bool,
+
+    // ## Image/Video Viewing ##
+    /// Use Kitty image protocol
+    #[arg(long, help_heading = "Image/Video Viewing")]
+    kitty: bool,
+
+    /// Use iTerm2 image protocol
+    #[arg(long, help_heading = "Image/Video Viewing")]
+    iterm: bool,
+
+    /// Use Sixel image protocol
+    #[arg(long, help_heading = "Image/Video Viewing")]
+    sixel: bool,
+
+    /// Use ASCII art output
+    #[arg(long, help_heading = "Image/Video Viewing")]
+    ascii: bool,
+
+    /// Disable centering the image in the terminal
+    #[arg(long, help_heading = "Image/Video Viewing")]
+    pub no_center: bool,
+
+    /// Image render width (e.g. 80% of terminal, 40c columns, 1920px pixels)
+    #[arg(
+        long,
+        value_name = "size",
+        help_heading = "Image/Video Viewing",
+        default_value = "80%"
+    )]
+    pub img_width: String,
+
+    /// Image render height (e.g. 80% of terminal, 40c rows, 1080px pixels)
+    #[arg(
+        long,
+        value_name = "size",
+        help_heading = "Image/Video Viewing",
+        default_value = "40%"
+    )]
+    pub img_height: String,
+
+    /// Image zoom level
+    #[arg(long, value_name = "level", help_heading = "Image/Video Viewing")]
+    pub img_zoom: Option<usize>,
+
+    /// X offset from top-left corner in pixels
+    #[arg(long, value_name = "pixels", help_heading = "Image/Video Viewing")]
+    pub img_x_offset: Option<i32>,
+
+    /// Y offset from top-left corner in pixels
+    #[arg(long, value_name = "pixels", help_heading = "Image/Video Viewing")]
+    pub img_y_offset: Option<i32>,
+
+    // ## Conversion ##
+    /// Add styling to HTML output
+    #[arg(long, help_heading = "Conversion")]
+    pub style_html: bool,
+
+    // ## Directory Listing ##
+    /// Include hidden files
+    #[arg(long, short = 'a', help_heading = "Directory Listing")]
+    pub hidden: bool,
+
+    /// Add hyperlinks to file names
+    #[arg(long, help_heading = "Directory Listing")]
+    pub hyprlink: bool,
+
+    /// Sort method
+    #[arg(long, help_heading = "Directory Listing",
+        default_value_t = SortMode::Name,
+        default_value_if("sort_type", "true", "type"),
+        default_value_if("sort_size", "true", "size"))]
+    pub sort: SortMode,
+
+    /// Shortcut for --sort type
+    #[arg(short = 'X', help_heading = "Directory Listing")]
+    sort_type: bool,
+
+    /// Shortcut for --sort size
+    #[arg(short = 'S', help_heading = "Directory Listing")]
+    sort_size: bool,
+
+    /// Reverse the order of items
+    #[arg(long, short = 'r', help_heading = "Directory Listing")]
+    pub reverse: bool,
+
+    /// Cell x padding (e.g. 3c columns, 10% of the terminal, 100px pixels)
+    #[arg(
+        long,
+        value_name = "size",
+        help_heading = "Directory Listing",
+        default_value = "3c"
+    )]
+    pub ls_x_padding: String,
+
+    /// Cell y padding (e.g. 2c rows, 10% of the terminal, 100px pixels)
+    #[arg(
+        long,
+        value_name = "size",
+        help_heading = "Directory Listing",
+        default_value = "2c"
+    )]
+    pub ls_y_padding: String,
+
+    /// Minimum cell width (e.g. 2c columns, 10% of the terminal, 100px pixels)
+    #[arg(
+        long,
+        value_name = "size",
+        help_heading = "Directory Listing",
+        default_value = "2c"
+    )]
+    pub ls_min_width: String,
+
+    /// Maximum cell width (e.g. 16c columns, 10% of the terminal, 100px pixels)
+    #[arg(
+        long,
+        value_name = "size",
+        help_heading = "Directory Listing",
+        default_value = "16c"
+    )]
+    pub ls_max_width: String,
+
+    /// Cell height (e.g. 2c rows, 10% of the terminal, 100px pixels)
+    #[arg(
+        long,
+        value_name = "size",
+        help_heading = "Directory Listing",
+        default_value = "2c"
+    )]
+    pub ls_height: String,
+
+    /// Maximum items per row
+    #[arg(
+        long,
+        value_name = "count",
+        help_heading = "Directory Listing",
+        default_value_t = 20
+    )]
+    pub ls_items_per_row: usize,
+
+    // ## System Operations ##
+    /// Generate shell completions
+    #[arg(long, value_name = "shell", help_heading = "System Operations")]
+    pub generate: Option<Shell>,
+
+    /// Download and prepare chromium
+    #[arg(long, help_heading = "System Operations")]
+    pub fetch_chromium: bool,
+
+    /// Download and prepare ffmpeg
+    #[arg(long, help_heading = "System Operations")]
+    pub fetch_ffmpeg: bool,
+
+    /// Clean up local binaries
+    #[arg(long, help_heading = "System Operations")]
+    pub fetch_clean: bool,
+
+    /// Enable verbose debug logging
+    #[arg(short = 'v', long, help_heading = "Core Options")]
+    pub verbose: bool,
+
+    // ## Runtime ##
+    #[arg(skip)]
+    pub wininfo: Option<Wininfo>,
+
+    #[arg(skip)]
+    pub env_id: Option<EnvIdentifiers>,
+
+    #[arg(skip)]
+    pub encoder: Option<RasterEncoder>,
 }
 
-#[derive(Clone)]
+impl McatConfig {
+    pub fn finalize(&mut self) -> anyhow::Result<()> {
+        let env = term_misc::EnvIdentifiers::new();
+        let spx = Some(self.spx.as_ref());
+        let sc = Some(self.sc.as_ref());
+        let wininfo = Wininfo::new(spx, sc, Some(self.scalex), Some(self.scaley), &env)?;
+        let encoder = if self.kitty {
+            RasterEncoder::Kitty
+        } else if self.iterm {
+            RasterEncoder::Iterm
+        } else if self.sixel {
+            RasterEncoder::Sixel
+        } else if self.ascii {
+            RasterEncoder::Ascii
+        } else {
+            RasterEncoder::auto_detect(&env)
+        };
+
+        debug!(
+            ?encoder,
+            ?self.output,
+            ?self.theme,
+            ?self.md_image,
+            ?self.color,
+            ?self.paging,
+            sc_width = wininfo.sc_width,
+            sc_height = wininfo.sc_height,
+            spx_width = wininfo.spx_width,
+            spx_height = wininfo.spx_height,
+            is_tmux = wininfo.is_tmux,
+            needs_inline = wininfo.needs_inline,
+            "config"
+        );
+        self.env_id = Some(env);
+        self.wininfo = Some(wininfo);
+        self.encoder = Some(encoder);
+        Ok(())
+    }
+}
+
+fn get_styles() -> Styles {
+    Styles::styled()
+        .header(AnsiColor::Green.on_default() | Effects::BOLD)
+        .literal(AnsiColor::Blue.on_default())
+        .placeholder(AnsiColor::Yellow.on_default())
+        .usage(AnsiColor::Magenta.on_default())
+}
+
+#[derive(ValueEnum, Clone, Default, Debug)]
+pub enum Theme {
+    Catppuccin,
+    Nord,
+    Monokai,
+    Dracula,
+    Gruvbox,
+    OneDark,
+    Solarized,
+    TokyoNight,
+    MakuraiLight,
+    MakuraiDark,
+    Ayu,
+    AyuMirage,
+    #[default]
+    Github,
+    Synthwave,
+    Material,
+    RosePine,
+    Kanagawa,
+    Vscode,
+    Everforest,
+    Autumn,
+    Spring,
+}
+
+impl std::fmt::Display for Theme {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        self.to_possible_value().unwrap().get_name().fmt(f)
+    }
+}
+
+#[derive(ValueEnum, Clone, PartialEq, Debug)]
+pub enum OutputFormat {
+    Html,
+    Md,
+    Image,
+    Inline,
+    Interactive,
+}
+
+#[derive(ValueEnum, Clone, PartialEq, Default, Debug)]
+pub enum ColorMode {
+    Never,
+    Always,
+    #[default]
+    Auto,
+}
+
+impl std::fmt::Display for ColorMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        self.to_possible_value().unwrap().get_name().fmt(f)
+    }
+}
+
+#[derive(ValueEnum, Clone, PartialEq, Default, Debug)]
+pub enum PagingMode {
+    Never,
+    Always,
+    #[default]
+    Auto,
+}
+
+impl std::fmt::Display for PagingMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        self.to_possible_value().unwrap().get_name().fmt(f)
+    }
+}
+
+#[derive(ValueEnum, Clone, Default, PartialEq, Debug)]
+pub enum MdImageMode {
+    All,
+    Small,
+    None,
+    #[default]
+    Auto,
+}
+
+impl std::fmt::Display for MdImageMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        self.to_possible_value().unwrap().get_name().fmt(f)
+    }
+}
+
+#[derive(ValueEnum, Clone, Default)]
+pub enum ImageProtocol {
+    #[default]
+    Auto,
+    Kitty,
+    Iterm,
+    Sixel,
+    Ascii,
+}
+
+impl std::fmt::Display for ImageProtocol {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        self.to_possible_value().unwrap().get_name().fmt(f)
+    }
+}
+
+#[derive(ValueEnum, Clone, Default, Debug)]
 pub enum SortMode {
+    #[default]
     Name,
     Size,
     Time,
     Type,
 }
-impl SortMode {
-    pub fn from_string(s: &str) -> SortMode {
-        match s.to_lowercase().as_ref() {
-            "name" => return SortMode::Name,
-            "size" => return SortMode::Size,
-            "time" => return SortMode::Time,
-            "type" => return SortMode::Type,
-            _ => return SortMode::Name,
-        }
-    }
-}
 
-#[derive(Clone)]
-pub enum AlwaysOrNever {
-    Always,
-    Never,
-    Auto,
-}
-
-impl AlwaysOrNever {
-    pub fn from_string(s: &str) -> AlwaysOrNever {
-        match s.to_lowercase().as_ref() {
-            "always" => return AlwaysOrNever::Always,
-            "never" => return AlwaysOrNever::Never,
-            _ => return AlwaysOrNever::Always,
-        }
-    }
-    pub fn should_use(&self, other: bool) -> bool {
-        match self {
-            AlwaysOrNever::Always => true,
-            AlwaysOrNever::Never => false,
-            AlwaysOrNever::Auto => other,
-        }
-    }
-}
-
-#[derive(Clone)]
-pub enum FnAndLeave {
-    ShellGenerate(String),
-    DeleteImages,
-    FetchChromium,
-    FetchFfmpeg,
-    FetchClean,
-    Report,
-}
-
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub enum MdImageRender {
-    All,
-    Small,
-    None,
-    Auto,
-}
-
-impl Default for McatConfig {
-    fn default() -> Self {
-        McatConfig {
-            input: Vec::new(),
-            output: None,
-            is_ls: false,
-            inline_encoder: InlineEncoder::Ascii,
-            is_tmux: false,
-            ls_options: LsixOptions::default(),
-            inline_options: InlineOptions::default(),
-            silent: false,
-            hidden: false,
-            report: false,
-            no_linenumbers: false,
-            yaml_header: false,
-            md_image_render: MdImageRender::Auto,
-            horizontal_image_stacking: false,
-            style_html: false,
-            theme: "dark".into(),
-            fn_and_leave: None,
-            encoder_force: String::new(),
-            pager: "less -r".into(),
-            color: AlwaysOrNever::Auto,
-            paging: AlwaysOrNever::Auto,
-        }
-    }
-}
-
-impl McatConfig {
-    pub fn extend_from_args(&mut self, opts: &ArgMatches) -> &mut Self {
-        self.input = opts
-            .get_many::<String>("input")
-            .unwrap_or_default()
-            .cloned()
-            .collect();
-        self.is_ls = self.input.get(0).unwrap_or(&"".to_owned()).to_lowercase() == "ls";
-
-        // encoder
-        let mut kitty = opts.get_flag("kitty");
-        let mut iterm = opts.get_flag("iterm");
-        let mut sixel = opts.get_flag("sixel");
-        let mut ascii = opts.get_flag("ascii");
-        match self.encoder_force.as_ref() {
-            "kitty" => kitty = true,
-            "iterm" => iterm = true,
-            "sixel" => sixel = true,
-            "ascii" => ascii = true,
-            _ => {}
-        }
-        let mut env = term_misc::EnvIdentifiers::new();
-        self.is_tmux = env.is_tmux();
-        self.inline_encoder =
-            rasteroid::InlineEncoder::auto_detect(kitty, iterm, sixel, ascii, &mut env);
-
-        // fn and leave
-        if let Some(shell) = opts.get_one::<String>("generate-completions") {
-            self.fn_and_leave = Some(FnAndLeave::ShellGenerate(shell.clone()));
-            return self;
-        }
-        if opts.get_flag("delete-all-images") {
-            self.fn_and_leave = Some(FnAndLeave::DeleteImages);
-            return self;
-        }
-        if opts.get_flag("fetch-chromium") {
-            self.fn_and_leave = Some(FnAndLeave::FetchChromium);
-            return self;
-        }
-        if opts.get_flag("fetch-ffmpeg") {
-            self.fn_and_leave = Some(FnAndLeave::FetchFfmpeg);
-            return self;
-        }
-        if opts.get_flag("fetch-clean") {
-            self.fn_and_leave = Some(FnAndLeave::FetchClean);
-            return self;
-        }
-        self.report = opts
-            .get_one::<bool>("report")
-            .copied()
-            .unwrap_or(self.report);
-        if self.report && self.input.is_empty() {
-            self.fn_and_leave = Some(FnAndLeave::Report);
-            return self;
-        }
-
-        // simple Assignment
-        if let Some(ls_options) = opts.get_one::<String>("ls-options") {
-            self.ls_options.extend_from_string(&ls_options);
-        }
-        if let Some(inline_options) = opts.get_one::<String>("inline-options") {
-            self.inline_options.extend_from_string(&inline_options);
-        }
-        if opts.get_flag("silent") {
-            self.silent = true;
-        }
-        if opts.get_flag("hidden") {
-            self.hidden = true;
-            self.ls_options.hidden = true;
-        }
-        if opts.get_flag("hyprlink") {
-            self.ls_options.create_hyprlink = true;
-        }
-        if opts.get_flag("no-linenumbers") {
-            self.no_linenumbers = true;
-        }
-        self.md_image_render = match opts.get_one::<String>("md-image") {
-            Some(v) => match v.as_str() {
-                "all" => MdImageRender::All,
-                "small" => MdImageRender::Small,
-                "none" => MdImageRender::None,
-                "auto" => MdImageRender::Auto,
-                _ => self.md_image_render,
-            },
-            None => self.md_image_render,
-        };
-        if opts.get_flag("fast") {
-            self.md_image_render = MdImageRender::None
-        }
-        if opts.get_flag("header") {
-            self.yaml_header = true;
-        }
-        if opts.get_flag("horizontal") {
-            self.horizontal_image_stacking = true;
-        }
-        if opts.get_flag("style-html") {
-            self.style_html = true;
-        }
-        if let Some(theme) = opts.get_one::<String>("theme") {
-            self.theme = theme.clone();
-        }
-        // paging
-        if let Some(pager) = opts.get_one::<String>("pager") {
-            self.pager = pager.clone();
-        }
-        if let Some(paging) = opts.get_one::<String>("paging") {
-            self.paging = AlwaysOrNever::from_string(paging);
-        }
-        if opts.get_flag("paging-always") {
-            self.paging = AlwaysOrNever::Always
-        }
-        if opts.get_flag("paging-never") {
-            self.paging = AlwaysOrNever::Never
-        }
-        // color
-        if let Some(color) = opts.get_one::<String>("color") {
-            self.color = AlwaysOrNever::from_string(color);
-        }
-        if opts.get_flag("color-always") {
-            self.color = AlwaysOrNever::Always
-        }
-        if opts.get_flag("color-never") {
-            self.color = AlwaysOrNever::Never
-        }
-        // ls
-        if let Some(sort_method) = opts.get_one::<String>("sort") {
-            self.ls_options.sort_mode = SortMode::from_string(&sort_method);
-        }
-        if opts.get_flag("reverse") {
-            self.ls_options.reverse = true
-        }
-        if opts.get_flag("sort-type") {
-            self.ls_options.sort_mode = SortMode::Type
-        }
-        if opts.get_flag("sort-size") {
-            self.ls_options.sort_mode = SortMode::Size
-        }
-
-        // output
-        let inline = opts.get_flag("inline");
-        let interactive = opts.get_flag("interactive");
-        self.output = if inline {
-            Some("inline".to_string())
-        } else if interactive {
-            Some("interactive".to_string())
-        } else {
-            opts.get_one::<String>("output").cloned()
-        };
-
-        self
-    }
-
-    pub fn extend_from_env(&mut self) -> &mut Self {
-        if let Ok(v) = env::var("MCAT_ENCODER") {
-            self.encoder_force = v.to_lowercase();
-        }
-        if let Ok(v) = env::var("MCAT_PAGER") {
-            self.pager = v;
-        }
-        if let Ok(v) = env::var("MCAT_THEME") {
-            self.theme = v;
-        }
-        if let Ok(v) = env::var("MCAT_INLINE_OPTS") {
-            self.inline_options.extend_from_string(&v);
-        }
-        if let Ok(v) = env::var("MCAT_LS_OPTS") {
-            self.ls_options.extend_from_string(&v);
-        }
-        if let Ok(v) = env::var("MCAT_HYPRLINK") {
-            self.ls_options.create_hyprlink = v == "1" || v.eq_ignore_ascii_case("true");
-        }
-        if let Ok(v) = env::var("MCAT_SILENT") {
-            self.silent = v == "1" || v.eq_ignore_ascii_case("true");
-        }
-        if let Ok(v) = env::var("MCAT_NO_LINENUMBERS") {
-            self.no_linenumbers = v == "1" || v.eq_ignore_ascii_case("true");
-        }
-        if let Ok(v) = env::var("MCAT_MD_IMAGE") {
-            self.md_image_render = match v.to_lowercase().as_str() {
-                "all" => MdImageRender::All,
-                "small" => MdImageRender::Small,
-                "none" => MdImageRender::None,
-                "auto" => MdImageRender::Auto,
-                _ => self.md_image_render,
-            };
-        }
-
-        self
+impl std::fmt::Display for SortMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        self.to_possible_value().unwrap().get_name().fmt(f)
     }
 }

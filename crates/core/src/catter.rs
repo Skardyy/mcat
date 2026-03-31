@@ -1,420 +1,236 @@
-use std::{
-    error::Error,
-    fs::{self, File},
-    io::{Cursor, Write, stdout},
-    path::Path,
-    process::{Command, Stdio},
-};
-
-use clap::error::Result;
+use anyhow::{Context, Result};
 use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode},
     tty::IsTty,
 };
-use image::{DynamicImage, ImageFormat};
-use rasteroid::{
-    InlineEncoder,
-    image_extended::{InlineImage, ZoomPanViewport},
-    term_misc,
+use image::DynamicImage;
+use rasteroid::{Encoder, RasterEncoder, image_extended::InlineImage, term_misc};
+use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use std::{
+    io::{Cursor, Write, stdout},
+    process::{Command, Stdio},
 };
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+
+use tracing::{info, warn};
 
 use crate::{
-    config::McatConfig,
-    converter::{self},
+    config::{ColorMode, McatConfig, MdImageMode, OutputFormat},
     image_viewer::{clear_screen, run_interactive_viewer, show_help_prompt},
     markdown_viewer,
+    mcat_file::{McatFile, McatKind},
 };
 
-pub enum CatType {
-    Markdown,
-    Pretty,
-    Html,
-    Image,
-    Video,
-    InlineImage,
-    InlineVideo,
-    Interactive,
-}
+pub fn cat(files: Vec<McatFile>, out: &mut impl Write, config: &McatConfig) -> Result<()> {
+    let mf = files
+        .first()
+        .context("this is likely a bug, mcat cat command was passed with 0 files")?;
+    let encoder = config
+        .encoder
+        .context("this is likely a bug, encoder wasn't set at the cat command")?;
+    let wininfo = config
+        .wininfo
+        .as_ref()
+        .context("this is likely a bug, wininfo isn't set when inlining a video")?;
 
-pub fn get_album(path: &Path) -> Option<Vec<DynamicImage>> {
-    let ext = path
-        .extension()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .into_owned();
-
-    // pdf
-    if matches!(ext.as_ref(), "pdf" | "tex" | "typ") && converter::get_pdf_command().is_ok() {
-        let (path, _tmpfile, _tmpfolder) = converter::get_pdf(path);
-        let images = converter::pdf_to_vec(&path.to_string_lossy().to_string()).ok()?;
-        if !images.is_empty() {
-            return Some(images);
-        }
-    }
-
-    return None;
-}
-
-pub fn cat(
-    paths: Vec<&Path>,
-    out: &mut impl Write,
-    opts: &McatConfig,
-) -> Result<CatType, Box<dyn std::error::Error>> {
-    let path = paths
-        .get(0)
-        .ok_or("This is most likely a bug - no paths are included in the cat function")?;
-
-    //interactive mode
-    if opts.output.clone().unwrap_or_default() == "interactive" {
-        if paths.len() > 1 {
-            let mut new_opts = opts.clone();
-            new_opts.output = Some("image".to_owned());
-
-            let images = paths
+    // interactive mode
+    if config
+        .output
+        .as_ref()
+        .map(|v| v == &OutputFormat::Interactive)
+        .unwrap_or(false)
+    {
+        if files.len() > 1 {
+            let images = files
                 .par_iter()
-                .filter_map(|path| {
-                    let mut buffer = Vec::new();
-                    cat(vec![path], &mut buffer, &new_opts).ok()?;
+                .map(|v| v.to_image(config, false, false))
+                .collect::<Result<Vec<_>>>()?;
 
-                    let dyn_img = image::load_from_memory(&buffer).ok()?;
-                    Some(dyn_img)
-                })
-                .collect();
-
-            interact_with_image(images, opts, out)?;
-            return Ok(CatType::Interactive);
+            interact_with_image(images, config, out)?;
+            return Ok(());
         }
-        if let Some(images) = get_album(path) {
-            interact_with_image(images, opts, out)?;
-            return Ok(CatType::Interactive);
-        }
+        let images = mf.to_album(config)?;
+        interact_with_image(images, config, out)?;
+        return Ok(());
     }
 
-    if !path.exists() {
-        return Err(format!("invalid path: {}", path.display()).into());
-    }
+    let inline_images = config.force_embed_images
+        || (config
+            .output
+            .as_ref()
+            .is_none_or(|v| !matches!(v, OutputFormat::Html | OutputFormat::Md))
+            && config.color != ColorMode::Never
+            && config.md_image != MdImageMode::None);
 
-    let (result, from, to) = load(path, out, opts)?;
-    let (string_result, image_result) = match result {
-        LoadResult::Image(dynamic_image) => (None, Some(dynamic_image)),
-        LoadResult::Text(text) => (Some(text), None),
-        LoadResult::Handled(cat_type) => return Ok(cat_type),
+    let mcat_file = if files.len() > 1 {
+        if config.output.as_ref() == Some(&OutputFormat::Image) {
+            anyhow::bail!("Cannot turn multiple files into an image.")
+        };
+        if files.iter().any(|v| v.kind == McatKind::Video) {
+            anyhow::bail!("Cannot view multiple files if 1 of them is a video.")
+        }
+
+        // turns things that cannot be represented to images.
+        let files = files
+            .into_par_iter()
+            .map(|v| match v.kind {
+                McatKind::PreMarkdown => Ok(v),
+                McatKind::Markdown => Ok(v),
+                McatKind::Html => Ok(v),
+                McatKind::Video => unreachable!(),
+                McatKind::Gif
+                | McatKind::Svg
+                | McatKind::Exe
+                | McatKind::Lnk
+                | McatKind::Pdf
+                | McatKind::Tex
+                | McatKind::Url
+                | McatKind::Typst => {
+                    let img = v.to_image(config, false, true)?;
+                    let f = McatFile::from_image(img);
+                    Ok(f)
+                }
+                McatKind::Image => Ok(v),
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let files = files
+            .iter()
+            .map(|v| v.to_markdown_input(inline_images))
+            .collect::<Result<Vec<_>>>()?;
+        let md = markdownify::convert_files(files)?;
+        &McatFile::from_bytes(md.into_bytes(), Some("md"))?
+    } else {
+        mf
     };
 
+    // force certain things to be inline.
+    let output = match config.output.clone() {
+        Some(v) => Some(v),
+        None => match mcat_file.kind {
+            McatKind::Video
+            | McatKind::Gif
+            | McatKind::Image
+            | McatKind::Svg
+            | McatKind::Pdf
+            | McatKind::Exe
+            | McatKind::Lnk => Some(OutputFormat::Inline),
+            _ => None,
+        },
+    };
     // converting
-    match (from.as_ref(), to.as_ref()) {
-        ("md", "md") => {
-            out.write_all(string_result.unwrap().as_bytes())?;
-            Ok(CatType::Markdown)
+    match output {
+        Some(OutputFormat::Html) => {
+            let html = mcat_file.to_html(Some(config.theme.clone()))?;
+            out.write_all(html.as_bytes())?
         }
-        ("md", "html") => {
-            let html = markdown_viewer::md_to_html(&string_result.unwrap(), if opts.style_html {Some(opts.theme.as_ref())} else {None});
-            out.write_all(html.as_bytes())?;
-            Ok(CatType::Html)
-        },
-        ("md", "image") => {
-            let html = markdown_viewer::md_to_html(&string_result.unwrap(), Some(opts.theme.as_ref()));
-            let image = converter::html_to_image(&html)?;
-            out.write_all(&image)?;
-            Ok(CatType::Image)
-        },
-        ("md", "inline") => {
-            let html = markdown_viewer::md_to_html(&string_result.unwrap(), Some(opts.theme.as_ref()));
-            let image = converter::html_to_image(&html)?;
-            let dyn_img = image::load_from_memory(&image)?;
-            print_image(out, dyn_img, opts)?;
-            Ok(CatType::InlineImage)
-        },
-        ("md", "interactive") => {
-            let html = markdown_viewer::md_to_html(&string_result.unwrap(), Some(opts.theme.as_ref()));
-            let img_bytes = converter::html_to_image(&html)?;
-            let img = image::load_from_memory(&img_bytes)?;
-            interact_with_image(vec![img], opts, out)?;
-            Ok(CatType::Interactive)
-        },
-        ("html", "image") => {
-            let image = converter::html_to_image(&string_result.unwrap())?;
-            out.write_all(&image)?;
-            Ok(CatType::Image)
-        },
-        ("html", "inline") => {
-            let image = converter::html_to_image(&string_result.unwrap())?;
-            let dyn_img = image::load_from_memory(&image)?;
-            print_image(out, dyn_img, opts)?;
-            Ok(CatType::InlineImage)
-        },
-        ("html", "interactive") => {
-            let html = &string_result.unwrap();
-            let img_bytes = converter::html_to_image(&html)?;
-            let img = image::load_from_memory(&img_bytes)?;
-            interact_with_image(vec![img], opts, out)?;
-            Ok(CatType::Interactive)
-        },
-        ("image", "image") => {
-            let img = image_result.unwrap();
-            let mut cursor = Cursor::new(Vec::new());
-            img.write_to(&mut cursor, ImageFormat::Png)?;
-            out.write_all(&cursor.into_inner())?;
-            Ok(CatType::Image)
-        },
-        ("image", "interactive") => {
-            let img = image_result.unwrap();
-            interact_with_image(vec![img], opts, out)?;
-            Ok(CatType::Interactive)
-        },
-        ("md" | "html", _) => {
-            //default for md, html
-            let mut res = string_result.unwrap();
-            if from == "html" {
-                res = format!("```html\n{res}\n```");
+        Some(OutputFormat::Md) => {
+            let md = mcat_file.to_markdown_input(false)?.convert()?;
+            out.write_all(md.as_bytes())?
+        }
+        Some(OutputFormat::Image) => {
+            let img = mcat_file.to_image(config, false, true)?;
+            let mut buf = Vec::new();
+            img.write_to(&mut Cursor::new(&mut buf), image::ImageFormat::Png)?;
+            out.write_all(&buf)?;
+        }
+        Some(OutputFormat::Inline) => {
+            let is_ascii = config
+                .encoder
+                .map(|v| v == RasterEncoder::Ascii)
+                .unwrap_or(false);
+            match mcat_file.kind {
+                McatKind::Video | McatKind::Gif => {
+                    let (mut frames, mut width, _) = mcat_file.to_frames()?;
+                    // frames don't give width according to the encoder
+                    if is_ascii {
+                        width = wininfo
+                            .dim_to_cells(&format!("{width}px"), term_misc::SizeDirection::Width)?;
+                    }
+                    let offset = wininfo.center_offset(width as u16, is_ascii);
+                    encoder.encode_frames(&mut frames, out, wininfo, Some(offset), None)?;
+                }
+                _ => {
+                    let img = mcat_file.to_image(config, false, true)?;
+                    let offset = wininfo.center_offset(img.width() as u16, is_ascii);
+                    encoder.encode_image(&img, out, wininfo, Some(offset), None)?;
+                }
             }
+        }
+        Some(OutputFormat::Interactive) => unreachable!(),
+        None => {
+            let md = mcat_file.to_markdown_input(inline_images)?.convert()?;
+
             let is_tty = stdout().is_tty();
-            let use_color = opts.color.should_use(is_tty);
-            let content = match use_color {
-                true => markdown_viewer::md_to_ansi(&res, &opts, Some(path)),
-                false => res,
+            let use_color = match config.color {
+                ColorMode::Never => false,
+                ColorMode::Always => true,
+                ColorMode::Auto => is_tty,
             };
-            let use_pager = opts.paging.should_use(is_tty && content.lines().count() > term_misc::get_wininfo().sc_height as usize);
+            let content = match use_color {
+                true => {
+                    markdown_viewer::md_to_ansi(&md, config.clone(), mcat_file.path.as_deref())?
+                }
+                false => md,
+            };
+
+            let use_pager = match config.paging {
+                crate::config::PagingMode::Never => false,
+                crate::config::PagingMode::Always => true,
+                crate::config::PagingMode::Auto => {
+                    is_tty && content.lines().count() > wininfo.sc_height as usize
+                }
+            };
+
             if use_pager {
-                if let Some(pager) = Pager::new(opts.pager.as_ref()) {
+                if let Some(pager) = Pager::new(&config.pager) {
+                    info!(pager = %config.pager, "using pager");
                     if pager.page(&content).is_err() {
+                        warn!(pager = %config.pager, "pager failed, writing directly");
                         out.write_all(content.as_bytes())?;
                     }
                 } else {
+                    warn!(pager = %config.pager, "pager not found, writing directly");
                     out.write_all(content.as_bytes())?;
                 }
-                Ok(CatType::Pretty)
             } else {
                 out.write_all(content.as_bytes())?;
-                return Ok(CatType::Markdown)
-            }
-        },
-        ("image", _) => {
-            // default for image
-            print_image(out, image_result.unwrap(), opts)?;
-            Ok(CatType::InlineImage)
-        },
-        _ => Err(format!(
-            "converting: {} to: {}, is not supported.\nsupported pipeline is: any -> md -> html -> image -> inline_image / interactive_image\nor video -> inline_video",
-            from, to
-        ).into()),
-    }
-}
-
-pub enum LoadResult {
-    Image(DynamicImage),
-    Text(String),
-    Handled(CatType),
-}
-pub fn load(
-    path: &Path,
-    out: &mut impl Write,
-    opts: &McatConfig,
-) -> Result<(LoadResult, String, String), Box<dyn std::error::Error>> {
-    let ext = path
-        .extension()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .into_owned();
-    let to = opts.output.as_deref().unwrap_or("unknown").to_owned();
-
-    //video
-    if is_video(&ext) {
-        if to == "video" {
-            let content = fs::read(path)?;
-            out.write_all(&content)?;
-
-            let res = LoadResult::Handled(CatType::Video);
-            return Ok((res, "video".to_owned(), to));
-        }
-        converter::inline_a_video(
-            path.to_string_lossy(),
-            out,
-            &opts.inline_encoder,
-            opts.inline_options.width.as_deref(),
-            opts.inline_options.height.as_deref(),
-            opts.inline_options.center,
-            opts.silent,
-        )?;
-
-        let res = LoadResult::Handled(CatType::InlineVideo);
-        return Ok((res, "video".to_owned(), to));
-    }
-
-    // pdf to images
-    if matches!(ext.as_ref(), "pdf" | "tex" | "typ")
-        && matches!(to.as_ref(), "inline" | "image" | "interactive")
-        && converter::get_pdf_command().is_ok()
-    {
-        let (path, _tmpfile, _tmpfolder) = converter::get_pdf(path);
-
-        // goes back to normal parsing if fails.
-        if let Ok(img_data) = converter::pdf_to_image(&path.to_string_lossy().to_owned(), 1) {
-            match to.as_ref() {
-                "image" => {
-                    let res = LoadResult::Handled(CatType::Image);
-                    out.write_all(&img_data)?;
-                    return Ok((res, "image".to_owned(), to));
-                }
-                _ => {
-                    let dyn_img = image::load_from_memory(&img_data)?;
-                    let res = LoadResult::Image(dyn_img);
-                    return Ok((res, "image".to_owned(), to));
-                }
             }
         }
     }
-
-    //svg
-    if ext == "svg" {
-        let file = File::open(path)?;
-        let dyn_img = converter::svg_to_image(
-            file,
-            opts.inline_options.width.as_deref(),
-            opts.inline_options.height.as_deref(),
-        )?;
-
-        let res = LoadResult::Image(dyn_img);
-        return Ok((res, "image".to_owned(), to));
-    }
-
-    // .url
-    if ext == "url" {
-        let dyn_img =
-            converter::url_file_to_image(path).ok_or("Url file doesn't contain an icon")?;
-        let res = LoadResult::Image(dyn_img);
-        return Ok((res, "image".to_owned(), to));
-    }
-
-    // exe
-    if ext == "exe" {
-        let dyn_img = converter::exe_to_image(path).ok_or("Failed to get exe icon")?;
-        let res = LoadResult::Image(dyn_img);
-        return Ok((res, "image".to_owned(), to));
-    }
-
-    // lnk
-    if ext == "lnk" {
-        let dyn_img = converter::lnk_to_image(path).ok_or("Failed to get lnk icon")?;
-        let res = LoadResult::Image(dyn_img);
-        return Ok((res, "image".to_owned(), to));
-    }
-
-    //image
-    if ImageFormat::from_extension(&ext).is_some() {
-        let buf = fs::read(path)?;
-        let dyn_img = image::load_from_memory(&buf)?;
-
-        let res = LoadResult::Image(dyn_img);
-        return Ok((res, "image".to_owned(), to));
-    }
-
-    // local file or dir
-    match ext.as_ref() {
-        "md" | "html" => {
-            let r = fs::read_to_string(path)?;
-
-            let res = LoadResult::Text(r);
-            return Ok((res, ext, to));
-        }
-        _ => {
-            let f = markdownify::convert(path)?;
-
-            let res = LoadResult::Text(f);
-            return Ok((res, "md".to_owned(), to));
-        }
-    }
-}
-
-fn print_image(
-    out: &mut impl Write,
-    dyn_img: DynamicImage,
-    opts: &McatConfig,
-) -> Result<(), Box<dyn Error>> {
-    let resize_for_ascii = match opts.inline_encoder {
-        rasteroid::InlineEncoder::Ascii => true,
-        _ => false,
-    };
-
-    let dyn_img = apply_pan_zoom_once(dyn_img, &opts);
-    let (img, center, _, _) = dyn_img.resize_plus(
-        opts.inline_options.width.as_deref(),
-        opts.inline_options.height.as_deref(),
-        resize_for_ascii,
-        false,
-    )?;
-    if opts.report {
-        rasteroid::term_misc::report_size(
-            &opts.inline_options.width.as_deref().unwrap_or(""),
-            &opts.inline_options.height.as_deref().unwrap_or(""),
-        );
-    }
-    rasteroid::inline_an_image(
-        &img,
-        out,
-        if opts.inline_options.center {
-            Some(center)
-        } else {
-            None
-        },
-        None,
-        &opts.inline_encoder,
-    )?;
 
     Ok(())
-}
-
-fn apply_pan_zoom_once(img: DynamicImage, opts: &McatConfig) -> DynamicImage {
-    let zoom = opts.inline_options.zoom.unwrap_or(1);
-    let x = opts.inline_options.x.unwrap_or_default();
-    let y = opts.inline_options.y.unwrap_or_default();
-    if zoom == 1 && x == 0 && y == 0 {
-        return img;
-    }
-
-    let tinfo = term_misc::get_wininfo();
-    let container_width = tinfo.spx_width as u32;
-    let container_height = tinfo.spx_height as u32;
-    let image_width = img.width();
-    let image_height = img.height();
-
-    let mut vp = ZoomPanViewport::new(container_width, container_height, image_width, image_height);
-    vp.set_zoom(zoom);
-    vp.set_pan(x, y);
-    vp.apply_to_image(&img)
 }
 
 fn interact_with_image(
     images: Vec<DynamicImage>,
     opts: &McatConfig,
     out: &mut impl Write,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<()> {
     if images.is_empty() {
-        return Err("Most likely a bug - interact_with_image received 0 paths".into());
+        anyhow::bail!("Most likely a bug - interact_with_image received 0 paths");
     }
+    let wininfo = opts
+        .wininfo
+        .as_ref()
+        .context("this is likely a bug, wininfo isn't set at interact_with_image")?;
+    let encoder = opts
+        .encoder
+        .as_ref()
+        .context("this is likely a bug encoder wasn't set at interact_with_image")?;
 
     let mut img = &images[0];
-    let tinfo = term_misc::get_wininfo();
-    let container_width = tinfo.spx_width as u32;
-    let container_height = tinfo.spx_height as u32;
+    let container_width = wininfo.spx_width as u32;
+    let container_height = wininfo.spx_height as u32;
     let image_width = img.width();
     let image_height = img.height();
 
-    let resize_for_ascii = match opts.inline_encoder {
-        rasteroid::InlineEncoder::Ascii => true,
-        _ => false,
-    };
+    let resize_for_ascii = encoder == &RasterEncoder::Ascii;
 
-    let height_cells = term_misc::dim_to_cells(
-        opts.inline_options.height.as_deref().unwrap_or(""),
-        term_misc::SizeDirection::Height,
-    )?;
-    let height = (tinfo.sc_height - 3).min(height_cells as u16);
-    let should_disable_raw_mode = match opts.inline_encoder {
-        InlineEncoder::Kitty => tinfo.is_tmux,
-        InlineEncoder::Ascii => true,
-        InlineEncoder::Iterm | InlineEncoder::Sixel => false,
+    let height = wininfo.sc_height - 4;
+    let should_disable_raw_mode = match encoder {
+        RasterEncoder::Kitty => wininfo.is_tmux,
+        RasterEncoder::Ascii => true,
+        RasterEncoder::Iterm | RasterEncoder::Sixel => false,
     };
     let mut current_index = 0;
     let max_images = images.len();
@@ -433,35 +249,44 @@ fn interact_with_image(
                 let height = img.height();
                 vp.update_image_size(width, height);
             }
-            let new_img = vp.apply_to_image(&img);
-            let (img, center, _, _) = new_img
+            let new_img = vp.apply_to_image(img);
+            let img = new_img
                 .resize_plus(
-                    opts.inline_options.width.as_deref(),
+                    wininfo,
+                    Some("80%"),
                     Some(&format!("{height}c")),
                     resize_for_ascii,
                     false,
                 )
                 .ok()?;
+            let center = wininfo.center_offset(img.width() as u16, resize_for_ascii);
+            let img_height_cells = wininfo
+                .dim_to_cells(
+                    &format!("{}px", img.height()),
+                    term_misc::SizeDirection::Height,
+                )
+                .unwrap_or(height as u32);
+            let v_pad = (height as u32).saturating_sub(img_height_cells) / 2;
             if should_disable_raw_mode {
                 disable_raw_mode().ok()?;
             }
+
             let mut buf = Vec::new();
-            rasteroid::inline_an_image(
-                &img,
-                &mut buf,
-                if opts.inline_options.center {
-                    Some(center)
-                } else {
-                    None
-                },
-                None,
-                &opts.inline_encoder,
-            )
-            .ok()?;
+            buf.write_all("\n".repeat(v_pad as usize).as_bytes()).ok()?;
+            encoder
+                .encode_image(
+                    &img,
+                    &mut buf,
+                    wininfo,
+                    if opts.no_center { None } else { Some(center) },
+                    None,
+                )
+                .ok()?;
+
             show_help_prompt(
                 &mut buf,
-                tinfo.sc_width,
-                tinfo.sc_height,
+                wininfo.sc_width,
+                wininfo.sc_height,
                 vp,
                 current_image,
                 max_images as u8,
@@ -480,13 +305,6 @@ fn interact_with_image(
     Ok(())
 }
 
-pub fn is_video(ext: &str) -> bool {
-    matches!(
-        ext,
-        "mp4" | "mov" | "avi" | "mkv" | "webm" | "wmv" | "flv" | "m4v" | "ts" | "gif"
-    )
-}
-
 pub struct Pager {
     command: String,
     args: Vec<String>,
@@ -496,7 +314,7 @@ impl Pager {
     pub fn command_and_args_from_string(full: &str) -> Option<(String, Vec<String>)> {
         let parts = shell_words::split(full).ok()?;
         let (cmd, args) = parts.split_first()?;
-        return Some((cmd.clone(), args.to_vec()));
+        Some((cmd.clone(), args.to_vec()))
     }
     pub fn new(def_command: &str) -> Option<Self> {
         let (command, args) = Pager::command_and_args_from_string(def_command)?;
@@ -506,7 +324,7 @@ impl Pager {
         None
     }
 
-    pub fn page(&self, content: &str) -> Result<(), Box<dyn Error>> {
+    pub fn page(&self, content: &str) -> Result<()> {
         let mut child = Command::new(&self.command)
             .args(&self.args)
             .stdin(Stdio::piped())

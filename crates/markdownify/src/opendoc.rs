@@ -3,7 +3,7 @@ use quick_xml::reader::Reader;
 use std::io::{Cursor, Read};
 use zip::ZipArchive;
 
-use crate::error::ParsingError;
+use crate::{error::ParsingError, parse_text};
 
 use super::sheets;
 
@@ -45,14 +45,12 @@ pub fn parse_opendoc(content: impl AsRef<[u8]>) -> Result<String, ParsingError> 
                 b"text:list" => markdown.push_str(""),
                 b"text:list-item" => is_list_item = 1,
                 b"text:a" => continue,
-                _ => {
-                    // eprintln!("start {}", String::from_utf8(e.name().0.to_vec())?)
-                }
+                _ => {}
             },
             Ok(Event::Text(e)) => {
-                let text = String::from_utf8_lossy(&e);
+                let text = parse_text(&*e)?;
                 if is_table {
-                    current_row.push(text.into());
+                    current_row.push(text);
                 } else if is_list_item == 1 {
                     markdown.push_str(&format!(" * {}", text));
                     is_list_item = 2;
@@ -95,9 +93,11 @@ pub fn parse_opendoc(content: impl AsRef<[u8]>) -> Result<String, ParsingError> 
             },
             Ok(Event::Eof) => break,
             Err(e) => {
-                return Err(ParsingError::ParsingError(
-                    format!("Error at position {}: {:?}", reader.buffer_position(), e).into(),
-                ));
+                return Err(ParsingError::ParsingError(format!(
+                    "Error at position {}: {:?}",
+                    reader.buffer_position(),
+                    e
+                )));
             }
             _ => {}
         }

@@ -14,6 +14,19 @@ fn detect_delimiter(line: &str) -> u8 {
         .unwrap_or(b',')
 }
 
+/// Turns headers + rows into a markdown table string.
+///
+/// ```
+/// use markdownify::sheets::to_markdown_table;
+///
+/// let headers = vec!["Name".into(), "Age".into()];
+/// let rows = vec![
+///     vec!["Alice".into(), "30".into()],
+///     vec!["Bob".into(), "25".into()],
+/// ];
+/// let table = to_markdown_table(&headers, &rows);
+/// assert_eq!(table, "| Name | Age |\n|---|---|\n| Alice | 30 |\n| Bob | 25 |\n");
+/// ```
 pub fn to_markdown_table(headers: &[String], rows: &[Vec<String>]) -> String {
     let mut output = String::new();
     output += &format!("| {} |\n", headers.join(" | "));

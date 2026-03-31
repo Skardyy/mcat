@@ -43,6 +43,7 @@ image.workspace = true
 tempfile.workspace = true
 ffmpeg-sidecar.workspace = true
 syntect.workspace = true
+two-face.workspace = true
 resvg.workspace = true
 fontdb.workspace = true
 serde_json.workspace = true
@@ -57,6 +58,14 @@ scraper.workspace = true
 reqwest.workspace = true
 indicatif.workspace = true
 regex.workspace = true
+infer.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+flate2.workspace = true
+lzma-rust2.workspace = true
+encoding_rs.workspace = true
+hayro.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 winreg.workspace = true

@@ -8,15 +8,19 @@ use comrak::{
     Arena, markdown_to_html_with_plugins, options, plugins::syntect::SyntectAdapterBuilder,
 };
 use image_preprocessor::ImagePreprocessor;
-use rasteroid::term_misc::{self, break_size_string};
 use render::{AnsiContext, RESET, parse_node};
-use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
+use syntect::highlighting::ThemeSet;
 use themes::CustomTheme;
 
-use crate::{UnwrapOrExit, config::McatConfig};
+use crate::config::{McatConfig, Theme};
+use anyhow::{Context, Result};
 use std::path::Path;
 
-pub fn md_to_ansi(md: &str, config: &McatConfig, markdown_file_path: Option<&Path>) -> String {
+pub fn md_to_ansi(
+    md: &str,
+    mut config: McatConfig,
+    markdown_file_path: Option<&Path>,
+) -> Result<String> {
     let md = html_preprocessor::process(md);
 
     let arena = Arena::new();
@@ -24,26 +28,23 @@ pub fn md_to_ansi(md: &str, config: &McatConfig, markdown_file_path: Option<&Pat
     let root = comrak::parse_document(&arena, &md, &opts);
 
     // changing to forced inline in case of images rendered
-    let _ = term_misc::init_wininfo(
-        &break_size_string(&config.inline_options.spx).unwrap_or_exit(),
-        &break_size_string(&config.inline_options.spx).unwrap_or_exit(),
-        config.inline_options.scalex,
-        config.inline_options.scaley,
-        config.is_tmux,
-        true,
-    );
+    config
+        .wininfo
+        .as_mut()
+        .context("this is likely a bug, wininfo isn't set at the md_to_ansi")?
+        .needs_inline = true;
 
-    let ps = SyntaxSet::load_defaults_newlines();
-    let theme = CustomTheme::from(config.theme.as_ref());
-    let image_preprocessor = ImagePreprocessor::new(root, config, markdown_file_path);
+    let ps = two_face::syntax::extra_newlines();
+    let theme = CustomTheme::from(&config.theme);
+    let image_preprocessor = ImagePreprocessor::new(root, &config, markdown_file_path)?;
     let mut ctx = AnsiContext {
         ps,
         theme,
+        wininfo: &config.wininfo.unwrap(),
         hide_line_numbers: config.no_linenumbers,
-        term_width: term_misc::get_wininfo().sc_width as usize,
         center: false,
         image_preprocessor: &image_preprocessor,
-        show_frontmatter: config.yaml_header,
+        show_frontmatter: config.header,
 
         blockquote_fenced_offset: None,
         is_multi_block_quote: false,
@@ -64,13 +65,14 @@ pub fn md_to_ansi(md: &str, config: &McatConfig, markdown_file_path: Option<&Pat
     for (_, img) in image_preprocessor.mapper {
         img.insert_into_text(&mut res);
     }
-    res
+
+    Ok(res)
 }
 
-pub fn md_to_html(markdown: &str, style: Option<&str>) -> String {
+pub fn md_to_html(markdown: &str, theme: &Theme, style: bool) -> String {
     let options = comrak_options();
 
-    let theme = CustomTheme::from(style.unwrap_or_default());
+    let theme = CustomTheme::from(theme);
     let mut theme_set = ThemeSet::load_defaults();
     let mut plugins = options::Plugins::default();
     theme_set
@@ -80,13 +82,13 @@ pub fn md_to_html(markdown: &str, style: Option<&str>) -> String {
         .theme("dark")
         .theme_set(theme_set)
         .build();
-    if style.is_some() {
+    if style {
         plugins.render.codefence_syntax_highlighter = Some(&adapter);
     }
 
     let full_css = match style {
-        Some(_) => Some(theme.to_html_style()),
-        None => None,
+        true => Some(theme.to_html_style()),
+        false => None,
     };
 
     let html = markdown_to_html_with_plugins(markdown, &options, &plugins);

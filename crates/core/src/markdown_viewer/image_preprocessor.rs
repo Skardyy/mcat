@@ -1,21 +1,27 @@
-use std::{collections::HashMap, fs, io::Write, ops::Deref, path::Path};
+use std::{collections::HashMap, path::Path};
 
+use anyhow::Context;
+use anyhow::Result;
+use base64::Engine;
 use comrak::nodes::{AstNode, NodeValue};
-use image::{DynamicImage, GenericImageView, ImageFormat};
+use image::DynamicImage;
+use image::GenericImageView;
 use itertools::Itertools;
+use rasteroid::Encoder;
+use rasteroid::term_misc::Wininfo;
 use rasteroid::{
-    InlineEncoder,
+    RasterEncoder,
     image_extended::InlineImage,
-    inline_an_image,
     term_misc::{self},
 };
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use regex::Regex;
-use tempfile::NamedTempFile;
 
+use tracing::{info, warn};
+
+use crate::mcat_file::McatFile;
 use crate::{
-    config::{McatConfig, MdImageRender},
-    converter::svg_to_image,
+    config::{McatConfig, MdImageMode},
     scrapy::{MediaScrapeOptions, scrape_biggest_media},
 };
 
@@ -25,47 +31,39 @@ fn is_local_path(url: &str) -> bool {
     !url.starts_with("http://") && !url.starts_with("https://") && !url.starts_with("data:")
 }
 
-fn handle_local_image(
-    path: &str,
-    markdown_file_dir: Option<&Path>,
-) -> Result<NamedTempFile, Box<dyn std::error::Error>> {
-    let original_path = Path::new(path);
+fn handle_data_uri(url: &str) -> Option<McatFile> {
+    let rest = url.strip_prefix("data:")?;
+    let (_, data) = rest.split_once("base64,")?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data)
+        .ok()?;
+    McatFile::from_bytes(bytes, None).ok()
+}
 
-    let extension = original_path
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .unwrap_or("");
+fn handle_local_image(path: &str, markdown_file_dir: Option<&Path>) -> Result<McatFile> {
+    let original_path = Path::new(path);
 
     // Try absolute or CWD-relative path first
     if original_path.exists() {
-        let file_data = fs::read(original_path)?;
-        let mut temp_file = NamedTempFile::with_suffix(&format!(".{}", extension))?;
-        temp_file.write_all(&file_data)?;
-        temp_file.flush()?;
-        return Ok(temp_file);
+        return McatFile::from_path(original_path);
     }
 
     // If that fails and we have a markdown file directory, try relative to that
     if let Some(md_dir) = markdown_file_dir {
         let relative_path = md_dir.join(path);
         if relative_path.exists() {
-            let file_data = fs::read(&relative_path)?;
-            let mut temp_file = NamedTempFile::with_suffix(&format!(".{}", extension))?;
-            temp_file.write_all(&file_data)?;
-            temp_file.flush()?;
-            return Ok(temp_file);
+            return McatFile::from_path(relative_path);
         } else {
-            return Err(format!(
+            anyhow::bail!(
                 "Local image file not found: {} (tried {} and {})",
                 path,
                 path,
                 relative_path.display()
             )
-            .into());
         }
     }
 
-    Err(format!("Local image file not found: {}", path).into())
+    anyhow::bail!("Local image file not found: {}", path)
 }
 
 pub struct ImagePreprocessor {
@@ -77,105 +75,143 @@ impl ImagePreprocessor {
         node: &'a AstNode<'a>,
         conf: &McatConfig,
         markdown_file_path: Option<&Path>,
-    ) -> Self {
+    ) -> Result<Self> {
         let mut urls = Vec::new();
         extract_image_urls(node, &mut urls);
+        let encoder = conf
+            .encoder
+            .as_ref()
+            .context("this is likely a bug, encoder isn't set at ImagePreprocessor new")?;
+        let wininfo = conf
+            .wininfo
+            .as_ref()
+            .context("this is likely a bug, wininfo isn't set at ImagePreprocessor new")?;
 
-        let render_mode = if conf.md_image_render != MdImageRender::Auto {
-            conf.md_image_render
+        let render_mode = if conf.md_image != MdImageMode::Auto {
+            &conf.md_image
         } else {
-            match conf.inline_encoder {
-                InlineEncoder::Kitty => MdImageRender::All,
-                InlineEncoder::Iterm => MdImageRender::Small,
-                InlineEncoder::Sixel => MdImageRender::Small,
-                InlineEncoder::Ascii => MdImageRender::None,
+            match *encoder {
+                RasterEncoder::Kitty => &MdImageMode::All,
+                RasterEncoder::Iterm => &MdImageMode::Small,
+                RasterEncoder::Sixel => &MdImageMode::Small,
+                RasterEncoder::Ascii => &MdImageMode::None,
             }
         };
+        info!(
+            image_count = urls.len(),
+            ?render_mode,
+            "preprocessing markdown images"
+        );
         let markdown_dir = markdown_file_path.and_then(|p| p.parent());
-        let mut scrape_opts = MediaScrapeOptions::default();
-        scrape_opts.silent = conf.silent;
-        scrape_opts.videos = false;
-        scrape_opts.documents = false;
-        scrape_opts.max_content_length = match render_mode {
-            MdImageRender::All => None,
-            _ => Some(50_000), // filter complex images - won't scale down good
+        let scrape_opts = MediaScrapeOptions {
+            silent: conf.silent,
+            max_content_length: match render_mode {
+                MdImageMode::All => None,
+                _ => Some(50_000), // filter complex images - won't scale down good
+            },
         };
 
-        let items: Vec<(&ImageUrl, Vec<u8>, u32)> = urls
+        let items: Vec<(&ImageUrl, DynamicImage)> = urls
             .par_iter()
             .filter_map(|url| {
                 // fail everything early if needed.
-                if render_mode == MdImageRender::None {
+                if render_mode == &MdImageMode::None {
                     return None;
                 }
 
-                let tmp = if is_local_path(&url.base_url) {
-                    handle_local_image(&url.base_url, markdown_dir).ok()?
+                let tmp = if url.base_url.starts_with("data:") {
+                    handle_data_uri(&url.base_url)?
+                } else if is_local_path(&url.base_url) {
+                    match handle_local_image(&url.base_url, markdown_dir) {
+                        Ok(f) => Some(f),
+                        Err(e) => {
+                            warn!(url = %url.base_url, error = %e, "failed to load local image");
+                            None
+                        }
+                    }?
                 } else {
-                    scrape_biggest_media(&url.base_url, &scrape_opts).ok()?
+                    match scrape_biggest_media(&url.base_url, &scrape_opts) {
+                        Ok(f) => Some(f),
+                        Err(e) => {
+                            warn!(url = %url.base_url, error = %e, "failed to scrape image");
+                            None
+                        }
+                    }?
                 };
-                let img = render_image(tmp, url.width, url.height)?;
+
+                let img = match tmp.to_image(conf, false, false) {
+                    Ok(img) => img,
+                    Err(e) => {
+                        warn!(url = %url.base_url, error = %e, "failed to convert image");
+                        return None;
+                    }
+                };
 
                 let (width, height) = img.dimensions();
                 let width = url.width.map(|v| v as u32).unwrap_or(width);
                 let height = url.height.map(|v| v as u32).unwrap_or(height);
-                let width_fm = if width as f32 > term_misc::get_wininfo().spx_width as f32 * 0.8 {
+                let width_fm = if width as f32 > wininfo.spx_width as f32 * 0.8 {
                     "80%"
                 } else {
                     &format!("{width}px")
                 };
-                let height_fm = if render_mode == MdImageRender::Small {
-                    let px = term_misc::dim_to_px("1c", term_misc::SizeDirection::Height)
+                let height_fm = if render_mode == &MdImageMode::Small {
+                    let px = wininfo
+                        .dim_to_px("1c", term_misc::SizeDirection::Height)
                         .unwrap_or_default()
                         .saturating_sub(1); // it ceils, so we must make sure 1c
                     &format!("{px}px")
-                } else if height as f32 > term_misc::get_wininfo().spx_height as f32 * 0.4 {
+                } else if height as f32 > wininfo.spx_height as f32 * 0.4 {
                     "40%"
                 } else {
                     &format!("{height}px")
                 };
 
-                let (img, _, new_width, _) = img
-                    .resize_plus(Some(&width_fm), Some(&height_fm), false, false)
-                    .ok()?;
+                let img =
+                    match img.resize_plus(wininfo, Some(width_fm), Some(height_fm), false, false) {
+                        Ok(img) => img,
+                        Err(e) => {
+                            warn!(url = %url.base_url, error = %e, "failed to resize image");
+                            return None;
+                        }
+                    };
 
-                return Some((url, img, new_width));
+                Some((url, img))
             })
             .collect();
 
         let mut mapper: HashMap<String, ImageElement> = HashMap::new();
-        for (i, (url, img, width)) in items.iter().enumerate() {
+        for (i, (url, img)) in items.iter().enumerate() {
             let mut buffer = Vec::new();
-            if let Err(e) = inline_an_image(&img, &mut buffer, None, None, &conf.inline_encoder) {
-                if !conf.silent {
-                    eprintln!("Failed to encode image '{}': {}", url.original_url, e);
-                }
+            if let Err(e) = encoder.encode_image(img, &mut buffer, wininfo, None, None) {
+                warn!(url = %url.original_url, error = %e, "failed to encode image");
             } else {
                 let img_str = String::from_utf8(buffer).unwrap_or_default();
                 let img = ImageElement {
                     is_ok: true,
-                    placeholder: create_placeholder(
-                        &img_str,
-                        i,
-                        &conf.inline_encoder,
-                        width.clone(),
-                    ),
+                    placeholder: create_placeholder(wininfo, &img_str, i, encoder, img.width()),
                     img: img_str,
                 };
                 mapper.insert(url.original_url.clone(), img);
             }
         }
 
-        ImagePreprocessor { mapper }
+        Ok(ImagePreprocessor { mapper })
     }
 }
 
-fn create_placeholder(img: &str, id: usize, inline_encoder: &InlineEncoder, width: u32) -> String {
+fn create_placeholder(
+    wininfo: &Wininfo,
+    img: &str,
+    id: usize,
+    inline_encoder: &RasterEncoder,
+    width: u32,
+) -> String {
     let fg_color = 16 + (id % 216);
     let bg_color = 16 + ((id / 216) % 216);
 
     let (width, height) = match inline_encoder {
-        InlineEncoder::Kitty => {
+        RasterEncoder::Kitty => {
             let placeholder = "\u{10EEEE}";
             let first_line = img.lines().next().unwrap_or("");
             let width = first_line.matches(placeholder).count();
@@ -183,9 +219,9 @@ fn create_placeholder(img: &str, id: usize, inline_encoder: &InlineEncoder, widt
             (width, count)
         }
         _ => {
-            let width =
-                term_misc::dim_to_cells(&format!("{width}px"), term_misc::SizeDirection::Width)
-                    .unwrap_or(1) as usize;
+            let width = wininfo
+                .dim_to_cells(&format!("{width}px"), term_misc::SizeDirection::Width)
+                .unwrap_or(1) as usize;
             (width, 1)
         }
     };
@@ -197,27 +233,6 @@ fn create_placeholder(img: &str, id: usize, inline_encoder: &InlineEncoder, widt
         "█".repeat(width)
     );
     vec![line; height].join("\n")
-}
-
-fn render_image(
-    tmp: NamedTempFile,
-    width: Option<u16>,
-    height: Option<u16>,
-) -> Option<DynamicImage> {
-    let width = width.map(|v| v.to_string());
-    let height = height.map(|v| v.to_string());
-    let ext = tmp.path().extension().unwrap_or_default().to_string_lossy();
-    let dyn_img = if ext == "svg" {
-        let buf = fs::read(tmp).ok()?;
-        svg_to_image(buf.as_slice(), width.as_deref(), height.as_deref()).ok()?
-    } else if ImageFormat::from_extension(ext.deref()).is_some() {
-        let buf = fs::read(tmp).ok()?;
-        image::load_from_memory(&buf).ok()?
-    } else {
-        return None;
-    };
-
-    Some(dyn_img)
 }
 
 pub struct ImageElement {
@@ -259,17 +274,17 @@ fn extract_image_urls<'a>(node: &'a AstNode<'a>, urls: &mut Vec<ImageUrl>) {
         // regex for; <URL>#<Width>x<Height>
         // width and height are optional.
         let regex = Regex::new(r"^(.+?)(?:#(\d+)?x(\d+)?)?$").unwrap();
-        if let Some(captures) = regex.captures(&image_node.url) {
-            if let Some(base_url) = captures.get(1) {
-                let width = captures.get(2).and_then(|v| v.as_str().parse::<u16>().ok());
-                let height = captures.get(3).and_then(|v| v.as_str().parse::<u16>().ok());
-                urls.push(ImageUrl {
-                    base_url: base_url.as_str().to_owned(),
-                    original_url: image_node.url.clone(),
-                    width,
-                    height,
-                });
-            }
+        if let Some(captures) = regex.captures(&image_node.url)
+            && let Some(base_url) = captures.get(1)
+        {
+            let width = captures.get(2).and_then(|v| v.as_str().parse::<u16>().ok());
+            let height = captures.get(3).and_then(|v| v.as_str().parse::<u16>().ok());
+            urls.push(ImageUrl {
+                base_url: base_url.as_str().to_owned(),
+                original_url: image_node.url.clone(),
+                width,
+                height,
+            });
         }
     }
 
