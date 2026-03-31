@@ -11,7 +11,7 @@
 - added tree view for the **markdown viewer** when viewing multiple files
 - improved error messages from the image encoder
 - improved argument parsing
-- improved **markdownify** now detects file formats via magic bytes, no longer relies solely on file extension
+- improved **markdownify** now detects file formats via magic bytes, no longer relies solely on file extension, #55
 - improved text decoding no longer assumes UTF-8, #59
 - improved the HTML to image, its now is slightly faster, and produces better images for small content
 - improved the **markdown viewer** rendering, result should feel better formatted. fixes #56, #51
