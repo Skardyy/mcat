@@ -8,6 +8,7 @@ use comrak::{
     Arena, markdown_to_html_with_plugins, options, plugins::syntect::SyntectAdapterBuilder,
 };
 use image_preprocessor::ImagePreprocessor;
+use itertools::Itertools;
 use render::{AnsiContext, RESET, parse_node};
 use syntect::highlighting::ThemeSet;
 use themes::CustomTheme;
@@ -27,12 +28,15 @@ pub fn md_to_ansi(
     let opts = comrak_options();
     let root = comrak::parse_document(&arena, &md, &opts);
 
+    let padding = config.padding as usize;
+
     // changing to forced inline in case of images rendered
-    config
+    let wininfo = config
         .wininfo
         .as_mut()
-        .context("this is likely a bug, wininfo isn't set at the md_to_ansi")?
-        .needs_inline = true;
+        .context("this is likely a bug, wininfo isn't set at the md_to_ansi")?;
+    wininfo.needs_inline = true;
+    wininfo.sc_width = wininfo.sc_width.saturating_sub((padding * 2) as u16);
 
     let ps = two_face::syntax::extra_newlines();
     let theme = CustomTheme::from(&config.theme);
@@ -64,6 +68,12 @@ pub fn md_to_ansi(
     // replace images
     for (_, img) in image_preprocessor.mapper {
         img.insert_into_text(&mut res);
+    }
+
+    // apply horizontal padding
+    if padding > 0 {
+        let pad = " ".repeat(padding);
+        res = res.lines().map(|line| format!("{pad}{line}")).join("\n");
     }
 
     Ok(res)

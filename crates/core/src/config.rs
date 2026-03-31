@@ -133,6 +133,10 @@ pub struct McatConfig {
     #[arg(long, help_heading = "Markdown Viewing")]
     pub header: bool,
 
+    /// Horizontal padding
+    #[arg(long, help_heading = "Markdown Viewing", default_value_t = 0)]
+    pub padding: u16,
+
     #[arg(long = "color", help_heading = "Markdown Viewing",
         hide = true,
         default_value_t = ColorMode::Auto,
