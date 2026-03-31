@@ -434,7 +434,8 @@ pub fn format_code_simple(code: &str, lang: &str, ctx: &AnsiContext, indent: usi
     let ts = ctx.theme.to_syntect_theme();
     let syntax = ctx
         .ps
-        .find_syntax_by_token(lang)
+        .find_syntax_by_extension(lang)
+        .or_else(|| ctx.ps.find_syntax_by_token(lang))
         .unwrap_or_else(|| ctx.ps.find_syntax_plain_text());
     let mut highlighter = HighlightLines::new(syntax, &ts);
 
@@ -471,7 +472,8 @@ pub fn format_code_full(code: &str, lang: &str, ctx: &AnsiContext) -> String {
     let ts = ctx.theme.to_syntect_theme();
     let syntax = ctx
         .ps
-        .find_syntax_by_token(lang)
+        .find_syntax_by_extension(lang)
+        .or_else(|| ctx.ps.find_syntax_by_token(lang))
         .unwrap_or_else(|| ctx.ps.find_syntax_plain_text());
     let mut highlighter = HighlightLines::new(syntax, &ts);
 
@@ -543,7 +545,8 @@ pub fn format_code_box(code: &str, lang: &str, title: &str, ctx: &AnsiContext) -
     let ts = ctx.theme.to_syntect_theme();
     let syntax = ctx
         .ps
-        .find_syntax_by_token(lang)
+        .find_syntax_by_extension(lang)
+        .or_else(|| ctx.ps.find_syntax_by_token(lang))
         .unwrap_or_else(|| ctx.ps.find_syntax_plain_text());
     let mut highlighter = HighlightLines::new(syntax, &ts);
 

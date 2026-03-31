@@ -1,5 +1,6 @@
 ## Src
 
+- added two-face for more file type support for syntax highlighting in the markdown viewer
 - added pure Rust PDF rendering via hayro, no external tools required, #64
 - added images inside archives are now embedded as data URIs for markdown rendering (`--force-embed-images` to force it)
 - added `-v` flag for debug logging

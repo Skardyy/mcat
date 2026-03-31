@@ -43,6 +43,7 @@ image.workspace = true
 tempfile.workspace = true
 ffmpeg-sidecar.workspace = true
 syntect.workspace = true
+two-face.workspace = true
 resvg.workspace = true
 fontdb.workspace = true
 serde_json.workspace = true

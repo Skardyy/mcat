@@ -9,7 +9,7 @@ use comrak::{
 };
 use image_preprocessor::ImagePreprocessor;
 use render::{AnsiContext, RESET, parse_node};
-use syntect::{highlighting::ThemeSet, parsing::SyntaxSet};
+use syntect::highlighting::ThemeSet;
 use themes::CustomTheme;
 
 use crate::config::{McatConfig, Theme};
@@ -34,7 +34,7 @@ pub fn md_to_ansi(
         .context("this is likely a bug, wininfo isn't set at the md_to_ansi")?
         .needs_inline = true;
 
-    let ps = SyntaxSet::load_defaults_newlines();
+    let ps = two_face::syntax::extra_newlines();
     let theme = CustomTheme::from(&config.theme);
     let image_preprocessor = ImagePreprocessor::new(root, &config, markdown_file_path)?;
     let mut ctx = AnsiContext {
