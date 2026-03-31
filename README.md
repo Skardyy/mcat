@@ -137,9 +137,9 @@ This starts at an HTML file and directly converts it into a PNG image.
 #  in the terminal                      #
 #---------------------------------------#
 
-mcat resume.pdf
+mcat resume.typst
 mcat project.docx -t monokai           # With a different theme
-mcat "https://realpdfs.com/file.pdf"   # From a url
+mcat "https://realmdfm.com/file.md"   # From a url
 cat file.pptx | mcat                   # From stdin
 mcat .                                 # Select files interactively
 
@@ -156,14 +156,15 @@ mcat index.html -o image > page.png    # Into image
 #  in the terminal         #
 #--------------------------#
 
+mcat resume.pdf                        # Pdf
 mcat img.png                           # Image
 mcat video.mp4                         # Video
 mcat "https://giphy.com/gifs/..."      # From a URL
 mcat README.md -i                      # Converts to image and then shows it
 mcat ls                                # ls command with images
-mcat massive_image.png -o interactive  # zoom and pan the image interactively in the terminal
-mcat document.pdf -o interactive       # view PDF rendered as images interactively
-mcat img.png README.md -o interactive  # view multiple files as images interactively
+mcat massive_image.png -I              # zoom and pan the image interactively in the terminal
+mcat document.pdf -I                   # view PDF rendered as images interactively
+mcat img.png README.md -I              # view multiple files as images interactively
 
 #--------------------------#
 #  What I use it most for  #
@@ -197,19 +198,6 @@ To see which file types support which features, see the table [here](./support.m
 </details>
 
 <details>
-<summary><strong>pdftocairo/pdftoppm (for rendering PDF to image)</strong></summary>
-
----
-
-1. Is included by default in most major distros
-2. Windows users can install from [poppler-windows](https://github.com/oschwartz10612/poppler-windows)
-3. If not installed, mcat will fallback into converting the PDF to Markdown and then screenshot using chromium
-
----
-
-</details>
-
-<details>
 <summary><strong>FFmpeg (for videos)</strong></summary>
 
 ---
@@ -220,53 +208,6 @@ To see which file types support which features, see the table [here](./support.m
 ---
 
 </details>
-
-## Configuring
-
-<details>
-<summary><strong>Using Flags</strong></summary>
-
----
-
-the main flags for configuring are:
-
-- `--opts` for inline image printing
-- `--ls-opts` for the ls command
-
-run `mcat --help` for full detail, and other flags.
-
----
-
-</details>
-
-<details>
-<summary><strong>Using Environment Variables</strong></summary>
-
----
-
-each variable mimicks its corresponding flag alternative.
-
-- `MCAT_ENCODER`, Options: kitty,iterm,sixel,ascii. e.g. MCAT_ENCODER=kitty is the same as doing `--kitty`
-- `MCAT_PAGER`, \<str\> the full command mcat will try to pipe into.
-- `MCAT_THEME`, \<str\> same as the `--theme` flag
-- `MCAT_INLINE_OPTS`, \<str\> same as the `--opts` flag
-- `MCAT_LS_OPTS`, \<str\> same as the `--ls-opts` flag
-- `MCAT_SILENT`, \<bool\> same as the `--silent` flag
-- `MCAT_HYPRLINK`, \<bool\> same as the `--hyprlink` flag
-- `MCAT_NO_LINENUMBERS`, \<bool\> same as the `--no-linenumbers` flag
-- `MCAT_MD_IMAGE`, \<bool\> same as the `--no-images` flag
-
----
-
-</details>
-
-## Roadmap
-
-- [ ] mcat.nvim: a neovim plugin to use mcat inside neovim
-
-## License
-
-MIT License
 
 ---
 

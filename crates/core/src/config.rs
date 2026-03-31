@@ -24,8 +24,11 @@ use tracing::debug;
 #[derive(Clone)]
 pub struct McatConfig {
     /// Input source (file/dir/url/ls)
-    #[arg(num_args = 1.., required_unless_present_any = ["report", "generate", "fetch_chromium", "fetch_ffmpeg", "fetch_clean"])]
+    #[arg(num_args = 1.., required_unless_present_any = ["report", "generate", "fetch_chromium", "fetch_ffmpeg", "fetch_clean", "stdin_piped"])]
     pub input: Vec<String>,
+
+    #[arg(long, hide = true, env = "MCAT_STDIN_PIPED")]
+    stdin_piped: bool,
 
     // ## Core Options ##
     /// Color theme

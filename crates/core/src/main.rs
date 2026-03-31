@@ -35,6 +35,10 @@ fn print_completions<G: Generator>(gene: G, cmd: &mut Command) {
 
 fn main() -> Result<()> {
     let stdin_streamed = !std::io::stdin().is_tty();
+    if stdin_streamed {
+        unsafe { std::env::set_var("MCAT_STDIN_PIPED", "true") };
+    }
+
     let stdout = std::io::stdout().lock();
     let mut out = BufWriter::new(stdout);
 
@@ -86,7 +90,11 @@ fn main() -> Result<()> {
     }
 
     // if ls
-    if config.input[0].to_lowercase() == "ls" {
+    if config
+        .input
+        .first()
+        .is_some_and(|v| v.to_lowercase() == "ls")
+    {
         let d = ".".to_string();
         let input = config.input.get(1).cloned().unwrap_or(d);
         lsix::lsix(input, &mut out, config)?;
