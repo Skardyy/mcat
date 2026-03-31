@@ -17,8 +17,11 @@ pub mod kitty_encoder;
 pub mod sixel_encoder;
 pub mod term_misc;
 
+/// Writes images and video frames to a terminal using a specific graphics protocol.
 pub trait Encoder {
+    /// Returns `true` if this encoder's protocol is supported by the current terminal.
     fn is_capable(&self, env: &EnvIdentifiers) -> bool;
+    /// Writes a single image to `out`.
     fn encode_image(
         &self,
         img: &DynamicImage,
@@ -27,6 +30,7 @@ pub trait Encoder {
         offset: Option<u16>,
         print_at: Option<(u16, u16)>,
     ) -> Result<(), RasterError>;
+    /// Streams video frames to `out`. Loops forever after the first pass.
     fn encode_frames(
         &self,
         frames: &mut dyn Iterator<Item = VideoFrame>,
@@ -119,6 +123,7 @@ impl Encoder for RasterEncoder {
     }
 }
 
+/// Supported terminal image protocols.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum RasterEncoder {
     Kitty,
@@ -127,7 +132,7 @@ pub enum RasterEncoder {
     Ascii,
 }
 impl RasterEncoder {
-    /// auto detect which Encoder works for the current terminal
+    /// Picks the best protocol for the current terminal. Falls back to Ascii.
     pub fn auto_detect(env: &EnvIdentifiers) -> Self {
         if kitty_encoder::is_kitty_capable(env) {
             return Self::Kitty;
@@ -143,6 +148,7 @@ impl RasterEncoder {
     }
 }
 
+/// Toggles tmux's `allow-passthrough` setting so graphics escapes reach the outer terminal.
 pub fn set_tmux_passthrough(enabled: bool) {
     let status = if enabled { "on" } else { "off" };
     let _ = Command::new("tmux")
@@ -169,8 +175,5 @@ fn get_tmux_terminal_name() -> Result<(String, String), io::Error> {
     }
 }
 
-/// A single video frame that can be rendered to the terminal.
-///
-/// Implement this trait to provide custom video sources
-/// The encoder will iterate over frames and use the trait methods to extract
+/// A video frame: the image and its timestamp in seconds.
 pub type VideoFrame = (DynamicImage, f32);

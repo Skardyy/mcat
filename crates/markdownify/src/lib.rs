@@ -23,6 +23,8 @@ use lzma_rust2::XzReader;
 
 use crate::{archives::FileTree, error::ParsingError};
 
+/// A file to be converted to markdown. Supports documents, spreadsheets, archives, and text.
+/// See [`Self::from_bytes`] for the full list of formats.
 pub struct MarkdownifyInput {
     pub bytes: Vec<u8>,
 
@@ -37,8 +39,7 @@ type Checker = fn(&[u8]) -> bool;
 type Parser<'a> = &'a dyn Fn() -> Result<String, ParsingError>;
 
 impl MarkdownifyInput {
-    /// Wrapper around  [`MarkdownifyInput::from_bytes`]
-    /// Reads the file contents, and automatically sets [`set_ext`] and `path` from the given path.
+    /// Wrapper around [`Self::from_bytes`] that reads the file and sets `ext` and `path` from the path.
     pub fn from_path(path: impl AsRef<Path>) -> Result<Self, ParsingError> {
         let path = path.as_ref();
         let bytes = std::fs::read(path).map_err(ParsingError::UnreadableFile)?;
@@ -59,18 +60,18 @@ impl MarkdownifyInput {
     /// - **Text**: html, md
     ///
     /// # Fallbacks
-    /// - **Images**: rendered inline as base64 if `allow_inline_images` is set, otherwise as a link
+    /// - **Images**: rendered inline as base64 if [`Self::allow_inline_images`] is set, otherwise as a link
     /// - **Audio/Video**: rendered as a media link
     /// - **Binary**: rendered as a binary link
     /// - **Other**: attempted as plain text and wrapped in a code block, with `ext` used as the
-    ///   code block language hint if set via [`MarkdownifyInput::set_ext`]
+    ///   code block language hint if set via [`Self::set_ext`]
     ///
     /// # Extension only formats
-    /// The following formats cannot be detected from magic bytes and require the file extension to be set via [`MarkdownifyInput::set_ext`]:
+    /// The following formats cannot be detected from magic bytes and require the file extension to be set via [`Self::set_ext`]:
     /// - **Spreadsheets**: csv, xlsm, xlsb, xla, xlam
     /// - **Text**: html, md
     ///
-    /// To enable inline base64 image embedding, call [`MarkdownifyInput::allow_inline_images`].
+    /// To enable inline base64 image embedding, call [`Self::allow_inline_images`].
     ///
     /// Compressed inputs (gz, xz) are decompressed automatically before processing.
     pub fn from_bytes(bytes: impl Into<Vec<u8>>, id: String) -> Result<Self, ParsingError> {
@@ -99,19 +100,33 @@ impl MarkdownifyInput {
         })
     }
 
-    /// setting the ext is helpful for making sure filse will be detected for what they are, its a
-    /// fallback for when magic numbers and text parsing cannot tell us what is the type.
+    /// Helps detection for formats that can't be identified by magic bytes alone (csv, html, md, etc).
     pub fn set_ext(&mut self, ext: String) {
         self.ext = Some(ext);
     }
 
-    /// some images like ones inside zip, don't have a path, thus cannot be written as markdown.
-    /// setting this setting to on makes images be inline using base64, which is unreadable.
-    /// use that only if you're passing it to a renderer later.
+    /// When `true`, images without a file path get inlined as base64 data URIs.
+    /// Only useful when the output goes to a renderer, since base64 makes the markdown file unreadable.
     pub fn allow_inline_images(&mut self, val: bool) {
         self.allow_inline_images = val;
     }
 
+    /// Detects the file format and converts it to markdown.
+    /// Falls back to a fenced code block if the format is plain text.
+    ///
+    /// ```
+    /// use markdownify::MarkdownifyInput;
+    ///
+    /// // plain text with extension wraps in a code block
+    /// let mut input = MarkdownifyInput::from_bytes(b"fn main() {}".to_vec(), "test".into()).unwrap();
+    /// input.set_ext("rs".into());
+    /// assert_eq!(input.convert().unwrap(), "```rs\nfn main() {}\n```");
+    ///
+    /// // markdown passes through unchanged
+    /// let mut input = MarkdownifyInput::from_bytes(b"# Hello".to_vec(), "test".into()).unwrap();
+    /// input.set_ext("md".into());
+    /// assert_eq!(input.convert().unwrap(), "# Hello");
+    /// ```
     pub fn convert(&self) -> Result<String, ParsingError> {
         // add more here, also add ext checking in too
         let inline = self.allow_inline_images;
@@ -238,12 +253,8 @@ fn is_image(buffer: &[u8]) -> bool {
     false
 }
 
-/// Converts multiple files to a single markdown string, rendered as a file tree.
-///
-/// Files are grouped under their common root path, with each file's path relative to that root
-/// used as its key in the tree. Files without a path fall back to their `id` as the key.
-///
-/// See [`MarkdownifyInput::from_bytes`] for supported formats and fallback behavior.
+/// Converts multiple files into one markdown string with a file tree header.
+/// Paths are made relative to their common root. Files without a path use their `id` instead.
 pub fn convert_files(files: Vec<MarkdownifyInput>) -> Result<String, ParsingError> {
     if files.is_empty() {
         return Ok(String::new());

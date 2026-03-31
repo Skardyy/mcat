@@ -12,6 +12,9 @@ use signal_hook::flag;
 
 use crate::{error::RasterError, get_tmux_terminal_name};
 
+/// Terminal window dimensions in both cells and pixels.
+///
+/// `sc_*` fields are cell counts, `spx_*` fields are pixel sizes.
 #[derive(Clone, Debug)]
 pub struct Wininfo {
     pub sc_width: u16,
@@ -22,14 +25,13 @@ pub struct Wininfo {
     pub needs_inline: bool,
 }
 
-/// converts image bytse into base64
+/// Encodes raw image bytes as base64.
 pub fn image_to_base64(img: &[u8]) -> String {
     general_purpose::STANDARD.encode(img)
 }
 
-/// Converts a horizontal offset into a terminal escape sequence that moves the cursor right.
+/// Turns a horizontal cell offset into a `\x1b[NC` escape sequence. Returns `""` for `None`.
 ///
-/// # Examples
 /// ```
 /// use rasteroid::term_misc::offset_to_terminal;
 ///
@@ -46,9 +48,8 @@ pub fn offset_to_terminal(offset: Option<u16>) -> String {
     }
 }
 
-/// Converts an (x, y) terminal position into a cursor positioning escape sequence.
+/// Turns an `(x, y)` position into a `\x1b[y;xH` cursor escape. Returns `""` for `None`.
 ///
-/// # Examples
 /// ```
 /// use rasteroid::term_misc::loc_to_terminal;
 ///
@@ -83,7 +84,7 @@ fn parse_dimension(s: &str) -> Result<(Option<u16>, Option<u16>), RasterError> {
 }
 
 impl Wininfo {
-    /// Creates a new `Wininfo` by auto-detecting terminal dimensions and applying any overrides.
+    /// Detects terminal dimensions automatically and applies any overrides.
     ///
     /// # Arguments
     /// * `spx` - Optional pixel bounding box override (e.g. `"1920x1080"`, `"autox1080"`, `"1920xauto"`)
@@ -92,20 +93,22 @@ impl Wininfo {
     /// * `scaley` - Optional scale multiplier applied over spx and sc
     /// * `env` - Terminal env identifiers used for auto detection
     ///
-    /// # Examples
     /// ```
     /// use rasteroid::term_misc::{EnvIdentifiers, Wininfo};
     ///
     /// let env = EnvIdentifiers::new();
     ///
-    /// // fully auto-detected
-    /// let wininfo = Wininfo::new(None, None, None, None, &env).unwrap();
+    /// // explicit overrides
+    /// let w = Wininfo::new(Some("1920x1080"), Some("100x50"), None, None, &env).unwrap();
+    /// assert_eq!(w.spx_width, 1920);
+    /// assert_eq!(w.spx_height, 1080);
+    /// assert_eq!(w.sc_width, 100);
+    /// assert_eq!(w.sc_height, 50);
     ///
-    /// // override only pixel width, auto-detect height
-    /// let wininfo = Wininfo::new(Some("1920xauto"), None, None, None, &env).unwrap();
-    ///
-    /// // override columns, scale everything down by half
-    /// let wininfo = Wininfo::new(None, Some("100xauto"), Some(0.5), Some(0.5), &env).unwrap();
+    /// // scale halves everything
+    /// let w = Wininfo::new(Some("1920x1080"), Some("100x50"), Some(0.5), Some(0.5), &env).unwrap();
+    /// assert_eq!(w.spx_width, 960);
+    /// assert_eq!(w.sc_width, 50);
     /// ```
     pub fn new(
         spx: Option<&str>,
@@ -163,23 +166,26 @@ impl Wininfo {
     }
 }
 
+/// Used by [`Wininfo::dim_to_px`] and [`Wininfo::dim_to_cells`] to pick the right axis.
 pub enum SizeDirection {
     Width,
     Height,
 }
 
 impl Wininfo {
-    /// Calculates the horizontal cell offset needed to center an image in the terminal.
+    /// Returns the cell offset needed to horizontally center an image in the terminal.
     ///
-    /// # Examples
     /// ```
     /// use rasteroid::term_misc::{EnvIdentifiers, Wininfo};
     ///
     /// let env = EnvIdentifiers::new();
-    /// let wininfo = Wininfo::new(None, None, None, None, &env).unwrap();
+    /// let wininfo = Wininfo::new(Some("1920x1080"), Some("100x50"), None, None, &env).unwrap();
     ///
-    /// let offset = wininfo.center_offset(800, false); // pixel-based image
-    /// let offset = wininfo.center_offset(40, true);   // ascii image, already in cells
+    /// // cell mode: (100 - 40) / 2 = 30
+    /// assert_eq!(wininfo.center_offset(40, true), 30);
+    ///
+    /// // pixel mode: (1920 - 960) / 2 = 480px, then 480 / (1920/100) = 25 cells
+    /// assert_eq!(wininfo.center_offset(960, false), 25);
     /// ```
     pub fn center_offset(&self, image_width: u16, is_cells: bool) -> u16 {
         let offset = if is_cells {
@@ -191,24 +197,25 @@ impl Wininfo {
         offset.max(0.0).round() as u16
     }
 
-    /// Converts a dimension string into pixels based on the terminal's current size.
+    /// Parses a dimension string into pixels.
     ///
-    /// # Accepted Formats
-    /// * `"1920"` or `"1920px"` - explicit pixel value
-    /// * `"40c"` - terminal cells
-    /// * `"80%"` - percentage of the terminal size
+    /// Accepts: `"1920"` or `"1920px"` (pixels), `"40c"` (cells), `"80%"` (percentage of terminal).
     ///
-    /// # Examples
     /// ```
     /// use rasteroid::term_misc::{EnvIdentifiers, Wininfo, SizeDirection};
     ///
     /// let env = EnvIdentifiers::new();
-    /// let wininfo = Wininfo::new(None, None, None, None, &env).unwrap();
+    /// let wininfo = Wininfo::new(Some("1920x1080"), Some("100x50"), None, None, &env).unwrap();
     ///
-    /// let px = wininfo.dim_to_px("80%", SizeDirection::Width).unwrap();
-    /// let px = wininfo.dim_to_px("40c", SizeDirection::Height).unwrap();
-    /// let px = wininfo.dim_to_px("1920px", SizeDirection::Width).unwrap();
-    /// let px = wininfo.dim_to_px("1920", SizeDirection::Width).unwrap();
+    /// // plain number and px suffix both give pixels directly
+    /// assert_eq!(wininfo.dim_to_px("1920", SizeDirection::Width).unwrap(), 1920);
+    /// assert_eq!(wininfo.dim_to_px("1920px", SizeDirection::Width).unwrap(), 1920);
+    ///
+    /// // cells to pixels: 10 cells * (1920/100) = 192
+    /// assert_eq!(wininfo.dim_to_px("10c", SizeDirection::Width).unwrap(), 192);
+    ///
+    /// // percentage: 50% of 1080 = 540
+    /// assert_eq!(wininfo.dim_to_px("50%", SizeDirection::Height).unwrap(), 540);
     /// ```
     pub fn dim_to_px(&self, dim: &str, direction: SizeDirection) -> Result<u32, RasterError> {
         if let Ok(num) = dim.parse::<u32>() {
@@ -245,24 +252,25 @@ impl Wininfo {
         Err(RasterError::InvalidDimensionFormat)
     }
 
-    /// Converts a dimension string into terminal cells based on the terminal's current size.
+    /// Parses a dimension string into terminal cells.
     ///
-    /// # Accepted Formats
-    /// * `"40"` or `"40c"` - explicit cell value
-    /// * `"1920px"` - pixels
-    /// * `"80%"` - percentage of the terminal size
+    /// Accepts: `"40"` or `"40c"` (cells), `"1920px"` (pixels), `"80%"` (percentage of terminal).
     ///
-    /// # Examples
     /// ```
     /// use rasteroid::term_misc::{EnvIdentifiers, Wininfo, SizeDirection};
     ///
     /// let env = EnvIdentifiers::new();
     /// let wininfo = Wininfo::new(Some("1920x1080"), Some("100x50"), None, None, &env).unwrap();
     ///
-    /// let cells = wininfo.dim_to_cells("80%", SizeDirection::Width).unwrap();
-    /// let cells = wininfo.dim_to_cells("40c", SizeDirection::Height).unwrap();
-    /// let cells = wininfo.dim_to_cells("1920px", SizeDirection::Width).unwrap();
-    /// let cells = wininfo.dim_to_cells("40", SizeDirection::Width).unwrap();
+    /// // plain number and c suffix both give cells directly
+    /// assert_eq!(wininfo.dim_to_cells("40", SizeDirection::Width).unwrap(), 40);
+    /// assert_eq!(wininfo.dim_to_cells("40c", SizeDirection::Width).unwrap(), 40);
+    ///
+    /// // pixels to cells: 1920px / (1920/100) = 100 cells
+    /// assert_eq!(wininfo.dim_to_cells("1920px", SizeDirection::Width).unwrap(), 100);
+    ///
+    /// // percentage: 50% of 50 rows = 25
+    /// assert_eq!(wininfo.dim_to_cells("50%", SizeDirection::Height).unwrap(), 25);
     /// ```
     pub fn dim_to_cells(&self, dim: &str, direction: SizeDirection) -> Result<u32, RasterError> {
         if let Ok(num) = dim.parse::<u32>() {
@@ -341,6 +349,9 @@ fn get_size_windows() -> Option<(u16, u16)> {
     Some((width, height))
 }
 
+/// Snapshot of terminal environment variables (TERM, TERM_PROGRAM, TMUX, etc).
+///
+/// Used to detect which image protocol the terminal supports.
 #[derive(Clone)]
 pub struct EnvIdentifiers {
     pub data: HashMap<String, String>,
@@ -417,11 +428,9 @@ impl EnvIdentifiers {
     }
 }
 
-/// Ensures there are enough lines below the cursor to insert content of the given height.
-/// Achieves this by printing `height` newlines to scroll the terminal if needed,
-/// then moving the cursor back up by the same amount.
+/// Scrolls the terminal down by `height` lines and moves the cursor back up,
+/// so there's room to draw content below without overwriting existing text.
 ///
-/// # Examples
 /// ```
 /// use rasteroid::term_misc::ensure_space;
 ///
@@ -435,6 +444,8 @@ pub fn ensure_space(out: &mut impl Write, height: u16) -> Result<(), RasterError
     Ok(())
 }
 
+/// Registers handlers for SIGINT, SIGTERM (and SIGHUP/SIGQUIT on unix, SIGBREAK on windows).
+/// Returns a bool that flips to `true` when any of those signals fire.
 pub fn setup_signal_handler() -> Arc<AtomicBool> {
     let shutdown = Arc::new(AtomicBool::new(false));
 
