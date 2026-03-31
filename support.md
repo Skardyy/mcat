@@ -1,8 +1,8 @@
 | File Type                                                              | Markdown Viewer | Image/Video | Interactive Viewer | LS  | Converting          |
 | ---------------------------------------------------------------------- | --------------- | ----------- | ------------------ | --- | ------------------- |
-| mp4, mov, avi, mkv, webm, wmv, flv, m4v, ts                            | 🟥              | 🟩          | 🟥                 | 🟨  |                     |
-| gif                                                                    | 🟥              | 🟩          | 🟥                 | 🟩  |                     |
-| pdf, tex, typ                                                          | 🟨              | 🟩          | 🟩                 | 🟨  | markdown, html, png |
+| mp4, m4v, mkv, webm, mov, avi, wmv, mpg, flv                           | 🟥              | 🟩          | 🟥                 | 🟨  |                     |
+| gif                                                                    | 🟥              | 🟩          | 🟨                 | 🟩  |                     |
+| pdf, tex, typ                                                          | 🟥              | 🟩          | 🟩                 | 🟨  | png                 |
 | md                                                                     | 🟩              | 🟩          | 🟩                 | 🟨  | html, png           |
 | html                                                                   | 🟨              | 🟩          | 🟩                 | 🟨  | png                 |
 | svg, bmp, dds, exr, ff, hdr, ico, jpeg, png, pnm, qoi, tga, tiff, webp | 🟥              | 🟩          | 🟩                 | 🟩  | png                 |
