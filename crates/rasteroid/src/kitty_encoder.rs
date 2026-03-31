@@ -292,23 +292,27 @@ pub unsafe fn encode_frames_fast(
 ) -> Result<(), RasterError> {
     let id = encode_frames_sep(frames, out, true, wininfo, offset, print_at)?;
 
-    // if the terminal didn't use a single shm object by now, im cleaning them all myself
-    // while it won't allow users to store videos made with shm objects for later use
-    // this will resolve issues related to mem leaking for ones that don't support kitty animations
-    let shm_name = format!("mcat-video-{id}-0");
-    if ShmemConf::new().os_id(&shm_name).open().is_ok() {
-        let mut index = 0;
-        loop {
-            let name = format!("mcat-video-{id}-{index}");
-
-            match ShmemConf::new().os_id(&name).open() {
-                Ok(mut shmem) => {
-                    shmem.set_owner(true);
-                    drop(shmem);
-                    index += 1;
+    // fork a cleanup process that gives the terminal time to consume the shm objects
+    // before removing them. this only runs on linux (macos doesn't use this path).
+    let first_shm = format!("mcat-video-{id}-0");
+    if ShmemConf::new().os_id(&first_shm).open().is_ok() {
+        let pid = unsafe { libc::fork() };
+        if pid == 0 {
+            unsafe { libc::setsid() };
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            let mut index = 0;
+            loop {
+                let name = format!("mcat-video-{id}-{index}");
+                match ShmemConf::new().os_id(&name).open() {
+                    Ok(mut shmem) => {
+                        shmem.set_owner(true);
+                        drop(shmem);
+                        index += 1;
+                    }
+                    Err(_) => break,
                 }
-                Err(_) => break,
             }
+            std::process::exit(0);
         }
     }
 

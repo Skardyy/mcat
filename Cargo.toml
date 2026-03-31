@@ -68,5 +68,6 @@ color_quant = "1.1.0"
 rand = "0.10.0"
 fast_image_resize = { version = "6.0.0", features = ["image"] }
 signal-hook = "0.4.3"
+libc = "0.2.183"
 windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
 winreg = "0.55.0"

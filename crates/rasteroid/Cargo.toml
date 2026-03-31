@@ -21,6 +21,7 @@ base64.workspace = true
 rand.workspace = true
 fast_image_resize.workspace = true
 signal-hook.workspace = true
+libc.workspace = true
 thiserror.workspace = true
 
 [target.'cfg(windows)'.dependencies]

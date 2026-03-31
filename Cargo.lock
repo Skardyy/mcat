@@ -1892,9 +1892,9 @@ checksum = "03087c2bad5e1034e8cace5926dec053fb3790248370865f5117a7d0213354c8"
 
 [[package]]
 name = "libc"
-version = "0.2.182"
+version = "0.2.183"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6800badb6cb2082ffd7b6a67e6125bb39f18782f793520caee8cb8846be06112"
+checksum = "b5b646652bf6661599e1da8901b3b9522896f01e736bad5f723fe7a3a27f899d"
 
 [[package]]
 name = "libm"
@@ -2655,6 +2655,7 @@ dependencies = [
  "fast_image_resize 6.0.0",
  "ffmpeg-sidecar",
  "image",
+ "libc",
  "rand 0.10.0",
  "shared_memory",
  "signal-hook 0.4.3",
