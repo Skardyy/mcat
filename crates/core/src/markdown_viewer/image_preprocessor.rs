@@ -4,6 +4,7 @@ use anyhow::Context;
 use anyhow::Result;
 use base64::Engine;
 use comrak::nodes::{AstNode, NodeValue};
+use image::DynamicImage;
 use image::GenericImageView;
 use itertools::Itertools;
 use rasteroid::Encoder;
@@ -110,7 +111,7 @@ impl ImagePreprocessor {
             },
         };
 
-        let items: Vec<(&ImageUrl, Vec<u8>, u32)> = urls
+        let items: Vec<(&ImageUrl, DynamicImage)> = urls
             .par_iter()
             .filter_map(|url| {
                 // fail everything early if needed.
@@ -126,8 +127,7 @@ impl ImagePreprocessor {
                     scrape_biggest_media(&url.base_url, &scrape_opts).ok()?
                 };
 
-                let (img, _, _) = tmp.to_image(conf, false, false).ok()?;
-                let img = image::load_from_memory(&img).ok()?;
+                let img = tmp.to_image(conf, false, false).ok()?;
 
                 let (width, height) = img.dimensions();
                 let width = url.width.map(|v| v as u32).unwrap_or(width);
@@ -149,16 +149,16 @@ impl ImagePreprocessor {
                     &format!("{height}px")
                 };
 
-                let (img, new_width, _) = img
+                let img = img
                     .resize_plus(wininfo, Some(width_fm), Some(height_fm), false, false)
                     .ok()?;
 
-                Some((url, img, new_width))
+                Some((url, img))
             })
             .collect();
 
         let mut mapper: HashMap<String, ImageElement> = HashMap::new();
-        for (i, (url, img, width)) in items.iter().enumerate() {
+        for (i, (url, img)) in items.iter().enumerate() {
             let mut buffer = Vec::new();
             if let Err(e) = encoder.encode_image(img, &mut buffer, wininfo, None, None) {
                 warn!(url = %url.original_url, error = %e, "failed to encode image");
@@ -166,7 +166,7 @@ impl ImagePreprocessor {
                 let img_str = String::from_utf8(buffer).unwrap_or_default();
                 let img = ImageElement {
                     is_ok: true,
-                    placeholder: create_placeholder(wininfo, &img_str, i, encoder, *width),
+                    placeholder: create_placeholder(wininfo, &img_str, i, encoder, img.width()),
                     img: img_str,
                 };
                 mapper.insert(url.original_url.clone(), img);

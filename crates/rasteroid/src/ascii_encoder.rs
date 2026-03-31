@@ -1,7 +1,10 @@
+use image::DynamicImage;
+
 use crate::{
-    Frame,
+    VideoFrame,
     error::RasterError,
-    term_misc::{self, ensure_space},
+    image_extended::InlineImage,
+    term_misc::{self, Wininfo, ensure_space},
 };
 use std::{
     io::{BufRead, Write},
@@ -9,13 +12,12 @@ use std::{
 };
 
 pub fn encode_image(
-    img: &[u8],
+    img: &DynamicImage,
     out: &mut impl Write,
     offset: Option<u16>,
     print_at: Option<(u16, u16)>,
 ) -> Result<(), RasterError> {
-    let image = image::load_from_memory(img)?;
-    let rgba_image = image.to_rgba8();
+    let rgba_image = img.to_rgba8();
 
     let w = rgba_image.width() as usize;
     let h = rgba_image.height() as usize;
@@ -120,8 +122,9 @@ fn visual_weight(r: u8, g: u8, b: u8, a: u8) -> f32 {
 }
 
 pub fn encode_frames(
-    frames: &mut dyn Iterator<Item = impl Frame>,
+    frames: &mut dyn Iterator<Item = VideoFrame>,
     mut out: impl Write,
+    wininfo: &Wininfo,
     offset: Option<u16>,
     print_at: Option<(u16, u16)>,
 ) -> Result<(), RasterError> {
@@ -129,21 +132,17 @@ pub fn encode_frames(
     let mut frame_outputs = Vec::new();
     let mut start = true;
 
-    for frame in frames {
-        let data = frame.data();
-        if data.is_empty() {
-            continue;
-        }
-
-        let target_delay = match (frame.timestamp(), last_timestamp) {
+    for (img, timestamp) in frames {
+        let target_delay = match (timestamp, last_timestamp) {
             (ts, Some(last)) if ts > last => Duration::from_secs_f32(ts - last),
             _ => Duration::from_millis(33), // ~30fps
         };
-        last_timestamp = Some(frame.timestamp());
+        last_timestamp = Some(timestamp);
 
+        let resized = img.resize_plus(wininfo, Some("80%"), Some("40%"), true, false)?;
         let mut buffer = Vec::new();
 
-        encode_image(data, &mut buffer, offset, print_at)?;
+        encode_image(&resized, &mut buffer, offset, print_at)?;
 
         clear_write_frame(&mut out, &buffer, start)?;
         start = false;

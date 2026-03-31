@@ -7,7 +7,7 @@ use lzma_rust2::XzReader;
 use markdownify::MarkdownifyInput;
 use pelite::PeFile;
 use rasteroid::{
-    Frame, RasterEncoder,
+    RasterEncoder,
     image_extended::InlineImage,
     term_misc::{SizeDirection, Wininfo},
 };
@@ -18,7 +18,7 @@ use resvg::{
 };
 use std::{
     fs::{self},
-    io::{Read, Write},
+    io::{Cursor, Read, Write},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -74,6 +74,17 @@ impl McatFile {
         info!(path = %path.display(), kind = ?s.kind, "loaded file");
         s.path = Some(path);
         Ok(s)
+    }
+
+    pub fn from_image(img: DynamicImage) -> Self {
+        let mut buf = Vec::new();
+        img.write_to(&mut Cursor::new(&mut buf), image::ImageFormat::Pnm)
+            .expect("PAM encode should never fail");
+        Self {
+            bytes: buf,
+            kind: McatKind::Image,
+            path: None,
+        }
     }
 
     pub fn from_bytes(bytes: Vec<u8>, ext: Option<&str>) -> Result<Self> {
@@ -133,12 +144,7 @@ impl McatFile {
         Ok(html)
     }
 
-    pub fn to_image(
-        &self,
-        config: &McatConfig,
-        pad: bool,
-        resize: bool,
-    ) -> Result<(Vec<u8>, u32, u32)> {
+    pub fn to_image(&self, config: &McatConfig, pad: bool, resize: bool) -> Result<DynamicImage> {
         debug!(kind = ?self.kind, pad, resize, "converting to image");
         let wininfo = config
             .wininfo
@@ -176,12 +182,9 @@ impl McatFile {
         };
 
         if resize {
-            let (img, width, height) = img.resize_plus(wininfo, width, height, is_ascii, pad)?;
-            Ok((img, width, height))
+            Ok(img.resize_plus(wininfo, width, height, is_ascii, pad)?)
         } else {
-            let mut buf = Vec::new();
-            img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)?;
-            Ok((buf, 0, 0))
+            Ok(img)
         }
     }
 
@@ -217,8 +220,7 @@ impl McatFile {
             | McatKind::Exe
             | McatKind::Lnk => {
                 let img = self.to_image(config, false, false)?;
-                let dyn_img = image::load_from_memory(&img.0)?;
-                Ok(vec![dyn_img])
+                Ok(vec![img])
             }
             McatKind::Pdf => pdf_to_album(&self.bytes),
             McatKind::Tex => todo!(),
@@ -227,50 +229,45 @@ impl McatFile {
         }
     }
 
-    pub fn to_frames(&self) -> Result<Box<dyn Iterator<Item = VideoFrames>>> {
-        let input = if let Some(path) = &self.path {
-            path.to_string_lossy().to_string()
-        } else {
-            let mut tmp_file = NamedTempFile::with_suffix(".mp4")?;
-            tmp_file.write_all(&self.bytes)?;
-            tmp_file.path().to_string_lossy().to_string()
-        };
-
+    pub fn to_frames(&self) -> Result<(Box<dyn Iterator<Item = rasteroid::VideoFrame>>, u32, u32)> {
         let mut command = fetch_manager::get_ffmpeg().context(
             "ffmpeg isn't installed. either install it manually, or call `mcat --fetch-ffmpeg`",
         )?;
 
-        command.hwaccel("auto").input(&input).rawvideo();
+        if let Some(path) = &self.path {
+            command
+                .hwaccel("auto")
+                .input(path.to_string_lossy())
+                .rawvideo();
+        } else {
+            command.hwaccel("auto").input("pipe:0").rawvideo();
+        }
+
         let mut child = command.spawn()?;
-        let frames = child.iter()?.filter_frames().map(|f| VideoFrames {
-            timestamp: f.timestamp,
-            img: f.data,
-            width: f.width as u16,
-            height: f.height as u16,
+
+        if self.path.is_none() {
+            let stdin = child.take_stdin().context("failed to get ffmpeg stdin")?;
+            let bytes = self.bytes.clone();
+            std::thread::spawn(move || {
+                let mut stdin = stdin;
+                let _ = stdin.write_all(&bytes);
+            });
+        }
+
+        let mut frames = child.iter()?.filter_frames().map(|f| {
+            let rgb = image::RgbImage::from_raw(f.width, f.height, f.data).unwrap_or_default();
+            (image::DynamicImage::ImageRgb8(rgb), f.timestamp)
         });
 
-        Ok(Box::new(frames))
-    }
-}
+        let first = frames.next().context("no frames found")?;
+        let width = first.0.width();
+        let height = first.0.height();
 
-pub struct VideoFrames {
-    timestamp: f32,
-    img: Vec<u8>,
-    width: u16,
-    height: u16,
-}
-impl Frame for VideoFrames {
-    fn timestamp(&self) -> f32 {
-        self.timestamp
-    }
-    fn data(&self) -> &[u8] {
-        &self.img
-    }
-    fn width(&self) -> u16 {
-        self.width
-    }
-    fn height(&self) -> u16 {
-        self.height
+        Ok((
+            Box::new(std::iter::once(first).chain(frames)),
+            width,
+            height,
+        ))
     }
 }
 
@@ -284,7 +281,7 @@ pub fn svg_to_image(
     is_ascii: bool,
     pad: bool,
     needs_resize: bool,
-) -> Result<(Vec<u8>, u32, u32)> {
+) -> Result<DynamicImage> {
     let mut opt = Options::default();
 
     // allowing text
@@ -325,12 +322,9 @@ pub fn svg_to_image(
 
     let img = image::RgbaImage::from_raw(target_width, target_height, pixmap.data().to_vec())
         .context("Failed to create image buffer from svg pixmap")?;
-    let mut buf = Vec::new();
-    DynamicImage::ImageRgba8(img)
-        .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)?;
+    let dyn_img = DynamicImage::ImageRgba8(img);
 
     if pad && (target_width != width || target_height != height) {
-        let img = image::load_from_memory(&buf)?;
         let mut new_img = DynamicImage::new_rgba8(width, height);
         let x_offset = if width == target_width {
             0
@@ -342,13 +336,11 @@ pub fn svg_to_image(
         } else {
             (height - target_height) / 2
         };
-        new_img.copy_from(&img, x_offset, y_offset)?;
-        let mut cursor = std::io::Cursor::new(Vec::new());
-        new_img.write_to(&mut cursor, image::ImageFormat::Png)?;
-        return Ok((cursor.into_inner(), width, height));
+        new_img.copy_from(&dyn_img, x_offset, y_offset)?;
+        return Ok(new_img);
     }
 
-    Ok((buf, target_width, target_height))
+    Ok(dyn_img)
 }
 
 fn render_pdf_page(pdf: &Pdf, page_index: usize) -> Result<DynamicImage> {

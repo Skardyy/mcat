@@ -6,7 +6,7 @@ use rasteroid::{Encoder, term_misc};
 use rasteroid::{RasterEncoder, term_misc::SizeDirection};
 use rayon::prelude::*;
 use std::io::Write;
-use std::{io::Cursor, path::Path};
+use std::path::Path;
 
 use tracing::{debug, info};
 
@@ -299,7 +299,7 @@ pub fn lsix(input: impl AsRef<str>, out: &mut impl Write, mut ctx: McatConfig) -
             };
 
             match img {
-                Some((img, w, h)) => Some((img, filename, w, h, path)),
+                Some(img) => Some((img, filename, path)),
                 None => {
                     let svg = if mcat_file.kind == McatKind::Video {
                         include_str!("../assets/video.svg")
@@ -308,9 +308,9 @@ pub fn lsix(input: impl AsRef<str>, out: &mut impl Write, mut ctx: McatConfig) -
                     };
                     let new_file =
                         McatFile::from_bytes(svg.as_bytes().to_owned(), Some("svg")).ok()?;
-                    let (img, w, h) = new_file.to_image(&ctx, true, true).ok()?;
+                    let img = new_file.to_image(&ctx, true, true).ok()?;
 
-                    Some((img, filename, w, h, path))
+                    Some((img, filename, path))
                 }
             }
         })
@@ -320,10 +320,7 @@ pub fn lsix(input: impl AsRef<str>, out: &mut impl Write, mut ctx: McatConfig) -
     buf.write_all(b"\n")?;
     for chunk in &images.into_iter().chunks(items_per_row as usize) {
         let items: Vec<_> = chunk.collect();
-        let images: Vec<DynamicImage> = items
-            .iter()
-            .flat_map(|f| image::load_from_memory(&f.0))
-            .collect();
+        let images: Vec<DynamicImage> = items.iter().map(|f| f.0.clone()).collect();
         let image = combine_images_into_row(
             images,
             if resize_for_ascii {
@@ -344,7 +341,7 @@ pub fn lsix(input: impl AsRef<str>, out: &mut impl Write, mut ctx: McatConfig) -
         }
         let names: Vec<String> = items
             .iter()
-            .map(|f| truncate_filename(&f.1, width, &f.4, ctx.hyprlink))
+            .map(|f| truncate_filename(&f.1, width, &f.2, ctx.hyprlink))
             .collect();
         let pad_x = " ".repeat(x_padding as usize);
         let pad_y = "\n".repeat(y_padding as usize);
@@ -357,10 +354,10 @@ pub fn lsix(input: impl AsRef<str>, out: &mut impl Write, mut ctx: McatConfig) -
     Ok(())
 }
 
-fn combine_images_into_row(images: Vec<DynamicImage>, padding: u32) -> Result<Vec<u8>> {
+fn combine_images_into_row(images: Vec<DynamicImage>, padding: u32) -> Result<DynamicImage> {
     let background = Rgba([0, 0, 0, 0]);
     if images.is_empty() {
-        return Ok(Vec::new());
+        return Ok(DynamicImage::new_rgba8(1, 1));
     }
 
     let max_height = images.iter().map(|img| img.height()).max().unwrap_or(0);
@@ -378,9 +375,5 @@ fn combine_images_into_row(images: Vec<DynamicImage>, padding: u32) -> Result<Ve
         x_offset += img.width() + padding;
     }
 
-    let img = DynamicImage::ImageRgba8(output);
-    let mut buffer = Vec::new();
-    let mut cursor = Cursor::new(&mut buffer);
-    img.write_to(&mut cursor, image::ImageFormat::Png)?;
-    Ok(buffer)
+    Ok(DynamicImage::ImageRgba8(output))
 }

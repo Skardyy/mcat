@@ -1,18 +1,26 @@
+use image::DynamicImage;
+
 use crate::{
-    Frame,
+    VideoFrame,
     error::RasterError,
     term_misc::{self, EnvIdentifiers, Wininfo},
 };
-use std::{io::Write, sync::atomic::Ordering, time::Duration};
+use std::{
+    io::{Cursor, Write},
+    sync::atomic::Ordering,
+    time::Duration,
+};
 
 pub fn encode_image(
-    img: &[u8],
+    img: &DynamicImage,
     out: &mut impl Write,
     offset: Option<u16>,
     print_at: Option<(u16, u16)>,
     wininfo: &Wininfo,
 ) -> Result<(), RasterError> {
-    let base64_encoded = term_misc::image_to_base64(img);
+    let mut png = Vec::new();
+    img.write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png)?;
+    let base64_encoded = term_misc::image_to_base64(&png);
 
     let center = term_misc::offset_to_terminal(offset);
     let at = term_misc::loc_to_terminal(print_at);
@@ -49,7 +57,7 @@ pub fn is_iterm_capable(env: &EnvIdentifiers) -> bool {
 }
 
 pub fn encode_frames(
-    frames: &mut dyn Iterator<Item = impl Frame>,
+    frames: &mut dyn Iterator<Item = VideoFrame>,
     out: &mut impl Write,
     wininfo: &Wininfo,
     offset: Option<u16>,
@@ -60,27 +68,22 @@ pub fn encode_frames(
     let mut frame_cache: Vec<(Vec<u8>, Duration)> = Vec::new();
     let mut first = true;
 
-    for frame in frames {
+    for (img, timestamp) in frames {
         if shutdown.load(Ordering::SeqCst) {
             return Ok(());
         }
 
-        let data = frame.data();
-        if data.is_empty() {
-            continue;
-        }
-
-        let delay = match (frame.timestamp(), last_timestamp) {
+        let delay = match (timestamp, last_timestamp) {
             (ts, Some(last)) if ts > last => Duration::from_secs_f32(ts - last),
             _ => Duration::from_millis(33),
         };
-        last_timestamp = Some(frame.timestamp());
+        last_timestamp = Some(timestamp);
 
         let mut buf = Vec::new();
-        encode_image(data, &mut buf, offset, print_at, wininfo)?;
+        encode_image(&img, &mut buf, offset, print_at, wininfo)?;
 
         if first {
-            term_misc::ensure_space(out, frame.height())?;
+            term_misc::ensure_space(out, img.height() as u16)?;
             write!(out, "\x1b[s")?;
             first = false;
         } else {

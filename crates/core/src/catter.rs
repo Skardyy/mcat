@@ -7,7 +7,7 @@ use image::DynamicImage;
 use rasteroid::{Encoder, RasterEncoder, image_extended::InlineImage, term_misc};
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use std::{
-    io::{Write, stdout},
+    io::{Cursor, Write, stdout},
     process::{Command, Stdio},
 };
 
@@ -42,11 +42,7 @@ pub fn cat(files: Vec<McatFile>, out: &mut impl Write, config: &McatConfig) -> R
         if files.len() > 1 {
             let images = files
                 .par_iter()
-                .map(|v| {
-                    v.to_image(config, false, false).and_then(|v| {
-                        image::load_from_memory(&v.0).context("failed to load image from memory")
-                    })
-                })
+                .map(|v| v.to_image(config, false, false))
                 .collect::<Result<Vec<_>>>()?;
 
             interact_with_image(images, config, out)?;
@@ -90,7 +86,7 @@ pub fn cat(files: Vec<McatFile>, out: &mut impl Write, config: &McatConfig) -> R
                 | McatKind::Url
                 | McatKind::Typst => {
                     let img = v.to_image(config, false, true)?;
-                    let f = McatFile::from_bytes(img.0, None)?;
+                    let f = McatFile::from_image(img);
                     Ok(f)
                 }
                 McatKind::Image => Ok(v),
@@ -133,22 +129,29 @@ pub fn cat(files: Vec<McatFile>, out: &mut impl Write, config: &McatConfig) -> R
         }
         Some(OutputFormat::Image) => {
             let img = mcat_file.to_image(config, false, true)?;
-            out.write_all(&img.0)?;
+            let mut buf = Vec::new();
+            img.write_to(&mut Cursor::new(&mut buf), image::ImageFormat::Png)?;
+            out.write_all(&buf)?;
         }
         Some(OutputFormat::Inline) => {
+            let is_ascii = config
+                .encoder
+                .map(|v| v == RasterEncoder::Ascii)
+                .unwrap_or(false);
             match mcat_file.kind {
                 McatKind::Video | McatKind::Gif => {
-                    // TODO: make to_frames return the width and height like to image
-                    let mut frames = mcat_file.to_frames()?;
-                    encoder.encode_frames(&mut frames, out, wininfo, None, None)?;
+                    let (mut frames, mut width, _) = mcat_file.to_frames()?;
+                    // frames don't give width according to the encoder
+                    if is_ascii {
+                        width = wininfo
+                            .dim_to_cells(&format!("{width}px"), term_misc::SizeDirection::Width)?;
+                    }
+                    let offset = wininfo.center_offset(width as u16, is_ascii);
+                    encoder.encode_frames(&mut frames, out, wininfo, Some(offset), None)?;
                 }
                 _ => {
-                    let (img, width, _) = mcat_file.to_image(config, false, true)?;
-                    let is_ascii = config
-                        .encoder
-                        .map(|v| v == RasterEncoder::Ascii)
-                        .unwrap_or(false);
-                    let offset = wininfo.center_offset(width as u16, is_ascii);
+                    let img = mcat_file.to_image(config, false, true)?;
+                    let offset = wininfo.center_offset(img.width() as u16, is_ascii);
                     encoder.encode_image(&img, out, wininfo, Some(offset), None)?;
                 }
             }
@@ -247,7 +250,7 @@ fn interact_with_image(
                 vp.update_image_size(width, height);
             }
             let new_img = vp.apply_to_image(img);
-            let (img, width, img_height_px) = new_img
+            let img = new_img
                 .resize_plus(
                     wininfo,
                     Some("80%"),
@@ -256,10 +259,10 @@ fn interact_with_image(
                     false,
                 )
                 .ok()?;
-            let center = wininfo.center_offset(width as u16, resize_for_ascii);
+            let center = wininfo.center_offset(img.width() as u16, resize_for_ascii);
             let img_height_cells = wininfo
                 .dim_to_cells(
-                    &format!("{img_height_px}px"),
+                    &format!("{}px", img.height()),
                     term_misc::SizeDirection::Height,
                 )
                 .unwrap_or(height as u32);

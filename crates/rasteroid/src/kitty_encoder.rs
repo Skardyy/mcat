@@ -1,11 +1,16 @@
-use std::{cmp::min, collections::HashMap, io::Write, sync::atomic::Ordering};
+use std::{
+    cmp::min,
+    collections::HashMap,
+    io::{Cursor, Write},
+    sync::atomic::Ordering,
+};
 
 use base64::{Engine, engine::general_purpose};
-use image::GenericImageView;
+use image::{DynamicImage, GenericImageView};
 use shared_memory::ShmemConf;
 
 use crate::{
-    Frame,
+    VideoFrame,
     error::RasterError,
     term_misc::{
         self, EnvIdentifiers, Wininfo, image_to_base64, loc_to_terminal, offset_to_terminal,
@@ -120,12 +125,15 @@ fn chunk_base64(
 }
 
 pub fn encode_image(
-    img: &[u8],
+    img: &DynamicImage,
     out: &mut impl Write,
     offset: Option<u16>,
     print_at: Option<(u16, u16)>,
     wininfo: &Wininfo,
 ) -> Result<(), RasterError> {
+    let mut png = Vec::new();
+    img.write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png)?;
+
     let id = rand::random::<u32>();
     let mut opts = HashMap::from([
         ("f".to_string(), "100".to_string()),
@@ -134,8 +142,7 @@ pub fn encode_image(
     ]);
 
     if wininfo.is_tmux || wininfo.needs_inline {
-        let data = image::load_from_memory(img)?;
-        let (widthpx, heightpx) = data.dimensions();
+        let (widthpx, heightpx) = img.dimensions();
         let cols =
             wininfo.dim_to_cells(&format!("{widthpx}px"), term_misc::SizeDirection::Width)?;
         let rows =
@@ -144,7 +151,7 @@ pub fn encode_image(
         opts.insert("U".to_string(), 1.to_string());
         opts.insert("r".to_string(), rows.to_string());
         opts.insert("c".to_string(), cols.to_string());
-        let base64 = image_to_base64(img);
+        let base64 = image_to_base64(&png);
         chunk_base64(&base64, out, 4096, opts, HashMap::new(), wininfo.is_tmux)?;
 
         let placement = create_unicode_placeholder(cols, rows, id, offset, print_at)?;
@@ -154,7 +161,7 @@ pub fn encode_image(
         let print_at_string = loc_to_terminal(print_at);
         out.write_all(print_at_string.as_ref())?;
         out.write_all(center_string.as_ref())?;
-        let base64 = image_to_base64(img);
+        let base64 = image_to_base64(&png);
         chunk_base64(&base64, out, 4096, opts, HashMap::new(), wininfo.is_tmux)?;
     }
 
@@ -277,7 +284,7 @@ fn process_frame(
 /// every terminal. also saving the video for future use will include having memory spent on this
 /// and not storage.
 pub unsafe fn encode_frames_fast(
-    frames: &mut dyn Iterator<Item = impl Frame>,
+    frames: &mut dyn Iterator<Item = VideoFrame>,
     out: &mut impl Write,
     wininfo: &Wininfo,
     offset: Option<u16>,
@@ -309,7 +316,7 @@ pub unsafe fn encode_frames_fast(
 }
 
 pub fn encode_frames(
-    frames: &mut dyn Iterator<Item = impl Frame>,
+    frames: &mut dyn Iterator<Item = VideoFrame>,
     out: &mut impl Write,
     wininfo: &Wininfo,
     offset: Option<u16>,
@@ -320,16 +327,18 @@ pub fn encode_frames(
 }
 
 fn encode_frames_sep(
-    frames: &mut dyn Iterator<Item = impl Frame>,
+    frames: &mut dyn Iterator<Item = VideoFrame>,
     out: &mut impl Write,
     use_shm: bool,
     wininfo: &Wininfo,
     offset: Option<u16>,
     print_at: Option<(u16, u16)>,
 ) -> Result<u32, RasterError> {
-    let first = frames.next().ok_or(RasterError::EmptyVideo)?;
-    let width = first.width();
-    let height = first.height();
+    let (first_img, _) = frames.next().ok_or(RasterError::EmptyVideo)?;
+    let width = first_img.width() as u16;
+    let height = first_img.height() as u16;
+    let first_rgb = first_img.to_rgb8();
+    let first_data = first_rgb.as_raw();
 
     let mut pre_timestamp = 0.0;
     let id = rand::random::<u32>();
@@ -354,8 +363,8 @@ fn encode_frames_sep(
     }
 
     let i = id.to_string();
-    let s = first.width().to_string();
-    let v = first.height().to_string();
+    let s = width.to_string();
+    let v = height.to_string();
     let f = "24".to_string();
     let mut opts = HashMap::from([
         ("a".to_string(), "T".to_string()),
@@ -378,7 +387,7 @@ fn encode_frames_sep(
 
     // adding the root image
     process_frame(
-        first.data(),
+        first_data,
         out,
         opts,
         None,
@@ -393,16 +402,18 @@ fn encode_frames_sep(
 
     let shutdown = term_misc::setup_signal_handler();
 
-    for (c, frame) in frames.enumerate() {
+    for (c, (img, timestamp)) in frames.enumerate() {
         if shutdown.load(Ordering::SeqCst) {
             break; // clean exit
         }
-        let s = frame.width().to_string();
-        let v = frame.height().to_string();
+        let rgb = img.to_rgb8();
+        let data = rgb.as_raw();
+        let s = img.width().to_string();
+        let v = img.height().to_string();
         let i = id.to_string();
         let f = "24".to_string();
-        let z = ((frame.timestamp() - pre_timestamp) * 1000.0) as u32;
-        pre_timestamp = frame.timestamp();
+        let z = ((timestamp - pre_timestamp) * 1000.0) as u32;
+        pre_timestamp = timestamp;
 
         let first_opts = HashMap::from([
             ("a".to_string(), "f".to_string()),
@@ -416,7 +427,7 @@ fn encode_frames_sep(
         let sub_opts = HashMap::from([("a".to_string(), "f".to_string())]);
 
         if process_frame(
-            frame.data(),
+            data,
             out,
             first_opts,
             Some(sub_opts),

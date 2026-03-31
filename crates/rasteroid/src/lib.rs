@@ -4,7 +4,7 @@ use std::{
 };
 
 use crossterm::tty::IsTty;
-use image::load_from_memory;
+use image::DynamicImage;
 use term_misc::{EnvIdentifiers, ensure_space};
 
 use crate::{error::RasterError, term_misc::Wininfo};
@@ -21,7 +21,7 @@ pub trait Encoder {
     fn is_capable(&self, env: &EnvIdentifiers) -> bool;
     fn encode_image(
         &self,
-        img: &[u8],
+        img: &DynamicImage,
         out: &mut impl Write,
         wininfo: &Wininfo,
         offset: Option<u16>,
@@ -29,7 +29,7 @@ pub trait Encoder {
     ) -> Result<(), RasterError>;
     fn encode_frames(
         &self,
-        frames: &mut dyn Iterator<Item = impl Frame>,
+        frames: &mut dyn Iterator<Item = VideoFrame>,
         out: &mut impl Write,
         wininfo: &Wininfo,
         offset: Option<u16>,
@@ -49,7 +49,7 @@ impl Encoder for RasterEncoder {
 
     fn encode_image(
         &self,
-        img: &[u8],
+        img: &DynamicImage,
         out: &mut impl Write,
         wininfo: &Wininfo,
         offset: Option<u16>,
@@ -62,9 +62,10 @@ impl Encoder for RasterEncoder {
         } && is_tmux;
         let mut img_cells = 0;
         if self_handle {
-            let img_px = load_from_memory(img)?.height();
-            img_cells =
-                wininfo.dim_to_cells(&format!("{img_px}px"), term_misc::SizeDirection::Height)?;
+            img_cells = wininfo.dim_to_cells(
+                &format!("{}px", img.height()),
+                term_misc::SizeDirection::Height,
+            )?;
             ensure_space(out, img_cells as u16)?;
         }
         match self {
@@ -88,7 +89,7 @@ impl Encoder for RasterEncoder {
 
     fn encode_frames(
         &self,
-        frames: &mut dyn Iterator<Item = impl Frame>,
+        frames: &mut dyn Iterator<Item = VideoFrame>,
         out: &mut impl Write,
         wininfo: &Wininfo,
         offset: Option<u16>,
@@ -111,7 +112,9 @@ impl Encoder for RasterEncoder {
             RasterEncoder::Sixel => {
                 sixel_encoder::encode_frames(frames, out, wininfo, offset, print_at)
             }
-            RasterEncoder::Ascii => ascii_encoder::encode_frames(frames, out, offset, print_at),
+            RasterEncoder::Ascii => {
+                ascii_encoder::encode_frames(frames, out, wininfo, offset, print_at)
+            }
         }
     }
 }
@@ -170,29 +173,4 @@ fn get_tmux_terminal_name() -> Result<(String, String), io::Error> {
 ///
 /// Implement this trait to provide custom video sources
 /// The encoder will iterate over frames and use the trait methods to extract
-/// timing, dimensions, and raw image data for each frame.
-///
-/// # Examples
-/// ```
-/// use rasteroid::Frame;
-///
-/// struct MyFrame {
-///     ts: f32,
-///     pixels: Vec<u8>,
-///     w: u16,
-///     h: u16,
-/// }
-///
-/// impl Frame for MyFrame {
-///     fn timestamp(&self) -> f32 { self.ts }
-///     fn data(&self) -> &[u8] { &self.pixels }
-///     fn width(&self) -> u16 { self.w }
-///     fn height(&self) -> u16 { self.h }
-/// }
-/// ```
-pub trait Frame {
-    fn timestamp(&self) -> f32;
-    fn data(&self) -> &[u8];
-    fn width(&self) -> u16;
-    fn height(&self) -> u16;
-}
+pub type VideoFrame = (DynamicImage, f32);

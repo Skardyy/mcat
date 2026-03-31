@@ -1,7 +1,8 @@
-use std::io::Cursor;
-
 use fast_image_resize::{IntoImageView, Resizer, images::Image};
-use image::{DynamicImage, GenericImage, GenericImageView, ImageEncoder, codecs::png::PngEncoder};
+use image::{
+    DynamicImage, GenericImage, GenericImageView, ImageEncoder,
+    codecs::pnm::{PnmEncoder, PnmSubtype},
+};
 
 use crate::{
     error::RasterError,
@@ -48,7 +49,7 @@ pub trait InlineImage {
         height: Option<&str>,
         resize_for_ascii: bool,
         pad: bool,
-    ) -> Result<(Vec<u8>, u32, u32), RasterError>;
+    ) -> Result<DynamicImage, RasterError>;
 }
 
 impl InlineImage for DynamicImage {
@@ -59,7 +60,7 @@ impl InlineImage for DynamicImage {
         height: Option<&str>,
         resize_for_ascii: bool,
         pad: bool,
-    ) -> Result<(Vec<u8>, u32, u32), RasterError> {
+    ) -> Result<DynamicImage, RasterError> {
         let (src_width, src_height) = self.dimensions();
         let width = match width {
             Some(w) => match resize_for_ascii {
@@ -86,18 +87,18 @@ impl InlineImage for DynamicImage {
         let mut resizer = Resizer::new();
         resizer.resize(self, &mut dst_image, None)?;
 
-        let mut buffer = Vec::new();
-        let mut cursor = Cursor::new(&mut buffer);
-        let encoder = PngEncoder::new(&mut cursor);
-        encoder.write_image(
-            dst_image.buffer(),
-            dst_image.width(),
-            dst_image.height(),
-            self.color().into(),
-        )?;
+        let mut buf = Vec::new();
+        PnmEncoder::new(&mut buf)
+            .with_subtype(PnmSubtype::ArbitraryMap)
+            .write_image(
+                dst_image.buffer(),
+                dst_image.width(),
+                dst_image.height(),
+                self.color().into(),
+            )?;
+        let resized = image::load_from_memory(&buf)?;
 
         if pad && (new_width != width || new_height != height) {
-            let img = image::load_from_memory(&buffer)?;
             let mut new_img = DynamicImage::new_rgba8(width, height);
             let x_offset = if width == new_width {
                 0
@@ -109,13 +110,11 @@ impl InlineImage for DynamicImage {
             } else {
                 (height - new_height) / 2
             };
-            new_img.copy_from(&img, x_offset, y_offset)?;
-            let mut cursor = Cursor::new(Vec::new());
-            new_img.write_to(&mut cursor, image::ImageFormat::Png)?;
-            return Ok((cursor.into_inner(), width, height));
+            new_img.copy_from(&resized, x_offset, y_offset)?;
+            return Ok(new_img);
         }
 
-        Ok((buffer, new_width, new_height))
+        Ok(resized)
     }
 }
 

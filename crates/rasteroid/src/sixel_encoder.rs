@@ -1,23 +1,22 @@
 use crate::{
-    Frame,
+    VideoFrame,
     error::RasterError,
     term_misc::{self, EnvIdentifiers, Wininfo, loc_to_terminal, offset_to_terminal},
 };
 use color_quant::NeuQuant;
-use image::{ImageBuffer, Rgb};
+use image::{DynamicImage, ImageBuffer, Rgb};
 use std::{io::Write, sync::atomic::Ordering, time::Duration};
 
 const SIXEL_MIN: u8 = 0x3f;
 
 pub fn encode_image(
-    img: &[u8],
+    img: &DynamicImage,
     out: &mut impl Write,
     offset: Option<u16>,
     print_at: Option<(u16, u16)>,
     wininfo: &Wininfo,
 ) -> Result<(), RasterError> {
-    let dyn_img = image::load_from_memory(img)?;
-    let rgb_img = dyn_img.to_rgb8();
+    let rgb_img = img.to_rgb8();
 
     let center = offset_to_terminal(offset);
     let print_at_string = loc_to_terminal(print_at);
@@ -192,7 +191,7 @@ fn find_closest_color(palette: &[(u8, u8, u8)], color: &(u8, u8, u8)) -> u8 {
 }
 
 pub fn encode_frames(
-    frames: &mut dyn Iterator<Item = impl Frame>,
+    frames: &mut dyn Iterator<Item = VideoFrame>,
     out: &mut impl Write,
     wininfo: &Wininfo,
     offset: Option<u16>,
@@ -201,44 +200,33 @@ pub fn encode_frames(
     let shutdown = term_misc::setup_signal_handler();
     let mut last_timestamp: Option<f32> = None;
     let mut frame_cache: Vec<(Vec<u8>, Duration)> = Vec::new();
-    let first_frame = frames.next().ok_or(RasterError::EmptyVideo)?;
+    let (first_img, _) = frames.next().ok_or(RasterError::EmptyVideo)?;
 
     let at = print_at.unwrap_or((0, 0));
 
     // pre-encode first frame and ensure space
     let mut first_buf = Vec::new();
-    encode_image(
-        first_frame.data(),
-        &mut first_buf,
-        offset,
-        Some(at),
-        wininfo,
-    )?;
-    term_misc::ensure_space(out, first_frame.height())?;
+    encode_image(&first_img, &mut first_buf, offset, Some(at), wininfo)?;
+    term_misc::ensure_space(out, first_img.height() as u16)?;
     out.write_all(&first_buf)?;
     out.flush()?;
 
     let delay = Duration::from_millis(33);
     frame_cache.push((first_buf, delay));
 
-    for frame in frames {
+    for (img, timestamp) in frames {
         if shutdown.load(Ordering::SeqCst) {
             return Ok(());
         }
 
-        let data = frame.data();
-        if data.is_empty() {
-            continue;
-        }
-
-        let delay = match (frame.timestamp(), last_timestamp) {
+        let delay = match (timestamp, last_timestamp) {
             (ts, Some(last)) if ts > last => Duration::from_secs_f32(ts - last),
             _ => Duration::from_millis(33),
         };
-        last_timestamp = Some(frame.timestamp());
+        last_timestamp = Some(timestamp);
 
         let mut buf = Vec::new();
-        encode_image(data, &mut buf, offset, Some(at), wininfo)?;
+        encode_image(&img, &mut buf, offset, Some(at), wininfo)?;
 
         out.write_all(&buf)?;
         out.flush()?;
