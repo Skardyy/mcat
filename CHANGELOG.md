@@ -1,4 +1,4 @@
-## Src
+## V0.5.1
 
 - added `--padding` flag for the markdown viewer, applies horizontal padding
 - added two-face for more file type support for syntax highlighting in the markdown viewer
