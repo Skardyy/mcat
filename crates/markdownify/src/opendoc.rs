@@ -347,6 +347,18 @@ pub fn parse_opendoc(content: impl AsRef<[u8]>, inline: bool) -> Result<String, 
                     ctx.in_cell = true;
                     ctx.current_row.push(String::new());
                 }
+                b"draw:image" => {
+                    if let Some(href) = get_attr(&e, b"xlink:href")
+                        && let Some((mt, b64)) = ctx.images.get(&href)
+                    {
+                        let img = if ctx.inline {
+                            format!("![Image](data:{};base64,{})\n", mt, b64)
+                        } else {
+                            "![Image]()\n".to_string()
+                        };
+                        ctx.markdown.push_str(&img);
+                    }
+                }
                 _ => {}
             },
 
@@ -396,7 +408,7 @@ pub fn parse_opendoc(content: impl AsRef<[u8]>, inline: bool) -> Result<String, 
                 b"text:a" => {
                     if let Some(href) = ctx.active_link_href.take() {
                         let text = std::mem::take(&mut ctx.link_text);
-                        let link = format!("[{}]({})", text.trim(), href);
+                        let link = format!("[{}]({})", text, href);
                         ctx.push_text(&link);
                     }
                 }
