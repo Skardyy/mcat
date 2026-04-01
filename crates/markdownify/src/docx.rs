@@ -492,112 +492,62 @@ mod tests {
     }
 
     #[test]
-    fn heading_title() {
+    fn headings() {
         let md = parse();
-        assert!(
-            md.contains("# Comprehensive DOCX Fixture"),
-            "title heading missing"
-        );
-    }
-
-    #[test]
-    fn heading_levels() {
-        let md = parse();
+        assert!(md.contains("# Comprehensive DOCX Fixture"), "title missing");
         assert!(md.contains("## Heading 1"), "H1 missing");
         assert!(md.contains("### Heading 2"), "H2 missing");
         assert!(md.contains("#### Heading 3"), "H3 missing");
     }
 
     #[test]
-    fn bold() {
+    fn inline_formatting() {
         let md = parse();
+        assert!(md.contains("Normal text."), "plain text missing");
         assert!(md.contains("**Bold.**"), "bold missing");
-    }
-
-    #[test]
-    fn italic() {
-        let md = parse();
         assert!(md.contains("*Italic.*"), "italic missing");
-    }
-
-    #[test]
-    fn bold_italic() {
-        let md = parse();
         assert!(
             md.contains("***Bold-italic.***") || md.contains("**_Bold-italic._**"),
             "bold-italic missing"
         );
-    }
-
-    #[test]
-    fn strikethrough() {
-        let md = parse();
         assert!(md.contains("~~Strikethrough.~~"), "strikethrough missing");
-    }
-
-    #[test]
-    fn underline() {
-        let md = parse();
         assert!(md.contains("<u>Underline.</u>"), "underline missing");
     }
 
     #[test]
-    fn plain_paragraph_text() {
+    fn unordered_lists() {
         let md = parse();
-        assert!(md.contains("Normal text."), "normal paragraph text missing");
-    }
-
-    #[test]
-    fn unordered_list_items() {
-        let md = parse();
-        assert!(md.contains("- Bullet item one"), "bullet item 1 missing");
-        assert!(md.contains("- Bullet item two"), "bullet item 2 missing");
-        assert!(md.contains("- Bullet item three"), "bullet item 3 missing");
-    }
-
-    #[test]
-    fn unordered_list_nested() {
-        let md = parse();
-        assert!(
-            md.contains("  - Nested bullet A"),
-            "nested bullet A missing"
-        );
-        assert!(
-            md.contains("  - Nested bullet B"),
-            "nested bullet B missing"
-        );
+        assert!(md.contains("- Bullet item one"), "bullet 1 missing");
+        assert!(md.contains("- Bullet item two"), "bullet 2 missing");
+        assert!(md.contains("- Bullet item three"), "bullet 3 missing");
+        assert!(md.contains("  - Nested bullet A"), "nested A missing");
+        assert!(md.contains("  - Nested bullet B"), "nested B missing");
         assert!(
             md.contains("    - Deeply nested bullet"),
-            "deeply nested bullet missing"
+            "deeply nested missing"
         );
     }
 
     #[test]
-    fn ordered_list_items() {
+    fn ordered_lists() {
         let md = parse();
         assert!(md.contains("1. First item"), "ordered item 1 missing");
         assert!(md.contains("2. Second item"), "ordered item 2 missing");
         assert!(md.contains("3. Third item"), "ordered item 3 missing");
+        assert!(md.contains("  - Sub-item a"), "sub-item a missing");
+        assert!(md.contains("  - Sub-item b"), "sub-item b missing");
     }
 
     #[test]
-    fn ordered_list_nested() {
+    fn hyperlinks() {
         let md = parse();
-        assert!(md.contains("  - Sub-item a"), "ordered sub-item a missing");
-        assert!(md.contains("  - Sub-item b"), "ordered sub-item b missing");
-    }
-
-    #[test]
-    fn hyperlink() {
-        let md = parse();
+        assert!(
+            md.contains("[example.com](https://example.com)"),
+            "example.com hyperlink missing"
+        );
         assert!(
             md.contains("[python-docx on GitHub](https://github.com/python-openxml/python-docx)"),
             "github hyperlink missing"
-        );
-
-        assert!(
-            md.contains("[example.com](https://example.com)"),
-            "hyperlink to example.com missing"
         );
     }
 
@@ -606,13 +556,13 @@ mod tests {
         let md = parse();
         assert!(
             md.contains("| Name |") || md.contains("| **Name**"),
-            "table header row missing"
+            "table header missing"
         );
         assert!(md.contains("|---"), "table GFM separator missing");
-        assert!(md.contains("| Alice |"), "table row Alice missing");
-        assert!(md.contains("| New York |"), "table cell New York missing");
-        assert!(md.contains("| Bob |"), "table row Bob missing");
-        assert!(md.contains("| Carol |"), "table row Carol missing");
+        assert!(md.contains("| Alice |"), "Alice row missing");
+        assert!(md.contains("| New York |"), "New York cell missing");
+        assert!(md.contains("| Bob |"), "Bob row missing");
+        assert!(md.contains("| Carol |"), "Carol row missing");
         assert!(md.contains("| 95 |"), "Alice score missing");
         assert!(
             md.contains("| 87 |") || md.contains("| 88 |"),
@@ -623,7 +573,6 @@ mod tests {
 
     #[test]
     fn table_no_blank_lines_inside() {
-        // this test isn't really docx spec, its just because its md..
         let md = parse();
         let table_start = md
             .find("| Name |")
@@ -638,6 +587,15 @@ mod tests {
             !table.contains("\n\n"),
             "blank line found inside table:\n{}",
             table
+        );
+    }
+
+    #[test]
+    fn hyperlink_inside_table() {
+        let md = parse();
+        assert!(
+            md.contains("[Hyperlink in cell](https://example.com)"),
+            "hyperlink in table cell missing or malformed"
         );
     }
 
@@ -664,15 +622,11 @@ mod tests {
             .find("Line two (soft break, same paragraph).")
             .expect("'Line two' missing");
         assert!(pos2 > pos1, "line two should come after line one");
-        let between = &md[pos1..pos2];
         assert!(
-            between.contains('\n'),
-            "no line break between 'Line one.' and 'Line two' they are joined"
+            &md[pos1..pos2].contains('\n'),
+            "line one and line two are joined without a break"
         );
-        assert!(
-            md.contains("  \n"),
-            "markdown soft line break (two spaces + newline) missing"
-        );
+        assert!(md.contains("  \n"), "markdown soft line break missing");
     }
 
     #[test]
@@ -682,23 +636,14 @@ mod tests {
     }
 
     #[test]
-    fn unicode_content() {
+    fn unicode() {
         let md = parse();
-        assert!(md.contains("中文"), "CJK unicode missing");
-        assert!(md.contains("שלום"), "Hebrew unicode missing");
+        assert!(md.contains("中文"), "CJK missing");
+        assert!(md.contains("שלום"), "Hebrew missing");
     }
 
     #[test]
-    fn hyperlink_inside_table() {
-        let md = parse();
-        assert!(
-            md.contains("[Hyperlink in cell](https://example.com)"),
-            "hyperlink in table cell missing or malformed"
-        );
-    }
-
-    #[test]
-    fn content_around_empty_paragraphs() {
+    fn empty_paragraphs() {
         let md = parse();
         assert!(
             md.contains("Paragraph before empty."),
@@ -711,12 +656,9 @@ mod tests {
     }
 
     #[test]
-    fn no_raw_xml_in_output() {
+    fn no_raw_xml() {
         let md = parse();
-        assert!(
-            !md.contains("<w:"),
-            "raw WordprocessingML XML leaked into output"
-        );
-        assert!(!md.contains("<a:"), "raw DrawingML XML leaked into output");
+        assert!(!md.contains("<w:"), "WordprocessingML XML leaked");
+        assert!(!md.contains("<a:"), "DrawingML XML leaked");
     }
 }

@@ -82,6 +82,11 @@ impl PptxContext {
 
     fn apply_run_style(&self, text: &str) -> String {
         let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return text.to_string();
+        }
+        let lead = if text.starts_with(' ') { " " } else { "" };
+        let trail = if text.ends_with(' ') { " " } else { "" };
         let s = match (self.run.bold, self.run.italic) {
             (true, true) => format!("***{}***", trimmed),
             (true, false) => format!("**{}**", trimmed),
@@ -98,8 +103,6 @@ impl PptxContext {
         } else {
             s
         };
-        let lead = if text.starts_with(' ') { " " } else { "" };
-        let trail = if text.ends_with(' ') { " " } else { "" };
         format!("{}{}{}", lead, s, trail)
     }
 
@@ -167,6 +170,7 @@ fn get_attr(e: &quick_xml::events::BytesStart, key: &[u8]) -> Option<String> {
     None
 }
 
+// yeah im just guessing..
 fn mar_l_to_level(mar_l: u32) -> u8 {
     match mar_l {
         0..=400_000 => 0,
@@ -481,13 +485,17 @@ fn parse_slide(xml: &str, mut ctx: PptxContext) -> Result<String, ParsingError> 
                     continue;
                 }
                 let raw = parse_text(&*e)?;
-                if raw.trim().is_empty() && !ctx.in_cell {
-                    continue;
-                }
-                let styled = ctx.apply_run_style(&raw);
-                if ctx.hlink_run_text.is_none() {
+                // pass whitespace-only runs through unstyled — they are spacing between runs
+                let styled = if raw.trim().is_empty() {
                     ctx.run = RunStyle::default();
-                }
+                    raw.clone()
+                } else {
+                    let s = ctx.apply_run_style(&raw);
+                    if ctx.hlink_run_text.is_none() {
+                        ctx.run = RunStyle::default();
+                    }
+                    s
+                };
                 ctx.push_run_text(&styled, &raw);
             }
 
@@ -513,8 +521,8 @@ fn parse_slide(xml: &str, mut ctx: PptxContext) -> Result<String, ParsingError> 
                             .and_then(|rid| ctx.relationships.get(&rid))
                             .cloned()
                             .unwrap_or_default();
-                        let link = format!("[{}]({})", htext.trim(), url);
-                        ctx.para_buf.push_str(&link);
+                        ctx.para_buf
+                            .push_str(&format!("[{}]({})", htext.trim(), url));
                     }
                     ctx.active_hlink_rid = None;
                     ctx.run = RunStyle::default();
@@ -593,6 +601,7 @@ pub fn parse_pptx(content: impl AsRef<[u8]>, inline: bool) -> Result<String, Par
 
     Ok(slides.join("\n\n---\n\n"))
 }
+
 #[cfg(test)]
 mod tests {
     use super::parse_pptx;
@@ -603,18 +612,13 @@ mod tests {
     }
 
     #[test]
-    fn slide_separators() {
+    fn slide_structure() {
         let md = parse();
         assert_eq!(
             md.matches("\n---\n").count(),
             6,
             "expected 6 slide separators"
         );
-    }
-
-    #[test]
-    fn no_trailing_separator() {
-        let md = parse();
         assert!(
             !md.trim_end().ends_with("---"),
             "must not end with separator"
@@ -622,14 +626,9 @@ mod tests {
     }
 
     #[test]
-    fn slide1_title() {
+    fn slide1_title_and_subtitle() {
         let md = parse();
         assert!(md.contains("# Comprehensive PPTX Fixture"), "title missing");
-    }
-
-    #[test]
-    fn slide1_subtitle() {
-        let md = parse();
         assert!(
             md.contains("Subtitle text on title slide"),
             "subtitle missing"
@@ -637,65 +636,39 @@ mod tests {
     }
 
     #[test]
-    fn slide1_notes() {
+    fn speaker_notes() {
         let md = parse();
         assert!(
             md.contains("Speaker notes for slide one."),
             "slide 1 notes missing"
         );
-    }
-
-    #[test]
-    fn plain_text() {
-        let md = parse();
-        assert!(md.contains("Normal text."), "plain text missing");
-    }
-
-    #[test]
-    fn bold() {
-        let md = parse();
-        assert!(md.contains("**Bold.**"), "bold missing");
-    }
-
-    #[test]
-    fn italic() {
-        let md = parse();
-        assert!(md.contains("*Italic.*"), "italic missing");
-    }
-
-    #[test]
-    fn bold_italic() {
-        let md = parse();
         assert!(
-            md.contains("***Bold-italic.***") || md.contains("**_Bold-italic._**"),
-            "bold-italic missing"
+            md.contains("These are the speaker notes for slide seven."),
+            "slide 7 notes missing"
         );
     }
 
     #[test]
-    fn strikethrough() {
+    fn inline_formatting() {
         let md = parse();
+        assert!(md.contains("Normal text."), "plain text missing");
+        assert!(md.contains("**Bold.**"), "bold missing");
+        assert!(md.contains("*Italic.*"), "italic missing");
+        assert!(
+            md.contains("***Bold-italic.***") || md.contains("**_Bold-italic._**"),
+            "bold-italic missing"
+        );
         assert!(md.contains("~~Strikethrough.~~"), "strikethrough missing");
-    }
-
-    #[test]
-    fn underline() {
-        let md = parse();
         assert!(md.contains("<u>Underline.</u>"), "underline missing");
     }
 
     #[test]
-    fn hyperlink_example() {
+    fn hyperlinks() {
         let md = parse();
         assert!(
             md.contains("[example.com](https://example.com)"),
             "example.com hyperlink missing"
         );
-    }
-
-    #[test]
-    fn hyperlink_github() {
-        let md = parse();
         assert!(
             md.contains("[python-docx on GitHub](https://github.com/python-openxml/python-docx)"),
             "github hyperlink missing"
@@ -703,23 +676,13 @@ mod tests {
     }
 
     #[test]
-    fn bullet_items() {
+    fn bullet_lists() {
         let md = parse();
         assert!(md.contains("- Bullet item one"), "bullet 1 missing");
         assert!(md.contains("- Bullet item two"), "bullet 2 missing");
         assert!(md.contains("- Bullet item three"), "bullet 3 missing");
-    }
-
-    #[test]
-    fn nested_bullets() {
-        let md = parse();
         assert!(md.contains("  - Nested bullet A"), "nested A missing");
         assert!(md.contains("  - Nested bullet B"), "nested B missing");
-    }
-
-    #[test]
-    fn deeply_nested_bullet() {
-        let md = parse();
         assert!(
             md.contains("    - Deeply nested bullet"),
             "deeply nested missing"
@@ -727,27 +690,17 @@ mod tests {
     }
 
     #[test]
-    fn table_headers() {
-        let md = parse();
-        assert!(md.contains("Name"), "table header Name missing");
-        assert!(md.contains("Age"), "table header Age missing");
-        assert!(md.contains("City"), "table header City missing");
-        assert!(md.contains("Score"), "table header Score missing");
-    }
-
-    #[test]
-    fn table_rows() {
-        let md = parse();
-        assert!(md.contains("Alice"), "Alice missing");
-        assert!(md.contains("New York"), "New York missing");
-        assert!(md.contains("Bob"), "Bob missing");
-        assert!(md.contains("Carol"), "Carol missing");
-    }
-
-    #[test]
-    fn table_separator() {
+    fn table_structure() {
         let md = parse();
         assert!(md.contains("|---"), "table GFM separator missing");
+        assert!(
+            md.contains("| Name |") || md.contains("| **Name**"),
+            "table header missing"
+        );
+        assert!(md.contains("| Alice |"), "Alice row missing");
+        assert!(md.contains("| New York |"), "New York cell missing");
+        assert!(md.contains("| Bob |"), "Bob row missing");
+        assert!(md.contains("| Carol |"), "Carol row missing");
     }
 
     #[test]
@@ -760,18 +713,10 @@ mod tests {
     }
 
     #[test]
-    fn unicode_cjk() {
+    fn unicode() {
         let md = parse();
         assert!(md.contains("中文"), "CJK missing");
-    }
-
-    #[test]
-    fn speaker_notes() {
-        let md = parse();
-        assert!(
-            md.contains("These are the speaker notes for slide seven."),
-            "slide 7 notes missing"
-        );
+        assert!(md.contains("שלום"), "Hebrew missing");
     }
 
     #[test]
