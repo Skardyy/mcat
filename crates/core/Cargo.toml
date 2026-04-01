@@ -2,8 +2,8 @@
 name = "mcat"
 version = "0.5.2"
 authors = ["Meron Bossin"]
-description = "a powerfull extended cat command, to cat all the things you couldn't before"
-keywords = ["cat", "inline", "markitdown", "terminal", "file-converter"]
+description = "Terminal image, video, and Markdown viewer"
+keywords = ["sixel", "iterm", "markdown", "kitty", "file-converter"]
 categories = [
   "command-line-utilities",
   "text-processing",

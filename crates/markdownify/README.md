@@ -1,6 +1,6 @@
 # markdownify
 
-A Rust library for converting various document formats to Markdown, part of the [mcat](https://github.com/Skardyy/mcat) project.
+A library for converting various document formats to Markdown, part of the [mcat](https://github.com/Skardyy/mcat) project.
 
 For full API documentation, see [docs.rs/markdownify](https://docs.rs/markdownify).
 
