@@ -3,7 +3,7 @@
 - improved odt,odp to md in markdownify
 - improved docx to md in markdownify
 - improved pptx to md in markdownify
-- fixed regression in markdownify, zip based formats would be parsed as zip instead of docx for exmp
+- fixed regression in markdownify, where zip based formats would be parsed as zip instead of docx for exmp
 
 ## V0.5.1
 
