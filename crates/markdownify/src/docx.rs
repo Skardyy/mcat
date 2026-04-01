@@ -38,6 +38,7 @@ struct DocxContext {
     images: HashMap<String, (String, String)>,
     numbering: HashMap<(String, String), bool>,
     inline: bool,
+    in_drawing: bool,
 }
 
 impl DocxContext {
@@ -61,6 +62,7 @@ impl DocxContext {
             images,
             numbering,
             inline,
+            in_drawing: false,
         }
     }
 
@@ -316,6 +318,9 @@ pub fn parse_docx(content: impl AsRef<[u8]>, inline: bool) -> Result<String, Par
                     ctx.active_hyperlink_rid = get_attr(&e, b"r:id");
                     ctx.hyperlink_text.clear();
                 }
+                b"w:drawing" => {
+                    ctx.in_drawing = true;
+                }
                 _ => {}
             },
 
@@ -395,20 +400,14 @@ pub fn parse_docx(content: impl AsRef<[u8]>, inline: bool) -> Result<String, Par
             },
 
             Ok(Event::Text(e)) => {
+                if ctx.in_drawing {
+                    continue;
+                }
                 let raw = parse_text(&*e)?;
                 let styled = ctx.apply_run_style(&raw);
                 ctx.reset_run_style();
 
-                if ctx.in_table || ctx.active_hyperlink_rid.is_some() {
-                    ctx.push_text(&styled);
-                } else if ctx.para.title {
-                    ctx.markdown.push_str(&format!("# {}", styled));
-                    ctx.para.title = false;
-                } else if ctx.para.heading_level > 0 {
-                    let hashes = "#".repeat(ctx.para.heading_level as usize + 1);
-                    ctx.markdown.push_str(&format!("{} {}", hashes, styled));
-                    ctx.para.heading_level = 0;
-                } else if ctx.para.indent > 0 {
+                if !ctx.in_table && ctx.para.indent > 0 {
                     let depth = ctx.para.indent as usize;
                     let ilvl = (depth - 1).to_string();
                     let ordered = ctx
@@ -425,13 +424,22 @@ pub fn parse_docx(content: impl AsRef<[u8]>, inline: bool) -> Result<String, Par
                         }
                         ctx.para.order_counters[depth - 1] += 1;
                         let n = ctx.para.order_counters[depth - 1];
-                        ctx.markdown
-                            .push_str(&format!("{}{}. {}", indent_str, n, styled));
+                        ctx.markdown.push_str(&format!("{}{}. ", indent_str, n));
                     } else {
-                        ctx.markdown
-                            .push_str(&format!("{}- {}", indent_str, styled));
+                        ctx.markdown.push_str(&format!("{}- ", indent_str));
                     }
                     ctx.para.indent = -1;
+                }
+
+                if ctx.in_table || ctx.active_hyperlink_rid.is_some() {
+                    ctx.push_text(&styled);
+                } else if ctx.para.title {
+                    ctx.markdown.push_str(&format!("# {}", styled));
+                    ctx.para.title = false;
+                } else if ctx.para.heading_level > 0 {
+                    let hashes = "#".repeat(ctx.para.heading_level as usize + 1);
+                    ctx.markdown.push_str(&format!("{} {}", hashes, styled));
+                    ctx.para.heading_level = 0;
                 } else {
                     ctx.markdown.push_str(&styled);
                 }
@@ -456,12 +464,15 @@ pub fn parse_docx(content: impl AsRef<[u8]>, inline: bool) -> Result<String, Par
                     if let Some(rid) = ctx.active_hyperlink_rid.take() {
                         let text = std::mem::take(&mut ctx.hyperlink_text);
                         if let Some(url) = ctx.relationships.get(&rid) {
-                            let link = format!("[{}]({})", text.trim(), url);
+                            let link = format!("[{}]({})", text, url);
                             ctx.push_text(&link);
                         } else {
                             ctx.push_text(&text);
                         }
                     }
+                }
+                b"w:drawing" => {
+                    ctx.in_drawing = false;
                 }
                 _ => {}
             },
