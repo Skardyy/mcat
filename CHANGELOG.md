@@ -1,3 +1,10 @@
+## V0.5.2
+
+- improved odt,odp to md in markdownify
+- improved docx to md in markdownify
+- improved pptx to md in markdownify
+- fixed regression in markdownify, zip based formats would be parsed as zip instead of docx for exmp
+
 ## V0.5.1
 
 - added `--padding` flag for the markdown viewer, applies horizontal padding
