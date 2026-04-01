@@ -41,6 +41,7 @@ struct DocxContext {
     images: HashMap<String, (String, String)>,
     /// (numId, ilvl) -> is_ordered
     numbering: HashMap<(String, String), bool>,
+    inline: bool,
 }
 
 impl DocxContext {
@@ -48,6 +49,7 @@ impl DocxContext {
         relationships: HashMap<String, String>,
         images: HashMap<String, (String, String)>,
         numbering: HashMap<(String, String), bool>,
+        inline: bool,
     ) -> Self {
         Self {
             markdown: String::new(),
@@ -61,6 +63,7 @@ impl DocxContext {
             relationships,
             images,
             numbering,
+            inline,
         }
     }
 
@@ -278,7 +281,7 @@ fn load_images(
     map
 }
 
-pub fn parse_docx(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
+pub fn parse_docx(content: impl AsRef<[u8]>, inline: bool) -> Result<String, ParsingError> {
     let bytes = content.as_ref();
     let mut archive = ZipArchive::new(Cursor::new(bytes))
         .map_err(|e| ParsingError::ArchiveError(e.to_string()))?;
@@ -298,7 +301,7 @@ pub fn parse_docx(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
         }
     }
 
-    let mut ctx = DocxContext::new(rels, images, numbering);
+    let mut ctx = DocxContext::new(rels, images, numbering, inline);
     let mut reader = Reader::from_str(&xml_content);
     let mut buf = Vec::new();
 
@@ -376,7 +379,11 @@ pub fn parse_docx(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
                     if let Some(rid) = get_attr(&e, b"r:embed")
                         && let Some((media_type, b64)) = ctx.images.get(&rid)
                     {
-                        let img = format!("![Image](data:{};base64,{})", media_type, b64);
+                        let img = if ctx.inline {
+                            format!("![Image](data:{};base64,{})", media_type, b64)
+                        } else {
+                            "![Image]()".to_string()
+                        };
                         ctx.push_text(&img);
                     }
                 }
@@ -474,10 +481,8 @@ mod tests {
     static FIXTURE: &[u8] = include_bytes!("../fixtures/fixture.docx");
 
     fn parse() -> String {
-        parse_docx(FIXTURE).expect("fixture should parse without error")
+        parse_docx(FIXTURE, true).expect("fixture should parse without error")
     }
-
-    // ## headings ##
 
     #[test]
     fn heading_title() {
@@ -495,8 +500,6 @@ mod tests {
         assert!(md.contains("### Heading 2"), "H2 missing");
         assert!(md.contains("#### Heading 3"), "H3 missing");
     }
-
-    // ## inline formatting ##
 
     #[test]
     fn bold() {
@@ -537,8 +540,6 @@ mod tests {
         assert!(md.contains("Normal text."), "normal paragraph text missing");
     }
 
-    // ## unordered lists ##
-
     #[test]
     fn unordered_list_items() {
         let md = parse();
@@ -564,8 +565,6 @@ mod tests {
         );
     }
 
-    // ## ordered lists ##
-
     #[test]
     fn ordered_list_items() {
         let md = parse();
@@ -580,8 +579,6 @@ mod tests {
         assert!(md.contains("  - Sub-item a"), "ordered sub-item a missing");
         assert!(md.contains("  - Sub-item b"), "ordered sub-item b missing");
     }
-
-    // ## hyperlinks ##
 
     #[test]
     fn hyperlink_example_com() {
@@ -600,8 +597,6 @@ mod tests {
             "github hyperlink missing"
         );
     }
-
-    // ## tables ##
 
     #[test]
     fn table_headers() {
@@ -627,8 +622,6 @@ mod tests {
         assert!(md.contains("|---"), "table markdown separator missing");
     }
 
-    // ## inline image ##
-
     #[test]
     fn inline_image_base64() {
         let md = parse();
@@ -638,15 +631,11 @@ mod tests {
         );
     }
 
-    // ## page break ##
-
     #[test]
     fn page_break() {
         let md = parse();
         assert!(md.contains("---"), "page break (---) missing");
     }
-
-    // ## line break ##
 
     #[test]
     fn soft_line_break() {
@@ -665,15 +654,11 @@ mod tests {
         );
     }
 
-    // ## tab ##
-
     #[test]
     fn tab_character() {
         let md = parse();
         assert!(md.contains("Column A\tColumn B"), "tab character missing");
     }
-
-    // ## unicode ##
 
     #[test]
     fn unicode_content() {
@@ -681,8 +666,6 @@ mod tests {
         assert!(md.contains("中文"), "CJK unicode missing");
         assert!(md.contains("שלום"), "Hebrew unicode missing");
     }
-
-    // ## mixed cell content ##
 
     #[test]
     fn hyperlink_inside_table() {
@@ -692,8 +675,6 @@ mod tests {
             "hyperlink text inside table cell missing"
         );
     }
-
-    // ## empty paragraphs ##
 
     #[test]
     fn content_around_empty_paragraphs() {
