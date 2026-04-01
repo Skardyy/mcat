@@ -477,7 +477,7 @@ mod tests {
         parse_docx(FIXTURE).expect("fixture should parse without error")
     }
 
-    // ## Headings ##
+    // ## headings ##
 
     #[test]
     fn heading_title() {
@@ -496,7 +496,7 @@ mod tests {
         assert!(md.contains("#### Heading 3"), "H3 missing");
     }
 
-    // ## Inline formatting ##
+    // ## inline formatting ##
 
     #[test]
     fn bold() {
@@ -513,7 +513,6 @@ mod tests {
     #[test]
     fn bold_italic() {
         let md = parse();
-        // bold wraps italic or vice-versa depending on run order
         assert!(
             md.contains("***Bold-italic.***") || md.contains("**_Bold-italic._**"),
             "bold-italic missing"
@@ -532,15 +531,13 @@ mod tests {
         assert!(md.contains("<u>Underline.</u>"), "underline missing");
     }
 
-    // ## Paragraph formatting ##
-
     #[test]
     fn plain_paragraph_text() {
         let md = parse();
         assert!(md.contains("Normal text."), "normal paragraph text missing");
     }
 
-    // ## Unordered lists ##
+    // ## unordered lists ##
 
     #[test]
     fn unordered_list_items() {
@@ -567,7 +564,7 @@ mod tests {
         );
     }
 
-    // ## Ordered lists ##
+    // ## ordered lists ##
 
     #[test]
     fn ordered_list_items() {
@@ -584,7 +581,7 @@ mod tests {
         assert!(md.contains("  - Sub-item b"), "ordered sub-item b missing");
     }
 
-    // ## Hyperlinks ##
+    // ## hyperlinks ##
 
     #[test]
     fn hyperlink_example_com() {
@@ -604,7 +601,7 @@ mod tests {
         );
     }
 
-    // ## Tables ##
+    // ## tables ##
 
     #[test]
     fn table_headers() {
@@ -627,11 +624,10 @@ mod tests {
     #[test]
     fn table_markdown_separator() {
         let md = parse();
-        // markdown tables require a separator row of |---|
         assert!(md.contains("|---"), "table markdown separator missing");
     }
 
-    // ## Inline image ##
+    // ## inline image ##
 
     #[test]
     fn inline_image_base64() {
@@ -642,7 +638,7 @@ mod tests {
         );
     }
 
-    // ## Page break ##
+    // ## page break ##
 
     #[test]
     fn page_break() {
@@ -650,7 +646,7 @@ mod tests {
         assert!(md.contains("---"), "page break (---) missing");
     }
 
-    // ## Line break ##
+    // ## line break ##
 
     #[test]
     fn soft_line_break() {
@@ -663,14 +659,13 @@ mod tests {
             md.contains("Line two (soft break, same paragraph)."),
             "line break content 'line two' missing"
         );
-        // soft break emits "  \n"
         assert!(
             md.contains("  \n"),
             "soft line break (two spaces + newline) missing"
         );
     }
 
-    // ## Tab ##
+    // ## tab ##
 
     #[test]
     fn tab_character() {
@@ -678,7 +673,7 @@ mod tests {
         assert!(md.contains("Column A\tColumn B"), "tab character missing");
     }
 
-    // ## Unicode ##
+    // ## unicode ##
 
     #[test]
     fn unicode_content() {
@@ -687,7 +682,7 @@ mod tests {
         assert!(md.contains("שלום"), "Hebrew unicode missing");
     }
 
-    // ## Mixed cell content ##
+    // ## mixed cell content ##
 
     #[test]
     fn hyperlink_inside_table() {
@@ -698,7 +693,7 @@ mod tests {
         );
     }
 
-    // ## Empty paragraphs ##
+    // ## empty paragraphs ##
 
     #[test]
     fn content_around_empty_paragraphs() {
@@ -713,18 +708,9 @@ mod tests {
         );
     }
 
-    // ## No crash / valid output ##
-
-    #[test]
-    fn output_is_nonempty() {
-        let md = parse();
-        assert!(!md.trim().is_empty(), "output should not be empty");
-    }
-
     #[test]
     fn no_raw_xml_in_output() {
         let md = parse();
-        // No XML tags should leak into output
         assert!(
             !md.contains("<w:"),
             "raw WordprocessingML XML leaked into output"

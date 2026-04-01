@@ -11,6 +11,7 @@ documentation = "https://github.com/Skardyy/mcat"
 license = "MIT"
 readme = "README.md"
 edition = "2024"
+exclude = ["src/fixtures/"]
 
 [dependencies]
 thiserror.workspace = true
