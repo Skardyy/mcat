@@ -226,7 +226,7 @@ fn render_item<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     };
 
     let yellow = ctx.theme.yellow.fg.clone();
-    let content = collect(node, ctx, "\n\n");
+    let content = collect(node, ctx, "\n");
     let content = content.trim();
     let depth = ctx.list_depth - 1;
 
