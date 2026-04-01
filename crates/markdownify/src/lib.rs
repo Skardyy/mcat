@@ -133,7 +133,6 @@ impl MarkdownifyInput {
         let bytes = &self.bytes;
         let handlers: &[(Checker, &str, Parser)] = &[
             (is_tar, "tar", &|| archives::parse_tar(bytes, inline)),
-            (is_zip, "zip", &|| archives::parse_zip(bytes, inline)),
             (is_docx, "docx", &|| docx::parse_docx(bytes)),
             (is_pptx, "pptx", &|| pptx::parse_pptx(bytes)),
             (is_odt, "odt", &|| opendoc::parse_opendoc(bytes)),
@@ -141,6 +140,7 @@ impl MarkdownifyInput {
             (is_ods, "ods", &|| sheets::parse_sheets(bytes)),
             (is_xlsx, "xlsx", &|| sheets::parse_sheets(bytes)),
             (is_xls, "xls", &|| sheets::parse_sheets(bytes)),
+            (is_zip, "zip", &|| archives::parse_zip(bytes, inline)),
             (|_| false, "csv", &|| sheets::parse_csv(bytes)),
             (|_| false, "xlsm", &|| sheets::parse_sheets(bytes)),
             (|_| false, "xlsb", &|| sheets::parse_sheets(bytes)),
