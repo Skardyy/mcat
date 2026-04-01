@@ -14,7 +14,7 @@ use std::{
 use tracing::{info, warn};
 
 use crate::{
-    config::{ColorMode, McatConfig, MdImageMode, OutputFormat},
+    config::{ColorMode, McatConfig, OutputFormat},
     image_viewer::{clear_screen, run_interactive_viewer, show_help_prompt},
     markdown_viewer,
     mcat_file::{McatFile, McatKind},
@@ -53,14 +53,6 @@ pub fn cat(files: Vec<McatFile>, out: &mut impl Write, config: &McatConfig) -> R
         return Ok(());
     }
 
-    let inline_images = config.force_embed_images
-        || (config
-            .output
-            .as_ref()
-            .is_none_or(|v| !matches!(v, OutputFormat::Html | OutputFormat::Md))
-            && config.color != ColorMode::Never
-            && config.md_image != MdImageMode::None);
-
     let mcat_file = if files.len() > 1 {
         if config.output.as_ref() == Some(&OutputFormat::Image) {
             anyhow::bail!("Cannot turn multiple files into an image.")
@@ -95,7 +87,7 @@ pub fn cat(files: Vec<McatFile>, out: &mut impl Write, config: &McatConfig) -> R
 
         let files = files
             .iter()
-            .map(|v| v.to_markdown_input(inline_images))
+            .map(|v| v.to_markdown_input(config.inline_images_in_md))
             .collect::<Result<Vec<_>>>()?;
         let md = markdownify::convert_files(files)?;
         &McatFile::from_bytes(md.into_bytes(), Some("md"))?
@@ -120,11 +112,13 @@ pub fn cat(files: Vec<McatFile>, out: &mut impl Write, config: &McatConfig) -> R
     // converting
     match output {
         Some(OutputFormat::Html) => {
-            let html = mcat_file.to_html(Some(config.theme.clone()))?;
+            let html = mcat_file.to_html(Some(config.theme.clone()), config.inline_images_in_md)?;
             out.write_all(html.as_bytes())?
         }
         Some(OutputFormat::Md) => {
-            let md = mcat_file.to_markdown_input(false)?.convert()?;
+            let md = mcat_file
+                .to_markdown_input(config.inline_images_in_md)?
+                .convert()?;
             out.write_all(md.as_bytes())?
         }
         Some(OutputFormat::Image) => {
@@ -158,7 +152,9 @@ pub fn cat(files: Vec<McatFile>, out: &mut impl Write, config: &McatConfig) -> R
         }
         Some(OutputFormat::Interactive) => unreachable!(),
         None => {
-            let md = mcat_file.to_markdown_input(inline_images)?.convert()?;
+            let md = mcat_file
+                .to_markdown_input(config.inline_images_in_md)?
+                .convert()?;
 
             let is_tty = stdout().is_tty();
             let use_color = match config.color {

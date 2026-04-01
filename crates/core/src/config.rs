@@ -6,6 +6,7 @@ use clap::{
     },
 };
 use clap_complete::Shell;
+use crossterm::tty::IsTty;
 use rasteroid::{
     RasterEncoder,
     term_misc::{self, EnvIdentifiers, Wininfo},
@@ -345,6 +346,9 @@ pub struct McatConfig {
 
     #[arg(skip)]
     pub encoder: Option<RasterEncoder>,
+
+    #[arg(skip)]
+    pub inline_images_in_md: bool,
 }
 
 impl McatConfig {
@@ -364,6 +368,15 @@ impl McatConfig {
         } else {
             RasterEncoder::auto_detect(&env)
         };
+
+        self.inline_images_in_md = self.force_embed_images
+            || (self
+                .output
+                .as_ref()
+                .is_none_or(|v| !matches!(v, OutputFormat::Html | OutputFormat::Md))
+                && self.color != ColorMode::Never
+                && self.md_image != MdImageMode::None
+                && std::io::stdout().is_tty());
 
         debug!(
             ?encoder,

@@ -136,8 +136,8 @@ impl McatFile {
             .unwrap_or_default()
     }
 
-    pub fn to_html(&self, theme_for_style: Option<Theme>) -> Result<String> {
-        let md = self.to_markdown_input(false)?.convert()?;
+    pub fn to_html(&self, theme_for_style: Option<Theme>, inline_images: bool) -> Result<String> {
+        let md = self.to_markdown_input(inline_images)?.convert()?;
         let should_style = theme_for_style.is_some();
         let html =
             markdown_viewer::md_to_html(&md, &theme_for_style.unwrap_or_default(), should_style);
@@ -161,7 +161,7 @@ impl McatFile {
         let img: DynamicImage = match self.kind {
             McatKind::PreMarkdown | McatKind::Markdown => {
                 let theme = config.theme.clone();
-                let html = self.to_html(Some(theme))?;
+                let html = self.to_html(Some(theme), config.inline_images_in_md)?;
                 let file = McatFile::from_bytes(html.into_bytes(), Some("html"))?;
                 html_to_image(&file)?
             }

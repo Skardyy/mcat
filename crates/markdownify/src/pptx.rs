@@ -485,7 +485,6 @@ fn parse_slide(xml: &str, mut ctx: PptxContext) -> Result<String, ParsingError> 
                     continue;
                 }
                 let raw = parse_text(&*e)?;
-                // pass whitespace-only runs through unstyled — they are spacing between runs
                 let styled = if raw.trim().is_empty() {
                     ctx.run = RunStyle::default();
                     raw.clone()
