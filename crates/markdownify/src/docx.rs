@@ -18,28 +18,24 @@ struct RunStyle {
 #[derive(Default)]
 struct ParaStyle {
     title: bool,
-    heading_level: u8,        // 0 = not a heading, 1-9 = heading depth
-    indent: i8,               // -1 = just finished list item, 0 = none, >0 = depth
-    num_id: Option<String>,   // w:numId for the current paragraph
-    order_counters: Vec<u32>, // per-depth counters for ordered lists
+    heading_level: u8,
+    indent: i8,
+    num_id: Option<String>,
+    order_counters: Vec<u32>,
 }
 
 struct DocxContext {
     markdown: String,
-
     para: ParaStyle,
     run: RunStyle,
-
     in_table: bool,
+    in_cell: bool,
     table_rows: Vec<Vec<String>>,
     current_row: Vec<String>,
-
     active_hyperlink_rid: Option<String>,
     hyperlink_text: String,
     relationships: HashMap<String, String>,
-
     images: HashMap<String, (String, String)>,
-    /// (numId, ilvl) -> is_ordered
     numbering: HashMap<(String, String), bool>,
     inline: bool,
 }
@@ -56,6 +52,7 @@ impl DocxContext {
             para: ParaStyle::default(),
             run: RunStyle::default(),
             in_table: false,
+            in_cell: false,
             table_rows: Vec::new(),
             current_row: Vec::new(),
             active_hyperlink_rid: None,
@@ -83,23 +80,31 @@ impl DocxContext {
     }
 
     fn push_text(&mut self, text: &str) {
-        if self.in_table {
-            self.current_row.push(text.to_string());
-        } else if self.active_hyperlink_rid.is_some() {
+        if self.active_hyperlink_rid.is_some() {
             self.hyperlink_text.push_str(text);
+        } else if self.in_table {
+            if self.in_cell
+                && let Some(last) = self.current_row.last_mut()
+            {
+                last.push_str(text);
+                return;
+            }
+            self.current_row.push(text.to_string());
         } else {
             self.markdown.push_str(text);
         }
     }
 
     fn end_paragraph(&mut self) {
+        if self.in_table {
+            return;
+        }
         if self.para.indent == -1 {
             self.para.indent = 0;
             self.markdown.push_str("  \n");
         } else {
             self.markdown.push_str("\n\n");
         }
-
         let counters = std::mem::take(&mut self.para.order_counters);
         self.para = ParaStyle::default();
         self.para.order_counters = counters;
@@ -140,7 +145,6 @@ fn get_attr(e: &quick_xml::events::BytesStart, key: &[u8]) -> Option<String> {
 fn load_relationships(archive: &mut ZipArchive<Cursor<&[u8]>>) -> HashMap<String, String> {
     let mut map = HashMap::new();
     let mut xml = String::new();
-
     for path in &["word/_rels/document.xml.rels", "_rels/.rels"] {
         if let Ok(mut f) = archive.by_name(path) {
             let _ = f.read_to_string(&mut xml);
@@ -150,7 +154,6 @@ fn load_relationships(archive: &mut ZipArchive<Cursor<&[u8]>>) -> HashMap<String
     if xml.is_empty() {
         return map;
     }
-
     let mut reader = Reader::from_str(&xml);
     let mut buf = Vec::new();
     loop {
@@ -176,16 +179,13 @@ fn load_numbering(archive: &mut ZipArchive<Cursor<&[u8]>>) -> HashMap<(String, S
     if xml.is_empty() {
         return HashMap::new();
     }
-
     let mut abstract_level_ordered: HashMap<(String, String), bool> = HashMap::new();
     let mut num_to_abstract: HashMap<String, String> = HashMap::new();
-
     let mut reader = Reader::from_str(&xml);
     let mut buf = Vec::new();
     let mut current_abstract_id: Option<String> = None;
     let mut current_ilvl: Option<String> = None;
     let mut current_num_id: Option<String> = None;
-
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e)) => match e.name().as_ref() {
@@ -231,7 +231,6 @@ fn load_numbering(archive: &mut ZipArchive<Cursor<&[u8]>>) -> HashMap<(String, S
         }
         buf.clear();
     }
-
     let mut result = HashMap::new();
     for (num_id, abs_id) in &num_to_abstract {
         for ((a_id, ilvl), ordered) in &abstract_level_ordered {
@@ -254,7 +253,6 @@ fn load_images(
         } else {
             target.clone()
         };
-
         let media_type = if path.ends_with(".png") {
             "image/png"
         } else if path.ends_with(".jpg") || path.ends_with(".jpeg") {
@@ -266,7 +264,6 @@ fn load_images(
         } else {
             continue;
         };
-
         if let Ok(mut f) = archive.by_name(&path) {
             let mut bytes = Vec::new();
             if f.read_to_end(&mut bytes).is_ok() {
@@ -310,6 +307,10 @@ pub fn parse_docx(content: impl AsRef<[u8]>, inline: bool) -> Result<String, Par
             Ok(Event::Start(e)) => match e.name().as_ref() {
                 b"w:tbl" => {
                     ctx.in_table = true;
+                }
+                b"w:tc" => {
+                    ctx.in_cell = true;
+                    ctx.current_row.push(String::new());
                 }
                 b"w:hyperlink" => {
                     ctx.active_hyperlink_rid = get_attr(&e, b"r:id");
@@ -375,6 +376,9 @@ pub fn parse_docx(content: impl AsRef<[u8]>, inline: bool) -> Result<String, Par
                 b"w:tab" => {
                     ctx.push_text("\t");
                 }
+                b"w:br" => {
+                    ctx.push_text("\n");
+                }
                 b"a:blip" => {
                     if let Some(rid) = get_attr(&e, b"r:embed")
                         && let Some((media_type, b64)) = ctx.images.get(&rid)
@@ -438,6 +442,9 @@ pub fn parse_docx(content: impl AsRef<[u8]>, inline: bool) -> Result<String, Par
                     ctx.flush_table();
                     ctx.in_table = false;
                     ctx.para = ParaStyle::default();
+                }
+                b"w:tc" => {
+                    ctx.in_cell = false;
                 }
                 b"w:tr" => {
                     ctx.table_rows.push(std::mem::take(&mut ctx.current_row));
@@ -581,8 +588,13 @@ mod tests {
     }
 
     #[test]
-    fn hyperlink_example_com() {
+    fn hyperlink() {
         let md = parse();
+        assert!(
+            md.contains("[python-docx on GitHub](https://github.com/python-openxml/python-docx)"),
+            "github hyperlink missing"
+        );
+
         assert!(
             md.contains("[example.com](https://example.com)"),
             "hyperlink to example.com missing"
@@ -590,36 +602,43 @@ mod tests {
     }
 
     #[test]
-    fn hyperlink_github() {
+    fn table_structure() {
         let md = parse();
         assert!(
-            md.contains("[python-docx on GitHub](https://github.com/python-openxml/python-docx)"),
-            "github hyperlink missing"
+            md.contains("| Name |") || md.contains("| **Name**"),
+            "table header row missing"
         );
+        assert!(md.contains("|---"), "table GFM separator missing");
+        assert!(md.contains("| Alice |"), "table row Alice missing");
+        assert!(md.contains("| New York |"), "table cell New York missing");
+        assert!(md.contains("| Bob |"), "table row Bob missing");
+        assert!(md.contains("| Carol |"), "table row Carol missing");
+        assert!(md.contains("| 95 |"), "Alice score missing");
+        assert!(
+            md.contains("| 87 |") || md.contains("| 88 |"),
+            "Bob score missing"
+        );
+        assert!(md.contains("| 92 |"), "Carol score missing");
     }
 
     #[test]
-    fn table_headers() {
+    fn table_no_blank_lines_inside() {
+        // this test isn't really docx spec, its just because its md..
         let md = parse();
-        assert!(md.contains("Name"), "table header 'Name' missing");
-        assert!(md.contains("Age"), "table header 'Age' missing");
-        assert!(md.contains("City"), "table header 'City' missing");
-        assert!(md.contains("Score"), "table header 'Score' missing");
-    }
-
-    #[test]
-    fn table_rows() {
-        let md = parse();
-        assert!(md.contains("Alice"), "table row Alice missing");
-        assert!(md.contains("New York"), "table row New York missing");
-        assert!(md.contains("Bob"), "table row Bob missing");
-        assert!(md.contains("Carol"), "table row Carol missing");
-    }
-
-    #[test]
-    fn table_markdown_separator() {
-        let md = parse();
-        assert!(md.contains("|---"), "table markdown separator missing");
+        let table_start = md
+            .find("| Name |")
+            .or_else(|| md.find("| **Name**"))
+            .expect("table header not found");
+        let table_end = md[table_start..]
+            .find("\n\n")
+            .map(|i| table_start + i)
+            .unwrap_or(md.len());
+        let table = &md[table_start..table_end];
+        assert!(
+            !table.contains("\n\n"),
+            "blank line found inside table:\n{}",
+            table
+        );
     }
 
     #[test]
@@ -634,23 +653,25 @@ mod tests {
     #[test]
     fn page_break() {
         let md = parse();
-        assert!(md.contains("---"), "page break (---) missing");
+        assert!(md.contains("---"), "page break separator missing");
     }
 
     #[test]
     fn soft_line_break() {
         let md = parse();
+        let pos1 = md.find("Line one.").expect("'Line one.' missing");
+        let pos2 = md
+            .find("Line two (soft break, same paragraph).")
+            .expect("'Line two' missing");
+        assert!(pos2 > pos1, "line two should come after line one");
+        let between = &md[pos1..pos2];
         assert!(
-            md.contains("Line one."),
-            "line break content 'line one' missing"
-        );
-        assert!(
-            md.contains("Line two (soft break, same paragraph)."),
-            "line break content 'line two' missing"
+            between.contains('\n'),
+            "no line break between 'Line one.' and 'Line two' they are joined"
         );
         assert!(
             md.contains("  \n"),
-            "soft line break (two spaces + newline) missing"
+            "markdown soft line break (two spaces + newline) missing"
         );
     }
 
@@ -671,8 +692,8 @@ mod tests {
     fn hyperlink_inside_table() {
         let md = parse();
         assert!(
-            md.contains("Hyperlink in cell"),
-            "hyperlink text inside table cell missing"
+            md.contains("[Hyperlink in cell](https://example.com)"),
+            "hyperlink in table cell missing or malformed"
         );
     }
 
