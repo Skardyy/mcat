@@ -416,7 +416,7 @@ fn render_thematic_break<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> St
     let offset = node.data.borrow().sourcepos.start.column;
     // each level of blockquote adds 4 char prefix..
     let extra_offset = ctx.force_simple_code_block * 4;
-    format_tb(ctx, offset + extra_offset)
+    format_tb(ctx, offset + extra_offset + ctx.indent())
 }
 
 fn render_table<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {

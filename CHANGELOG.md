@@ -1,3 +1,8 @@
+## Src
+
+- fixed an issue in the markdown_viewer where color won't carry over in wrapped lines after a certain format
+- fixed an issue in the markdown_viewer where thematic break would get wrapped in very small screens
+
 ## V0.5.2
 
 - improved odt,odp to md in markdownify

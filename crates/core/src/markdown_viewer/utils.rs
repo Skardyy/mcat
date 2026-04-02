@@ -294,7 +294,8 @@ pub fn wrap_char_based(
             let char_index = line.rfind(char).map(|v| v + char.len_utf8()).unwrap_or(0);
             let str_to_char = line.get(..char_index).unwrap_or("");
             let line = format!("{indent}{line}");
-            let sub_prefix = format!("{sub_indent}{str_to_char} ");
+            // adding RESET, since it is only used for block quote and alerts
+            let sub_prefix = format!("{sub_indent}{str_to_char}{RESET} ");
             let sub_space = sub_space.saturating_sub(string_len(&sub_prefix));
             wrap_highlighted_line(line, space, sub_space, &sub_prefix, false)
                 .trim_matches('\n')
@@ -415,7 +416,7 @@ pub fn wrap_highlighted_line(
             buf.push_str("\x1b]8;;\x1b\\");
         }
         // carry on formatting
-        if let Some(ansi) = find_last_format(line) {
+        if let Some(ansi) = find_last_format(&buf) {
             pre_format = ansi
         }
         buf.push_str(RESET);
