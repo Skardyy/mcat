@@ -139,7 +139,7 @@ This starts at an HTML file and directly converts it into a PNG image.
 
 mcat resume.typst
 mcat project.docx -t monokai           # With a different theme
-mcat "https://realmdfm.com/file.md"   # From a url
+mcat "https://realmdfm.com/file.md"    # From a url
 cat file.pptx | mcat                   # From stdin
 mcat .                                 # Select files interactively
 
