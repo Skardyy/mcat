@@ -1,10 +1,24 @@
 use anyhow::Result;
 use ignore::WalkBuilder;
+use indicatif::MultiProgress;
 use inquire::MultiSelect;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
+use tokio::runtime::{Builder, Runtime};
 
 use crate::markdown_viewer::utils::get_lang_icon_and_color;
+
+static RUNTIME: OnceLock<Runtime> = OnceLock::new();
+static GLOBAL_MULTI_PROGRESS: OnceLock<MultiProgress> = OnceLock::new();
+
+pub fn get_multi_progress() -> &'static MultiProgress {
+    GLOBAL_MULTI_PROGRESS.get_or_init(MultiProgress::new)
+}
+
+pub fn get_rt() -> &'static Runtime {
+    RUNTIME.get_or_init(|| Builder::new_current_thread().enable_all().build().unwrap())
+}
 
 pub fn prompt_for_files(dir: &Path, hidden: bool) -> Result<Vec<PathBuf>> {
     let mut all_paths = collect_gitignored_paths(dir, hidden)?;

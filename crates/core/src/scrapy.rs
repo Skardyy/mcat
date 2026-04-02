@@ -1,26 +1,21 @@
 use anyhow::{Context, Result};
 use futures::StreamExt;
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use indicatif::{ProgressBar, ProgressStyle};
 use regex::Regex;
 use reqwest::{Client, Response};
 use scraper::Html;
 use std::sync::OnceLock;
 use std::time::Duration;
-use tokio::runtime::{Builder, Runtime};
 
 use tracing::{debug, info, warn};
 
-use crate::mcat_file::{McatFile, McatKind};
+use crate::{
+    mcat_file::{McatFile, McatKind},
+    prompter::{get_multi_progress, get_rt},
+};
 
 static GITHUB_BLOB_URL: OnceLock<Regex> = OnceLock::new();
 static HTTP_CLIENT: OnceLock<Client> = OnceLock::new();
-// TODO: remove that
-static RUNTIME: OnceLock<Runtime> = OnceLock::new();
-static GLOBAL_MULTI_PROGRESS: OnceLock<MultiProgress> = OnceLock::new();
-
-fn get_multi_progress() -> &'static MultiProgress {
-    GLOBAL_MULTI_PROGRESS.get_or_init(MultiProgress::new)
-}
 
 #[derive(Default)]
 pub struct MediaScrapeOptions {
@@ -35,7 +30,6 @@ pub fn scrape_biggest_media(url: &str, options: &MediaScrapeOptions) -> Result<M
             .build()
             .unwrap_or_default()
     });
-    let rt = RUNTIME.get_or_init(|| Builder::new_current_thread().enable_all().build().unwrap());
     let re =
         GITHUB_BLOB_URL.get_or_init(|| Regex::new(r"^.*github\.com.*[\\\/]blob[\\\/].*$").unwrap());
 
@@ -45,7 +39,7 @@ pub fn scrape_biggest_media(url: &str, options: &MediaScrapeOptions) -> Result<M
         url.to_string()
     };
 
-    rt.block_on(async {
+    get_rt().block_on(async {
         let response = get_response(client, &url, options).await?;
 
         let mime = get_mime(&response);

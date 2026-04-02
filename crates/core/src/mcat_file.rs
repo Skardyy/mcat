@@ -31,6 +31,7 @@ use crate::{
     cdp::ChromeHeadless,
     config::{McatConfig, Theme},
     fetch_manager, markdown_viewer,
+    prompter::get_rt,
 };
 
 #[derive(Clone, Default, Debug, PartialEq)]
@@ -629,12 +630,7 @@ pub fn html_to_image(source: &McatFile) -> Result<DynamicImage> {
         (Some(tmp_file), url)
     };
 
-    // TODO: do something about that, we don't want to recreate runtime everytime..
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?;
-
-    let img_bytes: Vec<u8> = rt.block_on(async {
+    let img_bytes: Vec<u8> = get_rt().block_on(async {
         let browser = ChromeHeadless::new(url.as_str()).await?;
         browser.capture_screenshot().await
     })?;

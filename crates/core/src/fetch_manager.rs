@@ -10,9 +10,10 @@ use ffmpeg_sidecar::{
     command::FfmpegCommand,
     download::{download_ffmpeg_package, ffmpeg_download_url, unpack_ffmpeg},
 };
-use tokio::runtime::Builder;
 use tracing::{debug, info, warn};
 use zip::ZipArchive;
+
+use crate::prompter::get_rt;
 
 pub fn is_chromium_installed() -> bool {
     BrowserConfig::default().is_some()
@@ -247,8 +248,7 @@ impl ChromeRevision {
 
         // Download and Unzip
         let url = url.parse::<reqwest::Url>().context("Invalid archive url")?;
-        let rt = Builder::new_current_thread().enable_all().build()?;
-        rt.block_on(async {
+        get_rt().block_on(async {
             // Download
             let mut res = reqwest::get(url)
                 .await
