@@ -44,10 +44,10 @@ pub fn md_to_ansi(
     let mut ctx = AnsiContext {
         ps,
         theme,
-        wininfo: &config.wininfo.unwrap(),
+        wininfo: config.wininfo.unwrap(),
         hide_line_numbers: config.no_linenumbers,
         center: false,
-        image_preprocessor: &image_preprocessor,
+        image_preprocessor,
         show_frontmatter: config.header,
 
         blockquote_fenced_offset: None,
@@ -66,7 +66,7 @@ pub fn md_to_ansi(
     let mut res = output.replace(RESET, &format!("{RESET}{}", &ctx.theme.foreground.fg));
 
     // replace images
-    for (_, img) in image_preprocessor.mapper {
+    for (_, img) in ctx.image_preprocessor.mapper {
         img.insert_into_text(&mut res);
     }
 

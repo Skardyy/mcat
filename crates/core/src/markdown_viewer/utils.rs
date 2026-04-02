@@ -623,3 +623,216 @@ pub fn format_tb(ctx: &AnsiContext, offset: usize) -> String {
     let border = &ctx.theme.guide.fg;
     format!("{border}{br}{RESET}")
 }
+
+// we only test core wrapping logic..
+#[cfg(test)]
+mod tests {
+    use rasteroid::{RasterEncoder, term_misc::Wininfo};
+
+    use crate::{
+        config::McatConfig,
+        markdown_viewer::{image_preprocessor::ImagePreprocessor, themes::CustomTheme},
+    };
+
+    use super::*;
+
+    fn make_ctx() -> AnsiContext {
+        let arena = comrak::Arena::new();
+        let root = comrak::parse_document(&arena, "", &comrak::Options::default());
+        let mut conf = McatConfig::default();
+        conf.encoder = Some(RasterEncoder::Kitty);
+        conf.wininfo = Some(Wininfo {
+            sc_width: 50,
+            sc_height: 20,
+            spx_width: 1920,
+            spx_height: 1080,
+            is_tmux: false,
+            needs_inline: true,
+        });
+        AnsiContext {
+            ps: two_face::syntax::extra_newlines(),
+            theme: CustomTheme::github(),
+            wininfo: conf.wininfo.clone().unwrap(),
+            hide_line_numbers: false,
+            show_frontmatter: false,
+            center: false,
+            image_preprocessor: ImagePreprocessor::new(root, &conf, None).unwrap(),
+            blockquote_fenced_offset: None,
+            is_multi_block_quote: false,
+            paragraph_collecting_line: None,
+            collecting_depth: 0,
+            under_header: false,
+            force_simple_code_block: 0,
+            list_depth: 0,
+        }
+    }
+
+    #[test]
+    fn trim_ansi_string_trims() {
+        assert_eq!(trim_ansi_string("  hello  ".into()), "hello");
+        assert_eq!(trim_ansi_string("hello".into()), "hello");
+        assert_eq!(trim_ansi_string("   ".into()), "");
+        assert_eq!(
+            trim_ansi_string("\x1b[31m red text \x1b[0m".into()),
+            "\x1b[31mred text\x1b[0m"
+        );
+    }
+
+    #[test]
+    fn string_len_ignores_ansi() {
+        assert_eq!(string_len("hello"), 5);
+        assert_eq!(string_len("\x1b[31mhello\x1b[0m"), 5);
+        assert_eq!(string_len(""), 0);
+    }
+
+    #[test]
+    fn find_last_format_tracks_state() {
+        assert_eq!(find_last_format("hello"), None);
+        assert_eq!(
+            find_last_format("\x1b[31mhello\x1b[0m"),
+            Some(String::new())
+        );
+        assert_eq!(find_last_format("\x1b[1mhello"), Some("\x1b[1m".into()));
+        assert_eq!(
+            find_last_format("\x1b[31mhi\x1b[32mbye"),
+            Some("\x1b[32m".into())
+        );
+        assert_eq!(
+            find_last_format("\x1b[1m\x1b[31mhi"),
+            Some("\x1b[1;31m".into())
+        );
+    }
+
+    #[test]
+    fn info_for_wrapping_basic() {
+        let ctx = make_ctx();
+        // sc_width=50, indent=2 -> space=50-(2*2)=46
+        let (space, sub_space, indent, sub_indent) = info_for_wrapping(&ctx, 2, "", "");
+        assert_eq!(space, 46);
+        assert_eq!(sub_space, 46);
+        assert_eq!(indent, "  ");
+        assert_eq!(sub_indent, "  ");
+
+        // prefix and sub_prefix affect space/sub_space
+        let (space, sub_space, indent, sub_indent) = info_for_wrapping(&ctx, 0, "> ", "  ");
+        assert_eq!(space, 48); // 50 - len("> ")
+        assert_eq!(sub_space, 48); // 50 - len("  ")
+        assert_eq!(indent, "> ");
+        assert_eq!(sub_indent, "  ");
+
+        let (space, sub_space, indent, sub_indent) = info_for_wrapping(&ctx, 2, "> ", "  ");
+        assert_eq!(space, 44); // 50 - (2*2) - len("> ")
+        assert_eq!(sub_space, 44); // 50 - (2*2) - len("  ")
+        assert_eq!(indent, "  > ");
+        assert_eq!(sub_indent, "    ");
+    }
+
+    #[test]
+    fn wrap_highlighted_line_basic() {
+        let text = "the quick brown fox jumps over the lazy dog";
+
+        // fits in width -> returned as-is
+        assert_eq!(
+            wrap_highlighted_line(text.to_string(), 50, 50, "", false),
+            text
+        );
+
+        // wraps at first_width, sub lines get sub_prefix
+        let result = wrap_highlighted_line(text.to_string(), 10, 30, ">> ", false);
+        for line in result.lines().skip(1) {
+            assert!(
+                line.starts_with(">> "),
+                "sub line should start with '>> ', got: {:?}",
+                line
+            );
+        }
+
+        // exact width -> no wrap
+        let ten = "0123456789".to_string();
+        assert_eq!(
+            wrap_highlighted_line(ten.clone(), 10, 10, ">> ", false),
+            ten
+        );
+
+        // trailing newline preserved
+        assert!(
+            wrap_highlighted_line(format!("{text}\n"), 10, 30, "", false).ends_with("\n"),
+            "trailing newline should be preserved"
+        );
+
+        // no trailing newline -> none added
+        assert!(
+            !wrap_highlighted_line(text.to_string(), 10, 30, "", false).ends_with("\n"),
+            "no trailing newline should not be added"
+        );
+
+        // auto_indent copies leading spaces from first line onto all sub lines
+        let result = wrap_highlighted_line(format!("    {text}"), 12, 40, "", true);
+        for line in result.lines().skip(1) {
+            assert!(
+                line.starts_with("    "),
+                "auto_indent sub line should start with 4 spaces, got: {:?}",
+                line
+            );
+        }
+
+        // ansi color from first line carries into sub lines
+        let result = wrap_highlighted_line(format!("\x1b[31m{text}\x1b[0m"), 10, 30, "  ", false);
+        for line in result.lines().skip(1) {
+            assert!(
+                line.starts_with("  \x1b[31m"),
+                "ansi color should carry into sub lines, got: {:?}",
+                line
+            );
+        }
+
+        // sub_prefix is empty -> sub lines start directly with text
+        let result = wrap_highlighted_line(text.to_string(), 10, 30, "", false);
+        let sub = result.lines().nth(1).unwrap_or("");
+        assert!(
+            !sub.starts_with(" "),
+            "empty sub_prefix should not add spaces, got: {:?}",
+            sub
+        );
+
+        // reset before wrap -> no color carries into sub lines
+        let result =
+            wrap_highlighted_line(format!("\x1b[31mhi\x1b[0m {text}"), 10, 30, "  ", false);
+        for line in result.lines().skip(1) {
+            assert!(
+                !line.contains("\x1b[31m"),
+                "reset color should not carry into sub lines, got: {:?}",
+                line
+            );
+        }
+    }
+
+    #[test]
+    fn wrap_lines_basic() {
+        let ctx = make_ctx();
+        let text = "the quick brown fox jumps over the lazy dog";
+
+        // single line -> same result as wrap_highlighted_line with indent prepended
+        let result = wrap_lines(&ctx, text, false, 0, "", "");
+        let expected = wrap_highlighted_line(text.to_string(), 50, 50, "", false);
+        assert_eq!(result, expected);
+
+        // multi_line -> each line wrapped independently
+        let multi = format!("{text}\n{text}");
+        let result = wrap_lines(&ctx, &multi, true, 0, "", "");
+        let expected = [text, text]
+            .iter()
+            .map(|line| {
+                wrap_highlighted_line(line.to_string(), 50, 50, "", false)
+                    .trim_matches('\n')
+                    .to_owned()
+            })
+            .join("\n");
+        assert_eq!(result, expected);
+
+        // indent shifts space available and prepends to lines
+        let result = wrap_lines(&ctx, text, false, 2, "", "");
+        let expected = wrap_highlighted_line(format!("  {text}"), 46, 46, "  ", false);
+        assert_eq!(result, expected);
+    }
+}

@@ -26,14 +26,14 @@ const STRIKETHROUGH_OFF: &str = "\x1B[29m";
 pub const UNDERLINE_OFF: &str = "\x1B[24m";
 const INDENT: usize = 2;
 
-pub struct AnsiContext<'a> {
+pub struct AnsiContext {
     pub ps: SyntaxSet,
     pub theme: CustomTheme,
-    pub wininfo: &'a Wininfo,
+    pub wininfo: Wininfo,
     pub hide_line_numbers: bool,
     pub show_frontmatter: bool,
     pub center: bool,
-    pub image_preprocessor: &'a ImagePreprocessor,
+    pub image_preprocessor: ImagePreprocessor,
 
     pub blockquote_fenced_offset: Option<usize>,
     pub is_multi_block_quote: bool,
@@ -44,7 +44,7 @@ pub struct AnsiContext<'a> {
     pub list_depth: usize,
 }
 
-impl<'a> AnsiContext<'a> {
+impl AnsiContext {
     pub fn should_wrap(&self) -> bool {
         // root level element
         self.collecting_depth == 0
@@ -186,12 +186,10 @@ fn render_block_quote<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> Strin
     ctx.force_simple_code_block -= 1;
     let fence_offset = ctx.blockquote_fenced_offset.unwrap_or_default();
 
+    let offset = " ".repeat(fence_offset + 1);
     let content = content
         .lines()
-        .map(|line| {
-            let offset = " ".repeat(fence_offset + 1);
-            format!("{guide}▌{offset}{comment}{line}{RESET}")
-        })
+        .map(|line| format!("{guide}▌{offset}{comment}{line}{RESET}"))
         .join("\n");
 
     let indent = ctx.indent();
@@ -214,9 +212,21 @@ fn render_list<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
 
     let indent = ctx.indent();
     if ctx.should_wrap() {
-        wrap_lines(ctx, &content, true, indent, "", "  ") // 2 space extra because of the bullet
+        wrap_lines(ctx, &content, true, indent, "", "  ")
     } else {
-        content
+        // this part only gets called inside other blocky elements. e.g. blockquote and alert
+        let indent_width = indent * 2;
+        let blockquote_prefix =
+            2 * ctx.force_simple_code_block + ctx.blockquote_fenced_offset.unwrap_or(0);
+        let bullet_width = 2;
+        let sub_prefix_width = 2;
+        let prefix_width =
+            (indent_width + blockquote_prefix + bullet_width + sub_prefix_width) as u16;
+
+        ctx.wininfo.sc_width = ctx.wininfo.sc_width.saturating_sub(prefix_width);
+        let result = wrap_lines(ctx, &content, true, 0, "", "  ");
+        ctx.wininfo.sc_width += prefix_width;
+        result
     }
 }
 

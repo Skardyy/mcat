@@ -22,7 +22,7 @@ use tracing::debug;
     color = clap::ColorChoice::Always,
     styles = get_styles(),
 )]
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct McatConfig {
     /// Input source (file/dir/url/ls)
     #[arg(num_args = 1.., required_unless_present_any = ["report", "generate", "fetch_chromium", "fetch_ffmpeg", "fetch_clean", "stdin_piped"])]

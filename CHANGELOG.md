@@ -2,6 +2,7 @@
 
 - fixed an issue in the markdown_viewer where color won't carry over in wrapped lines after a certain format
 - fixed an issue in the markdown_viewer where thematic break would get wrapped in very small screens
+- fixed an issue in the markdown_viewer where wrapping of lists inside other blocky elements like alert will be flawed
 
 ## V0.5.2
 
