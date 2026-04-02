@@ -1,6 +1,6 @@
 [package]
 name = "rasteroid"
-version = "0.3.1"
+version = "0.3.2"
 authors = ["Meron Bossin"]
 description = "terminal image / video graphics ( iterm / kitty / sixel )"
 keywords = ["sixel", "iterm", "kitty", "terminal", "terminal-graphics"]
