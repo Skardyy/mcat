@@ -228,15 +228,26 @@ impl ProcessingContext {
             .join("|");
         let tag_regex = Regex::new(&format!(r"&lt;(/?(?:{}))\b[^&]*&gt;", known_tags)).unwrap();
 
-        tag_regex
-            .replace_all(&escaped, |caps: &regex::Captures| {
-                caps.get(0)
-                    .unwrap()
-                    .as_str()
-                    .replace("&lt;", "<")
-                    .replace("&gt;", ">")
-            })
-            .to_string()
+        let markdown = tag_regex.replace_all(&escaped, |caps: &regex::Captures| {
+            caps.get(0)
+                .unwrap()
+                .as_str()
+                .replace("&lt;", "<")
+                .replace("&gt;", ">")
+        });
+
+        let triple_regex = Regex::new(r"```([\s\S]*?)```").unwrap();
+        let single_regex = Regex::new(r"`([^`\n]+)`").unwrap();
+
+        let markdown = triple_regex.replace_all(&markdown, |caps: &regex::Captures| {
+            let inner = caps[1].replace('<', "&lt;").replace('>', "&gt;");
+            format!("```{}```", inner)
+        });
+        let markdown = single_regex.replace_all(&markdown, |caps: &regex::Captures| {
+            let inner = caps[1].replace('<', "&lt;").replace('>', "&gt;");
+            format!("`{}`", inner)
+        });
+        markdown.to_string()
     }
 }
 
