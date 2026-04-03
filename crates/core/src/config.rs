@@ -1,3 +1,5 @@
+use std::io::stderr;
+
 use clap::{
     Parser, ValueEnum,
     builder::{
@@ -398,7 +400,7 @@ impl McatConfig {
             needs_inline = wininfo.needs_inline,
             "config"
         );
-        if !self.silent {
+        if !self.silent && stderr().is_tty() {
             self.bar = if env.term_contains("ghostty") {
                 Some(MultiBar::ghostty())
             } else {
