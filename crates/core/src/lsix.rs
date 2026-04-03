@@ -304,6 +304,7 @@ pub fn lsix(input: impl AsRef<str>, out: &mut impl Write, mut ctx: McatConfig) -
                     | McatKind::Svg
                     | McatKind::Url
                     | McatKind::Exe
+                    | McatKind::Pdf
                     | McatKind::Lnk => mcat_file.to_image(&ctx, true, true).ok(),
                     _ => None,
                 };
