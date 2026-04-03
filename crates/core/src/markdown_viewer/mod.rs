@@ -236,38 +236,19 @@ mod tests {
         let long = "word ".repeat(100);
         let md = format!("1. First paragraph.\n\n   {}\n", long);
         let output = render(&md);
-        let lines: Vec<&str> = output.lines().collect();
-        let blank_idx = lines.iter().position(|l| l.trim().is_empty());
-        assert!(blank_idx.is_some(), "should have a blank line");
-        let after_blank: Vec<&&str> = lines[blank_idx.unwrap() + 1..]
-            .iter()
-            .filter(|l| !l.trim().is_empty())
+        let lines: Vec<&str> = output.lines()
+            .filter(|l| !l.trim().is_empty()
+                && !l.contains("First"))
             .collect();
-        assert!(!after_blank.is_empty(),
-            "should have content after blank line");
-        for line in after_blank {
+        assert!(!lines.is_empty(),
+            "should have second paragraph content");
+        for line in &lines {
             assert!(
                 leading_spaces(line) >= 3,
                 "second para should be indented >= 3, got {}: {:?}",
                 leading_spaces(line), line,
             );
         }
-    }
-
-    #[test]
-    fn multi_paragraph_item_blank_line_between() {
-        let md = "1. First paragraph.\n\n   Second paragraph.\n";
-        let output = render(&md);
-        let lines: Vec<&str> = output.lines().collect();
-        let first_idx = lines.iter().position(|l| l.contains("First"));
-        let second_idx = lines.iter().position(|l| l.contains("Second"));
-        assert!(first_idx.is_some() && second_idx.is_some());
-        let gap = second_idx.unwrap() - first_idx.unwrap();
-        assert!(
-            gap >= 2,
-            "should have blank line between paragraphs, gap={}",
-            gap,
-        );
     }
 
     // ---- Nested lists ----

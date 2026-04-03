@@ -236,7 +236,7 @@ fn render_item<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     // Temporarily reduce available width so nested content
     // wraps correctly within the indented space.
     ctx.wininfo.sc_width = ctx.wininfo.sc_width.saturating_sub(prefix_width as u16);
-    let content = collect(node, ctx, "\n\n");
+    let content = collect(node, ctx, "\n");
     let content = content.trim();
     ctx.wininfo.sc_width += prefix_width as u16;
 
@@ -279,7 +279,7 @@ fn render_task_item<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String 
 
     // Reduce available width so nested content wraps correctly
     ctx.wininfo.sc_width = ctx.wininfo.sc_width.saturating_sub(prefix_width as u16);
-    let content = collect(node, ctx, "\n\n");
+    let content = collect(node, ctx, "\n");
     let content = content.trim();
     ctx.wininfo.sc_width += prefix_width as u16;
 
