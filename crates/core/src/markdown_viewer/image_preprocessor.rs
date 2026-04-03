@@ -104,7 +104,6 @@ impl ImagePreprocessor {
         );
         let markdown_dir = markdown_file_path.and_then(|p| p.parent());
         let scrape_opts = MediaScrapeOptions {
-            silent: conf.silent,
             max_content_length: match render_mode {
                 MdImageMode::All => None,
                 _ => Some(50_000), // filter complex images - won't scale down good
@@ -130,7 +129,7 @@ impl ImagePreprocessor {
                         }
                     }?
                 } else {
-                    match scrape_biggest_media(&url.base_url, &scrape_opts) {
+                    match scrape_biggest_media(&url.base_url, &scrape_opts, conf.bar.as_ref()) {
                         Ok(f) => Some(f),
                         Err(e) => {
                             warn!(url = %url.base_url, error = %e, "failed to scrape image");

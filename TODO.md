@@ -1,3 +1,2 @@
 - make a github page doc, should include both mcat, markdownify and rasteroid.
 - support fetching from places that require auth.
-- emit ghostty progress escape codes instead of loading bars (only ghostty now i think)

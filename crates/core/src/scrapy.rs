@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use futures::StreamExt;
-use indicatif::{ProgressBar, ProgressStyle};
 use regex::Regex;
 use reqwest::{Client, Response};
 use scraper::Html;
@@ -11,7 +10,8 @@ use tracing::{debug, info, warn};
 
 use crate::{
     mcat_file::{McatFile, McatKind},
-    prompter::{get_multi_progress, get_rt},
+    prompter::MultiBar,
+    prompter::get_rt,
 };
 
 static GITHUB_BLOB_URL: OnceLock<Regex> = OnceLock::new();
@@ -19,11 +19,14 @@ static HTTP_CLIENT: OnceLock<Client> = OnceLock::new();
 
 #[derive(Default)]
 pub struct MediaScrapeOptions {
-    pub silent: bool,
     pub max_content_length: Option<u64>,
 }
 
-pub fn scrape_biggest_media(url: &str, options: &MediaScrapeOptions) -> Result<McatFile> {
+pub fn scrape_biggest_media(
+    url: &str,
+    options: &MediaScrapeOptions,
+    bar: Option<&MultiBar>,
+) -> Result<McatFile> {
     let client = HTTP_CLIENT.get_or_init(|| {
         Client::builder()
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
@@ -40,7 +43,7 @@ pub fn scrape_biggest_media(url: &str, options: &MediaScrapeOptions) -> Result<M
     };
 
     get_rt().block_on(async {
-        let response = get_response(client, &url, options).await?;
+        let response = get_response(client, &url, bar).await?;
 
         let mime = get_mime(&response);
         let format = mime.as_deref().and_then(format_from_mime);
@@ -48,7 +51,7 @@ pub fn scrape_biggest_media(url: &str, options: &MediaScrapeOptions) -> Result<M
         if let Some(fmt) = format
             && fmt != McatKind::Html
         {
-            let data = download(response, options).await?;
+            let data = download(response, options, bar).await?;
             let mut file = McatFile::from_bytes(data, None)?;
             file.kind = fmt;
             info!(url = %url, kind = ?file.kind, size = file.bytes.len(), "scraped media");
@@ -57,7 +60,7 @@ pub fn scrape_biggest_media(url: &str, options: &MediaScrapeOptions) -> Result<M
 
         // otherwise scrape html for biggest media
         let html = response.text().await?;
-        let result = scrape_html(client, &url, &html, options).await;
+        let result = scrape_html(client, &url, &html, options, bar).await;
         match &result {
             Ok(file) => {
                 info!(url = %url, kind = ?file.kind, size = file.bytes.len(), "scraped media")
@@ -84,26 +87,18 @@ fn get_content_length(response: &Response) -> Option<u64> {
         .and_then(|s| s.parse().ok())
 }
 
-async fn download(response: Response, options: &MediaScrapeOptions) -> Result<Vec<u8>> {
+async fn download(
+    response: Response,
+    options: &MediaScrapeOptions,
+    bar: Option<&MultiBar>,
+) -> Result<Vec<u8>> {
     let content_length = get_content_length(&response);
 
     if let (Some(max), Some(len)) = (options.max_content_length, content_length) {
         anyhow::ensure!(len <= max, "content length {len} exceeds max {max}");
     }
 
-    let pb = if !options.silent && content_length.map(|l| l > 500_000).unwrap_or(false) {
-        let pb = get_multi_progress().add(ProgressBar::new(content_length.unwrap()));
-        pb.set_style(
-            ProgressStyle::default_bar()
-                .template(
-                    "{spinner:.green} [{bar:50.blue/white}] {bytes}/{total_bytes} ({percent}%)",
-                )?
-                .progress_chars("█▓▒░"),
-        );
-        Some(pb)
-    } else {
-        None
-    };
+    let handle = bar.map(|b| b.add(content_length, None));
 
     let mut data = Vec::new();
     let mut stream = response.bytes_stream();
@@ -116,13 +111,13 @@ async fn download(response: Response, options: &MediaScrapeOptions) -> Result<Ve
                 "download exceeded max content length"
             );
         }
-        if let Some(ref pb) = pb {
-            pb.set_position(data.len() as u64);
+        if let Some(ref h) = handle {
+            h.set_position(data.len() as u64);
         }
     }
 
-    if let Some(pb) = pb {
-        pb.finish_and_clear();
+    if let Some(h) = handle {
+        h.finish();
     }
     Ok(data)
 }
@@ -132,6 +127,7 @@ async fn scrape_html(
     base_url: &str,
     html: &str,
     options: &MediaScrapeOptions,
+    bar: Option<&MultiBar>,
 ) -> Result<McatFile> {
     let document = Html::parse_document(html);
     let base = reqwest::Url::parse(base_url)?;
@@ -162,7 +158,7 @@ async fn scrape_html(
     // download all candidates, keep biggest
     let mut biggest: Option<McatFile> = None;
     for url in candidates {
-        let Ok(response) = get_response(client, &url, options).await else {
+        let Ok(response) = get_response(client, &url, bar).await else {
             continue;
         };
         let mime = get_mime(&response);
@@ -182,7 +178,7 @@ async fn scrape_html(
             continue;
         }
 
-        let Ok(data) = download(response, options).await else {
+        let Ok(data) = download(response, options, bar).await else {
             warn!(url = %url, "failed to download candidate");
             continue;
         };
@@ -206,22 +202,8 @@ async fn scrape_html(
     biggest.context("no valid media found on page")
 }
 
-async fn get_response(
-    client: &Client,
-    url: &str,
-    options: &MediaScrapeOptions,
-) -> Result<Response> {
-    let spinner = if !options.silent {
-        let pb = get_multi_progress().add(ProgressBar::new_spinner());
-        pb.set_style(
-            ProgressStyle::default_spinner()
-                .template(&format!("{{spinner:.green}} Fetching {url}..."))?
-                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
-        );
-        Some(pb)
-    } else {
-        None
-    };
+async fn get_response(client: &Client, url: &str, bar: Option<&MultiBar>) -> Result<Response> {
+    let handle = bar.map(|b| b.add(None, Some(&format!("Fetching {url}..."))));
 
     let request = client.get(url).send();
     tokio::pin!(request);
@@ -229,13 +211,15 @@ async fn get_response(
     let response = tokio::select! {
         result = &mut request => result?,
         _ = tokio::time::sleep(Duration::from_millis(300)) => {
-            if let Some(ref pb) = spinner { pb.enable_steady_tick(Duration::from_millis(100)); }
+            if let Some(ref h) = handle {
+                h.enable_steady_tick(Duration::from_millis(100));
+            }
             request.await?
         }
     };
 
-    if let Some(pb) = spinner {
-        pb.finish_and_clear();
+    if let Some(h) = handle {
+        h.finish();
     }
     anyhow::ensure!(
         response.status().is_success(),

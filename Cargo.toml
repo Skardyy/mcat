@@ -54,6 +54,7 @@ scraper = "0.25.0"
 reqwest = { version = "0.13.2", default-features = false, features = ["rustls", "stream"] }
 indicatif = "0.18.3"
 regex = "1.12.3"
+boxcar = "0.2.14"
 
 thiserror = "2.0.18"
 zip = { version = "8.1.0", features = [ "deflate-flate2" ], default-features = false }

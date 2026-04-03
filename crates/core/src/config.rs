@@ -13,6 +13,8 @@ use rasteroid::{
 };
 use tracing::debug;
 
+use crate::prompter::MultiBar;
+
 #[derive(Parser)]
 #[command(
     name = "mcat",
@@ -349,6 +351,9 @@ pub struct McatConfig {
 
     #[arg(skip)]
     pub inline_images_in_md: bool,
+
+    #[arg(skip)]
+    pub bar: Option<MultiBar>,
 }
 
 impl McatConfig {
@@ -393,9 +398,17 @@ impl McatConfig {
             needs_inline = wininfo.needs_inline,
             "config"
         );
+        if !self.silent {
+            self.bar = if env.term_contains("ghostty") {
+                Some(MultiBar::ghostty())
+            } else {
+                Some(MultiBar::indicatif())
+            };
+        }
         self.env_id = Some(env);
         self.wininfo = Some(wininfo);
         self.encoder = Some(encoder);
+
         Ok(())
     }
 }

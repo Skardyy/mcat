@@ -1,23 +1,185 @@
 use anyhow::Result;
 use ignore::WalkBuilder;
-use indicatif::MultiProgress;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use inquire::MultiSelect;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use std::sync::atomic::AtomicBool;
+use std::sync::{
+    Arc, Weak,
+    atomic::{AtomicU64, Ordering},
+};
 use tokio::runtime::{Builder, Runtime};
 
 use crate::markdown_viewer::utils::get_lang_icon_and_color;
 
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
-static GLOBAL_MULTI_PROGRESS: OnceLock<MultiProgress> = OnceLock::new();
-
-pub fn get_multi_progress() -> &'static MultiProgress {
-    GLOBAL_MULTI_PROGRESS.get_or_init(MultiProgress::new)
-}
 
 pub fn get_rt() -> &'static Runtime {
     RUNTIME.get_or_init(|| Builder::new_current_thread().enable_all().build().unwrap())
+}
+
+#[derive(Clone)]
+pub enum MultiBar {
+    Indicatif(MultiProgress),
+    Ghostty(Arc<GhosttyBar>),
+}
+
+pub enum BarHandle {
+    Indicatif(ProgressBar),
+    Ghostty(GhosttyBarHandle),
+}
+
+impl MultiBar {
+    pub fn indicatif() -> Self {
+        Self::Indicatif(MultiProgress::new())
+    }
+
+    pub fn ghostty() -> Self {
+        Self::Ghostty(GhosttyBar::new())
+    }
+
+    pub fn add(&self, total: Option<u64>, msg: Option<&str>) -> BarHandle {
+        match self {
+            Self::Indicatif(multi) => {
+                let pb = match total {
+                    Some(n) => {
+                        let pb = multi.add(ProgressBar::new(n));
+                        pb.set_style(
+                            ProgressStyle::default_bar()
+                                .template("{spinner:.green} [{bar:50.blue/white}] {bytes}/{total_bytes} ({percent}%)")
+                                .unwrap()
+                                .progress_chars("█▓▒░"),
+                        );
+                        pb
+                    }
+                    None => {
+                        let pb = multi.add(ProgressBar::new_spinner());
+                        pb.set_style(
+                            ProgressStyle::default_spinner()
+                                .template(&format!("{{spinner:.green}} {}", msg.unwrap_or("{msg}")))
+                                .unwrap()
+                                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+                        );
+                        pb
+                    }
+                };
+                BarHandle::Indicatif(pb)
+            }
+            Self::Ghostty(ghostty) => BarHandle::Ghostty(ghostty.add(total)),
+        }
+    }
+}
+
+impl BarHandle {
+    pub fn set_position(&self, pos: u64) {
+        match self {
+            Self::Indicatif(pb) => pb.set_position(pos),
+            Self::Ghostty(h) => h.set_position(pos),
+        }
+    }
+
+    pub fn enable_steady_tick(&self, duration: std::time::Duration) {
+        match self {
+            Self::Indicatif(pb) => pb.enable_steady_tick(duration),
+            Self::Ghostty(_) => {} // ghostty handles indeterminate via print
+        }
+    }
+
+    pub fn finish(&self) {
+        match self {
+            Self::Indicatif(pb) => pb.finish_and_clear(),
+            Self::Ghostty(h) => h.finish(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct GhosttyBar {
+    bars: boxcar::Vec<(Arc<AtomicU64>, Option<u64>, Arc<AtomicBool>)>, // (current, total, done)
+}
+
+pub struct GhosttyBarHandle {
+    current: Arc<AtomicU64>,
+    manager: Weak<GhosttyBar>,
+}
+
+impl GhosttyBarHandle {
+    pub fn set_position(&self, pos: u64) {
+        self.current.store(pos, Ordering::Relaxed);
+        if let Some(mgr) = self.manager.upgrade() {
+            mgr.print();
+        }
+    }
+
+    pub fn finish(&self) {
+        if let Some(mgr) = self.manager.upgrade() {
+            mgr.finish(&self.current);
+        }
+    }
+}
+
+impl GhosttyBar {
+    pub fn new() -> Arc<Self> {
+        Arc::new(Self {
+            bars: boxcar::Vec::new(),
+        })
+    }
+
+    pub fn add(self: &Arc<Self>, total: Option<u64>) -> GhosttyBarHandle {
+        let current = Arc::new(AtomicU64::new(0));
+        let done = Arc::new(AtomicBool::new(false));
+        self.bars
+            .push((Arc::clone(&current), total, Arc::clone(&done)));
+        GhosttyBarHandle {
+            current,
+            manager: Arc::downgrade(self),
+        }
+    }
+
+    pub fn print(&self) {
+        let mut total_pct = 0.0f64;
+        let mut count = 0usize;
+
+        for (_, (current, total, done)) in &self.bars {
+            if done.load(Ordering::Relaxed) {
+                continue;
+            }
+            let cur = current.load(Ordering::Relaxed);
+            if let Some(total) = total {
+                let pct = (cur as f64 / *total as f64 * 100.0).min(100.0);
+                total_pct += pct;
+                count += 1;
+            }
+        }
+
+        let all_done = self.bars.count() > 0
+            && self
+                .bars
+                .iter()
+                .all(|(_, (_, _, done))| done.load(Ordering::Relaxed));
+
+        if all_done {
+            eprint!("\x1b]9;4;0\x07");
+        } else if count == 0 {
+            eprint!("\x1b]9;4;3\x07");
+        } else {
+            let avg = (total_pct / count as f64) as u32;
+            eprint!("\x1b]9;4;1;{avg}\x07");
+        }
+    }
+
+    fn finish(&self, current: &Arc<AtomicU64>) {
+        if let Some((_, (_, _, done))) = self
+            .bars
+            .iter()
+            .find(|(_, (c, _, _))| Arc::ptr_eq(c, current))
+        {
+            done.store(true, Ordering::Relaxed);
+        }
+        self.print();
+    }
 }
 
 pub fn prompt_for_files(dir: &Path, hidden: bool) -> Result<Vec<PathBuf>> {
