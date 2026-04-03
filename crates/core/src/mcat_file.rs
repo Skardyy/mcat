@@ -618,7 +618,10 @@ pub fn url_to_image(bytes: &[u8]) -> Result<DynamicImage> {
 
 pub fn html_to_image(source: &McatFile) -> Result<DynamicImage> {
     let (_tmp_file, url) = if let Some(path) = &source.path {
-        let url = Url::from_file_path(path)
+        let abs = path
+            .canonicalize()
+            .map_err(|e| anyhow::anyhow!("failed to resolve path: {e}"))?;
+        let url = Url::from_file_path(&abs)
             .map_err(|_| anyhow::anyhow!("failed to create url for chromium"))?;
         (None, url)
     } else {
