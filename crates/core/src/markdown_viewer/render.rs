@@ -11,7 +11,7 @@ use crate::markdown_viewer::utils::{string_len, trim_ansi_string, wrap_lines};
 use super::{
     image_preprocessor::ImagePreprocessor,
     themes::CustomTheme,
-    utils::{format_code_box, format_code_full, format_code_simple, format_tb, wrap_char_based},
+    utils::{format_code_box, format_code_full, format_code_simple, format_tb, wrap_char_based, wrap_highlighted_line},
 };
 
 pub const RESET: &str = "\x1B[0m";
@@ -210,24 +210,7 @@ fn render_list<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     let content = collect(node, ctx, sep);
     ctx.list_depth -= 1;
 
-    let indent = ctx.indent();
-    if ctx.should_wrap() {
-        wrap_lines(ctx, &content, true, indent, "", "  ")
-    } else {
-        // this part only gets called inside other blocky elements. e.g. blockquote and alert
-        let indent_width = indent * 2;
-        let blockquote_prefix =
-            2 * ctx.force_simple_code_block + ctx.blockquote_fenced_offset.unwrap_or(0);
-        let bullet_width = 2;
-        let sub_prefix_width = 2;
-        let prefix_width =
-            (indent_width + blockquote_prefix + bullet_width + sub_prefix_width) as u16;
-
-        ctx.wininfo.sc_width = ctx.wininfo.sc_width.saturating_sub(prefix_width);
-        let result = wrap_lines(ctx, &content, true, 0, "", "  ");
-        ctx.wininfo.sc_width += prefix_width;
-        result
-    }
+    content
 }
 
 fn render_item<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
@@ -236,8 +219,6 @@ fn render_item<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     };
 
     let yellow = ctx.theme.yellow.fg.clone();
-    let content = collect(node, ctx, "\n");
-    let content = content.trim();
     let depth = ctx.list_depth - 1;
 
     let bullets = ["●", "○", "◆", "◇"];
@@ -246,7 +227,38 @@ fn render_item<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         comrak::nodes::ListType::Ordered => &format!("{}.", item.start),
     };
 
-    format!("{}{yellow}{bullet}{RESET} {content}", " ".repeat(depth * 4))
+    let depth_indent = " ".repeat(depth * 4);
+    let prefix_width = depth * 4 + string_len(bullet) + 1;
+    let sub_prefix = " ".repeat(prefix_width);
+    let term_width = ctx.wininfo.sc_width as usize;
+    let sub_width = term_width.saturating_sub(prefix_width);
+
+    // Temporarily reduce available width so nested content
+    // wraps correctly within the indented space.
+    ctx.wininfo.sc_width = ctx.wininfo.sc_width.saturating_sub(prefix_width as u16);
+    let content = collect(node, ctx, "\n\n");
+    let content = content.trim();
+    ctx.wininfo.sc_width += prefix_width as u16;
+
+    let mut lines = content.split('\n');
+    let first = lines.next().unwrap_or("");
+    let first_line = format!("{depth_indent}{yellow}{bullet}{RESET} {first}");
+    let mut result = wrap_highlighted_line(
+        first_line, term_width, sub_width, &sub_prefix, false,
+    );
+
+    for line in lines {
+        result.push('\n');
+        if line.is_empty() {
+            continue;
+        }
+        let indented = format!("{sub_prefix}{line}");
+        result.push_str(&wrap_highlighted_line(
+            indented, term_width, sub_width, &sub_prefix, false,
+        ));
+    }
+
+    result
 }
 
 fn render_task_item<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
@@ -255,16 +267,44 @@ fn render_task_item<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String 
     };
 
     let offset = " ".repeat(node.data.borrow().sourcepos.start.column - 1);
-    let content = collect(node, ctx, "\n\n");
-    let content = content.trim();
     let (icon, colour) = match task.symbol.map(|c| c.to_ascii_lowercase()) {
-        Some('x') => ("󰱒", &ctx.theme.green.fg),
-        Some('-') | Some('~') => ("󰛲", &ctx.theme.yellow.fg),
-        Some('!') => ("󰳤", &ctx.theme.red.fg),
-        _ => ("󰄱", &ctx.theme.red.fg),
+        Some('x') => ("󰱒", ctx.theme.green.fg.clone()),
+        Some('-') | Some('~') => ("󰛲", ctx.theme.yellow.fg.clone()),
+        Some('!') => ("󰳤", ctx.theme.red.fg.clone()),
+        _ => ("󰄱", ctx.theme.red.fg.clone()),
     };
 
-    format!("{offset}{colour}{icon}{RESET}  {content}")
+    let prefix_width = offset.len() + string_len(icon) + 2;
+    let sub_prefix = " ".repeat(prefix_width);
+
+    // Reduce available width so nested content wraps correctly
+    ctx.wininfo.sc_width = ctx.wininfo.sc_width.saturating_sub(prefix_width as u16);
+    let content = collect(node, ctx, "\n\n");
+    let content = content.trim();
+    ctx.wininfo.sc_width += prefix_width as u16;
+
+    let term_width = ctx.wininfo.sc_width as usize;
+    let sub_width = term_width.saturating_sub(prefix_width);
+
+    let mut lines = content.split('\n');
+    let first = lines.next().unwrap_or("");
+    let first_line = format!("{offset}{colour}{icon}{RESET}  {first}");
+    let mut result = wrap_highlighted_line(
+        first_line, term_width, sub_width, &sub_prefix, false,
+    );
+
+    for line in lines {
+        result.push('\n');
+        if line.is_empty() {
+            continue;
+        }
+        let indented = format!("{sub_prefix}{line}");
+        result.push_str(&wrap_highlighted_line(
+            indented, term_width, sub_width, &sub_prefix, false,
+        ));
+    }
+
+    result
 }
 
 fn render_code_block<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {

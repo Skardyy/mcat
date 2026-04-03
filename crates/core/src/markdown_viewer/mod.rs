@@ -146,3 +146,157 @@ fn comrak_options<'a>() -> options::Options<'a> {
 
     options
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::McatConfig;
+    use unicode_width::UnicodeWidthStr;
+
+    fn render(md: &str) -> String {
+        use clap::Parser;
+        let mut config = McatConfig::parse_from(["mcat", "-"]);
+        config.finalize().unwrap();
+        let result = md_to_ansi(md, config, None).unwrap();
+        strip_ansi_escapes::strip_str(&result).to_string()
+    }
+
+    fn leading_spaces(s: &str) -> usize {
+        s.len() - s.trim_start_matches(' ').len()
+    }
+
+    // ---- Hanging indent basics ----
+
+    #[test]
+    fn numbered_list_hanging_indent() {
+        // "1. " = 3 columns; continuations must indent >= 3
+        let long = "word ".repeat(100);
+        let md = format!("1. {}\n", long);
+        let output = render(&md);
+        let lines: Vec<&str> = output.lines().collect();
+        assert!(lines.len() >= 2, "text should wrap");
+        for line in &lines[1..] {
+            assert!(
+                leading_spaces(line) >= 3,
+                "continuation should have >= 3 spaces, got {}: {:?}",
+                leading_spaces(line), line,
+            );
+        }
+    }
+
+    #[test]
+    fn numbered_list_double_digit_indent() {
+        // "10. " = 4 columns
+        let long = "word ".repeat(100);
+        let md = format!("10. {}\n", long);
+        let output = render(&md);
+        let lines: Vec<&str> = output.lines().collect();
+        assert!(lines.len() >= 2, "text should wrap");
+        for line in &lines[1..] {
+            assert!(
+                leading_spaces(line) >= 4,
+                "continuation should have >= 4 spaces, got {}: {:?}",
+                leading_spaces(line), line,
+            );
+        }
+    }
+
+    #[test]
+    fn bullet_list_hanging_indent() {
+        let long = "word ".repeat(100);
+        let md = format!("- {}\n", long);
+        let output = render(&md);
+        let lines: Vec<&str> = output.lines().collect();
+        assert!(lines.len() >= 2, "text should wrap");
+        // bullet + space = 2 columns
+        for line in &lines[1..] {
+            assert!(
+                leading_spaces(line) >= 2,
+                "continuation should have >= 2 spaces, got {}: {:?}",
+                leading_spaces(line), line,
+            );
+        }
+    }
+
+    #[test]
+    fn short_list_item_no_wrapping() {
+        let md = "1. Short item.\n";
+        let output = render(md);
+        let lines: Vec<&str> = output.lines()
+            .filter(|l| !l.trim().is_empty())
+            .collect();
+        assert_eq!(lines.len(), 1, "short item should be one line");
+    }
+
+    // ---- Multi-paragraph items ----
+
+    #[test]
+    fn multi_paragraph_item_second_para_indented() {
+        let long = "word ".repeat(100);
+        let md = format!("1. First paragraph.\n\n   {}\n", long);
+        let output = render(&md);
+        let lines: Vec<&str> = output.lines().collect();
+        let blank_idx = lines.iter().position(|l| l.trim().is_empty());
+        assert!(blank_idx.is_some(), "should have a blank line");
+        let after_blank: Vec<&&str> = lines[blank_idx.unwrap() + 1..]
+            .iter()
+            .filter(|l| !l.trim().is_empty())
+            .collect();
+        assert!(!after_blank.is_empty(),
+            "should have content after blank line");
+        for line in after_blank {
+            assert!(
+                leading_spaces(line) >= 3,
+                "second para should be indented >= 3, got {}: {:?}",
+                leading_spaces(line), line,
+            );
+        }
+    }
+
+    #[test]
+    fn multi_paragraph_item_blank_line_between() {
+        let md = "1. First paragraph.\n\n   Second paragraph.\n";
+        let output = render(&md);
+        let lines: Vec<&str> = output.lines().collect();
+        let first_idx = lines.iter().position(|l| l.contains("First"));
+        let second_idx = lines.iter().position(|l| l.contains("Second"));
+        assert!(first_idx.is_some() && second_idx.is_some());
+        let gap = second_idx.unwrap() - first_idx.unwrap();
+        assert!(
+            gap >= 2,
+            "should have blank line between paragraphs, gap={}",
+            gap,
+        );
+    }
+
+    // ---- Nested lists ----
+
+    #[test]
+    fn nested_list_is_indented() {
+        let md = "- Parent item.\n\n  - Nested item.\n";
+        let output = render(&md);
+        let nested = output.lines().find(|l| l.contains("Nested"));
+        assert!(nested.is_some(), "should contain nested item");
+        assert!(
+            leading_spaces(nested.unwrap()) >= 4,
+            "nested item should be indented >= 4, got {}: {:?}",
+            leading_spaces(nested.unwrap()), nested.unwrap(),
+        );
+    }
+
+    #[test]
+    fn nested_list_wrapping_fits_terminal() {
+        // Nested item with long text must not overflow
+        let long = "word ".repeat(100);
+        let md = format!("- Parent.\n\n  - {}\n", long);
+        let output = render(&md);
+        for line in output.lines() {
+            assert!(
+                line.width() < 500,
+                "line should be wrapped (width={}): {:?}",
+                line.width(), line,
+            );
+        }
+    }
+}
