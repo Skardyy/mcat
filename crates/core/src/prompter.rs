@@ -2,6 +2,8 @@ use anyhow::Result;
 use ignore::WalkBuilder;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use inquire::MultiSelect;
+use signal_hook::consts::SIGINT;
+use signal_hook::iterator::Signals;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -83,7 +85,7 @@ impl BarHandle {
     pub fn enable_steady_tick(&self, duration: std::time::Duration) {
         match self {
             Self::Indicatif(pb) => pb.enable_steady_tick(duration),
-            Self::Ghostty(_) => {} // ghostty handles indeterminate via print
+            Self::Ghostty(_) => {} // not sure if we should support it for now.
         }
     }
 
@@ -107,7 +109,7 @@ pub struct GhosttyBarHandle {
 
 impl GhosttyBarHandle {
     pub fn set_position(&self, pos: u64) {
-        self.current.store(pos, Ordering::Relaxed);
+        self.current.store(pos, Ordering::Release);
         if let Some(mgr) = self.manager.upgrade() {
             mgr.print();
         }
@@ -128,6 +130,17 @@ impl GhosttyBar {
     }
 
     pub fn add(self: &Arc<Self>, total: Option<u64>) -> GhosttyBarHandle {
+        if self.bars.count() == 0
+            && let Ok(mut signals) = Signals::new([SIGINT])
+        {
+            std::thread::spawn(move || {
+                if signals.forever().next().is_some() {
+                    eprint!("\x1b]9;4;0\x07");
+                    std::process::exit(0);
+                }
+            });
+        }
+
         let current = Arc::new(AtomicU64::new(0));
         let done = Arc::new(AtomicBool::new(false));
         self.bars
@@ -143,10 +156,10 @@ impl GhosttyBar {
         let mut count = 0usize;
 
         for (_, (current, total, done)) in &self.bars {
-            if done.load(Ordering::Relaxed) {
+            if done.load(Ordering::Acquire) {
                 continue;
             }
-            let cur = current.load(Ordering::Relaxed);
+            let cur = current.load(Ordering::Acquire);
             if let Some(total) = total {
                 let pct = (cur as f64 / *total as f64 * 100.0).min(100.0);
                 total_pct += pct;
@@ -158,7 +171,7 @@ impl GhosttyBar {
             && self
                 .bars
                 .iter()
-                .all(|(_, (_, _, done))| done.load(Ordering::Relaxed));
+                .all(|(_, (_, _, done))| done.load(Ordering::Acquire));
 
         if all_done {
             eprint!("\x1b]9;4;0\x07");
@@ -176,7 +189,7 @@ impl GhosttyBar {
             .iter()
             .find(|(_, (c, _, _))| Arc::ptr_eq(c, current))
         {
-            done.store(true, Ordering::Relaxed);
+            done.store(true, Ordering::Release);
         }
         self.print();
     }

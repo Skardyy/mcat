@@ -2069,6 +2069,7 @@ dependencies = [
  "scraper",
  "serde_json",
  "shell-words",
+ "signal-hook 0.4.3",
  "strip-ansi-escapes",
  "syntect",
  "tempfile",
