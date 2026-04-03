@@ -330,6 +330,7 @@ pub fn wrap_lines(
     indent: usize,
     prefix: &str,
     sub_prefix: &str,
+    auto_indent: bool,
 ) -> String {
     let (space, sub_space, indent, sub_indent) = info_for_wrapping(ctx, indent, prefix, sub_prefix);
     let suffix = if original.ends_with("\n") { "\n" } else { "" };
@@ -339,7 +340,7 @@ pub fn wrap_lines(
             .lines()
             .map(|line| {
                 let line = format!("{indent}{line}");
-                wrap_highlighted_line(line, space, sub_space, &sub_indent, false)
+                wrap_highlighted_line(line, space, sub_space, &sub_indent, auto_indent)
                     .trim_matches('\n')
                     .to_owned()
             })
@@ -347,7 +348,7 @@ pub fn wrap_lines(
             + suffix
     } else {
         let line = format!("{indent}{original}");
-        wrap_highlighted_line(line, space, sub_space, &indent, false)
+        wrap_highlighted_line(line, space, sub_space, &indent, auto_indent)
     }
 }
 
@@ -813,13 +814,13 @@ mod tests {
         let text = "the quick brown fox jumps over the lazy dog";
 
         // single line -> same result as wrap_highlighted_line with indent prepended
-        let result = wrap_lines(&ctx, text, false, 0, "", "");
+        let result = wrap_lines(&ctx, text, false, 0, "", "", false);
         let expected = wrap_highlighted_line(text.to_string(), 50, 50, "", false);
         assert_eq!(result, expected);
 
         // multi_line -> each line wrapped independently
         let multi = format!("{text}\n{text}");
-        let result = wrap_lines(&ctx, &multi, true, 0, "", "");
+        let result = wrap_lines(&ctx, &multi, true, 0, "", "", false);
         let expected = [text, text]
             .iter()
             .map(|line| {
@@ -831,7 +832,7 @@ mod tests {
         assert_eq!(result, expected);
 
         // indent shifts space available and prepends to lines
-        let result = wrap_lines(&ctx, text, false, 2, "", "");
+        let result = wrap_lines(&ctx, text, false, 2, "", "", false);
         let expected = wrap_highlighted_line(format!("  {text}"), 46, 46, "  ", false);
         assert_eq!(result, expected);
     }

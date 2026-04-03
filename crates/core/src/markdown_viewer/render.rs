@@ -4,6 +4,7 @@ use comrak::nodes::{
 use itertools::Itertools;
 use rasteroid::term_misc::Wininfo;
 use regex::Regex;
+use strip_ansi_escapes::strip_str;
 use syntect::parsing::SyntaxSet;
 
 use crate::markdown_viewer::utils::{string_len, trim_ansi_string, wrap_lines};
@@ -160,7 +161,7 @@ fn render_footnote_def<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> Stri
         .map(|line| {
             let indent = ctx.indent();
             if ctx.should_wrap() {
-                wrap_lines(ctx, line, false, indent, "", "")
+                wrap_lines(ctx, line, false, indent, "", "", false)
             } else {
                 line.into()
             }
@@ -210,9 +211,24 @@ fn render_list<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     let content = collect(node, ctx, sep);
     ctx.list_depth -= 1;
 
+    // we indent sub lines based on the length of the bullet
+    let sub_prefix = content
+        .lines()
+        .next()
+        .map(|line| {
+            strip_str(line)
+                .trim()
+                .chars()
+                .take_while(|c| !c.is_whitespace())
+                .count()
+                + 1
+        })
+        .unwrap_or(2);
+    let sub_prefix = " ".repeat(sub_prefix);
+
     let indent = ctx.indent();
     if ctx.should_wrap() {
-        wrap_lines(ctx, &content, true, indent, "", "  ")
+        wrap_lines(ctx, &content, true, indent, "", &sub_prefix, true)
     } else {
         // this part only gets called inside other blocky elements. e.g. blockquote and alert
         let indent_width = indent * 2;
@@ -224,7 +240,7 @@ fn render_list<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
             (indent_width + blockquote_prefix + bullet_width + sub_prefix_width) as u16;
 
         ctx.wininfo.sc_width = ctx.wininfo.sc_width.saturating_sub(prefix_width);
-        let result = wrap_lines(ctx, &content, true, 0, "", "  ");
+        let result = wrap_lines(ctx, &content, true, 0, "", &sub_prefix, true);
         ctx.wininfo.sc_width += prefix_width;
         result
     }
@@ -245,6 +261,10 @@ fn render_item<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         comrak::nodes::ListType::Bullet => bullets[depth % 4],
         comrak::nodes::ListType::Ordered => &format!("{}.", item.start),
     };
+
+    // indent new lines to allign with the first line
+    let bullet_count = bullet.chars().count() + 1;
+    let content = content.replace("\n", &format!("\n{}", " ".repeat(bullet_count)));
 
     format!("{}{yellow}{bullet}{RESET} {content}", " ".repeat(depth * 4))
 }
@@ -341,7 +361,7 @@ fn render_html_block<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String
         .lines()
         .map(|line| format!("{comment}{line}{RESET}"))
         .join("\n");
-    wrap_lines(ctx, &result, true, INDENT, "", "")
+    wrap_lines(ctx, &result, true, INDENT, "", "", false)
 }
 
 fn render_paragraph<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
@@ -370,7 +390,7 @@ fn render_paragraph<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String 
             .map(|line| {
                 let indent = ctx.indent();
                 if ctx.should_wrap() {
-                    wrap_lines(ctx, line, false, indent, "", "")
+                    wrap_lines(ctx, line, false, indent, "", "", false)
                 } else {
                     line.into()
                 }
