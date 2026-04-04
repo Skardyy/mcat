@@ -142,7 +142,9 @@ fn main() -> Result<()> {
         }
     }
 
-    catter::cat(files, &mut out, &config)?;
+    if !files.is_empty() {
+        catter::cat(files, &mut out, &config)?;
+    }
 
     Ok(())
 }
