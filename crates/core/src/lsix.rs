@@ -159,7 +159,7 @@ fn ext_to_svg(ext: &str) -> &'static str {
 pub fn lsix(input: impl AsRef<str>, out: &mut impl Write, mut ctx: McatConfig) -> Result<()> {
     let dir_path = Path::new(input.as_ref());
     let walker = WalkBuilder::new(dir_path)
-        .standard_filters(!ctx.hidden)
+        .standard_filters(false)
         .hidden(!ctx.hidden)
         .max_depth(Some(1))
         .follow_links(true)
