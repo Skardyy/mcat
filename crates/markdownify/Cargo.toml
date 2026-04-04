@@ -1,6 +1,6 @@
 [package]
 name = "markdownify"
-version = "0.3.2"
+version = "0.3.3"
 authors = ["Meron Bossin"]
 description = "markitdown in rust - convert various document and files into markdown"
 keywords = ["conversion", "parser", "markitdown", "document", "markdown"]
