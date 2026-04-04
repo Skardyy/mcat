@@ -36,8 +36,9 @@ pub fn scrape_biggest_media(
     let re =
         GITHUB_BLOB_URL.get_or_init(|| Regex::new(r"^.*github\.com.*[\\\/]blob[\\\/].*$").unwrap());
 
-    let url = if re.is_match(url) && !url.contains("?raw=true") {
-        format!("{url}?raw=true")
+    let url = if re.is_match(url) {
+        url.replace("github.com", "raw.githubusercontent.com")
+            .replace("/blob/", "/")
     } else {
         url.to_string()
     };
@@ -49,11 +50,13 @@ pub fn scrape_biggest_media(
         let format = mime.as_deref().and_then(format_from_mime);
         // if we know its not html, download directly
         if let Some(fmt) = format
-            && fmt != McatKind::Html
+        && fmt != McatKind::Html
         {
             let data = download(response, options, bar).await?;
-            let mut file = McatFile::from_bytes(data, None, None, Some(url))?;
-            file.kind = fmt;
+            let mut file = McatFile::from_bytes(data, None, ext_from_url(&url), Some(url))?;
+            if file.kind == McatKind::PreMarkdown {
+                file.kind = fmt;
+            }
             info!(url = %file.id.as_deref().unwrap_or_default(), kind = ?file.kind, size = file.bytes.len(), "scraped media");
             return Ok(file);
         }
@@ -69,6 +72,14 @@ pub fn scrape_biggest_media(
         }
         result
     })
+}
+
+fn ext_from_url(url: &str) -> Option<String> {
+    url.split('?')
+        .next()
+        .and_then(|u| u.split('/').next_back())
+        .and_then(|f| f.split('.').next_back())
+        .map(|e| e.to_string())
 }
 
 fn get_mime(response: &Response) -> Option<String> {
@@ -210,7 +221,7 @@ async fn get_response(client: &Client, url: &str, bar: Option<&MultiBar>) -> Res
 
     let response = tokio::select! {
         result = &mut request => result?,
-        _ = tokio::time::sleep(Duration::from_millis(300)) => {
+            _ = tokio::time::sleep(Duration::from_millis(300)) => {
             if let Some(ref h) = handle {
                 h.enable_steady_tick(Duration::from_millis(100));
             }
@@ -221,11 +232,7 @@ async fn get_response(client: &Client, url: &str, bar: Option<&MultiBar>) -> Res
     if let Some(h) = handle {
         h.finish();
     }
-    anyhow::ensure!(
-        response.status().is_success(),
-        "failed to fetch {url}: {}",
-        response.status()
-    );
+    anyhow::ensure!(response.status().is_success(), response.status());
 
     Ok(response)
 }

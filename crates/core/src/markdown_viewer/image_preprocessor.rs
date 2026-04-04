@@ -125,18 +125,12 @@ impl ImagePreprocessor {
                     match handle_local_image(&url.base_url, markdown_dir) {
                         Ok(f) => Some(f),
                         Err(e) => {
-                            warn!(url = %url.base_url, error = %e, "failed to load local image");
+                            warn!(%e);
                             None
                         }
                     }?
                 } else {
-                    match scrape_biggest_media(&url.base_url, &scrape_opts, conf.bar.as_ref()) {
-                        Ok(f) => Some(f),
-                        Err(e) => {
-                            warn!(url = %url.base_url, error = %e, "failed to scrape image");
-                            None
-                        }
-                    }?
+                    scrape_biggest_media(&url.base_url, &scrape_opts, conf.bar.as_ref()).ok()?
                 };
 
                 let img = match tmp.to_image(conf, false, false) {

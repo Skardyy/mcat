@@ -115,10 +115,9 @@ fn main() -> Result<()> {
     let scraper_opts = MediaScrapeOptions::default();
     for i in config.input.iter() {
         if i.starts_with("https://") || i.starts_with("http://") {
-            if let Ok(f) = scrapy::scrape_biggest_media(i, &scraper_opts, config.bar.as_ref()) {
-                files.push(f);
-            } else {
-                eprintln!("{} didn't contain any supported media", i);
+            match scrapy::scrape_biggest_media(i, &scraper_opts, config.bar.as_ref()) {
+                Ok(f) => files.push(f),
+                Err(e) => eprintln!("{i}: {}", e),
             }
         } else {
             let i = expand_tilde(i);
