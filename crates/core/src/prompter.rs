@@ -2,8 +2,6 @@ use anyhow::Result;
 use ignore::WalkBuilder;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use inquire::MultiSelect;
-use signal_hook::consts::SIGINT;
-use signal_hook::iterator::Signals;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -129,16 +127,39 @@ impl GhosttyBar {
         })
     }
 
-    pub fn add(self: &Arc<Self>, total: Option<u64>) -> GhosttyBarHandle {
-        if self.bars.count() == 0
-            && let Ok(mut signals) = Signals::new([SIGINT])
+    fn setup_sigint_handler() {
+        #[cfg(not(windows))]
         {
+            use signal_hook::iterator::Signals;
+            if let Ok(mut signals) = Signals::new([signal_hook::consts::SIGINT]) {
+                std::thread::spawn(move || {
+                    if signals.forever().next().is_some() {
+                        eprint!("\x1b]9;4;0\x07");
+                        std::process::exit(0);
+                    }
+                });
+            }
+        }
+        // ghostty doesn't really support windows, so this is just a stub..
+        #[cfg(windows)]
+        {
+            use std::sync::Arc;
+            use std::sync::atomic::{AtomicBool, Ordering};
+            let flag = Arc::new(AtomicBool::new(false));
+            signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&flag)).unwrap();
             std::thread::spawn(move || {
-                if signals.forever().next().is_some() {
-                    eprint!("\x1b]9;4;0\x07");
-                    std::process::exit(0);
+                while !flag.load(Ordering::Relaxed) {
+                    std::thread::sleep(std::time::Duration::from_millis(50));
                 }
+                eprint!("\x1b]9;4;0\x07");
+                std::process::exit(0);
             });
+        }
+    }
+
+    pub fn add(self: &Arc<Self>, total: Option<u64>) -> GhosttyBarHandle {
+        if self.bars.count() == 0 {
+            GhosttyBar::setup_sigint_handler();
         }
 
         let current = Arc::new(AtomicU64::new(0));
