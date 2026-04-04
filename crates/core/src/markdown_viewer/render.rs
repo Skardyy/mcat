@@ -12,7 +12,7 @@ use crate::markdown_viewer::utils::{string_len, trim_ansi_string, wrap_lines};
 use super::{
     image_preprocessor::ImagePreprocessor,
     themes::CustomTheme,
-    utils::{format_code_box, format_code_full, format_code_simple, format_tb, wrap_char_based},
+    utils::{format_code_box, format_code_full, format_code_simple, format_tb, wrap_char_based, wrap_highlighted_line},
 };
 
 pub const RESET: &str = "\x1B[0m";
@@ -484,6 +484,100 @@ fn render_table<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
                 column_widths[i] = max_width_in_cell;
             }
         }
+    }
+
+    // Cap column widths to fit within available terminal width.
+    // Match the three-way branch in the existing post-render offset logic:
+    // centered uses source-position offset, indented uses ctx.indent(),
+    // default uses full width.
+    let available_width = if ctx.center {
+        let offset = node.data.borrow().sourcepos.start.column.saturating_sub(1);
+        (ctx.wininfo.sc_width as usize).saturating_sub(offset)
+    } else if ctx.should_wrap() {
+        (ctx.wininfo.sc_width as usize).saturating_sub(ctx.indent())
+    } else {
+        ctx.wininfo.sc_width as usize
+    };
+
+    let border_overhead = 3 * column_widths.len() + 1;
+    let total_content_width: usize = column_widths.iter().sum();
+    let total_table_width = total_content_width + border_overhead;
+
+    if total_table_width > available_width && total_content_width > 0 {
+        let target_content_width = available_width.saturating_sub(border_overhead);
+        // Waterfall algorithm: keep narrow columns at their natural width,
+        // shrink only the wider columns. Iterate from narrowest to widest:
+        // if a column fits within its equal share of remaining space, grant
+        // it its natural width; otherwise distribute remaining space equally
+        // among the remaining (wider) columns.
+        let mut indices: Vec<usize> = (0..column_widths.len()).collect();
+        indices.sort_by_key(|&i| column_widths[i]);
+
+        let mut new_widths: Vec<usize> = vec![0; column_widths.len()];
+        let mut remaining_budget = target_content_width;
+        let mut remaining_cols = column_widths.len();
+
+        for &i in &indices {
+            let fair_share = if remaining_cols > 0 {
+                remaining_budget / remaining_cols
+            } else {
+                0
+            };
+            if column_widths[i] <= fair_share {
+                // This column fits within its share; keep natural width
+                new_widths[i] = column_widths[i];
+            } else {
+                // This column (and all wider ones) must share the remaining budget
+                new_widths[i] = fair_share.max(1);
+            }
+            remaining_budget = remaining_budget.saturating_sub(new_widths[i]);
+            remaining_cols -= 1;
+        }
+
+        // Distribute any leftover due to integer division
+        let assigned: usize = new_widths.iter().sum();
+        if assigned < target_content_width {
+            let mut remainder = target_content_width - assigned;
+            // Give extra to widest columns first
+            indices.sort_by(|&a, &b| column_widths[b].cmp(&column_widths[a]));
+            for &i in &indices {
+                if remainder == 0 {
+                    break;
+                }
+                new_widths[i] += 1;
+                remainder -= 1;
+            }
+        }
+
+        column_widths = new_widths;
+    }
+
+    // Re-wrap cell contents to fit capped column widths and recalculate row heights
+    for (row_idx, row) in rows.iter_mut().enumerate() {
+        let mut max_lines_in_row: usize = 1;
+
+        for (col_idx, cell) in row.iter_mut().enumerate() {
+            let col_width = column_widths[col_idx];
+            let mut new_lines: Vec<String> = Vec::new();
+
+            for line in cell.iter() {
+                if string_len(line) > col_width {
+                    let wrapped = wrap_highlighted_line(
+                        line.clone(), col_width, col_width, "", false,
+                    );
+                    new_lines.extend(
+                        wrapped.split('\n').map(|s| s.to_string()),
+                    );
+                } else {
+                    new_lines.push(line.clone());
+                }
+            }
+
+            max_lines_in_row = max_lines_in_row.max(new_lines.len());
+            *cell = new_lines;
+        }
+
+        row_heights[row_idx] = max_lines_in_row;
     }
 
     let color = &ctx.theme.border.fg;
