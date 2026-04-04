@@ -108,7 +108,7 @@ fn main() -> Result<()> {
         let mut buffer = Vec::new();
         std::io::stdin().read_to_end(&mut buffer)?;
 
-        let file = McatFile::from_bytes(buffer, None)?;
+        let file = McatFile::from_bytes(buffer, None, None, Some("stdin".to_owned()))?;
         files.push(file);
     }
 

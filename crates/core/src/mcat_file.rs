@@ -63,33 +63,43 @@ pub struct McatFile {
     pub bytes: Vec<u8>,
 
     pub kind: McatKind,
+
     pub path: Option<PathBuf>,
+    pub ext: Option<String>,
+    pub id: Option<String>,
 }
 
 impl McatFile {
     pub fn from_path(path: impl AsRef<Path>) -> Result<Self> {
-        let path = path.as_ref().to_path_buf();
+        let path = path.as_ref();
+        let pathbuf = path.to_path_buf();
         let ext = path.extension().map(|v| v.to_string_lossy().to_string());
-        let bytes = fs::read(&path)?;
+        let bytes = fs::read(path)?;
 
-        let mut s = Self::from_bytes(bytes, ext.as_deref())?;
+        let s = Self::from_bytes(bytes, Some(pathbuf), ext, None)?;
         info!(path = %path.display(), kind = ?s.kind, "loaded file");
-        s.path = Some(path);
         Ok(s)
     }
 
-    pub fn from_image(img: DynamicImage) -> Self {
+    pub fn from_image(img: DynamicImage, path: Option<PathBuf>, id: Option<String>) -> Self {
         let mut buf = Vec::new();
         img.write_to(&mut Cursor::new(&mut buf), image::ImageFormat::Pnm)
             .expect("PAM encode should never fail");
         Self {
             bytes: buf,
             kind: McatKind::Image,
-            path: None,
+            path,
+            ext: None,
+            id,
         }
     }
 
-    pub fn from_bytes(bytes: Vec<u8>, ext: Option<&str>) -> Result<Self> {
+    pub fn from_bytes(
+        bytes: Vec<u8>,
+        path: Option<PathBuf>,
+        ext: Option<String>,
+        id: Option<String>,
+    ) -> Result<Self> {
         let bytes: Vec<u8> = if infer::archive::is_gz(&bytes) {
             let mut decoder = GzDecoder::new(bytes.as_slice());
             let mut out = Vec::new();
@@ -103,12 +113,14 @@ impl McatFile {
         } else {
             bytes
         };
-        let kind = Self::detect_kind(&bytes, ext);
+        let kind = Self::detect_kind(&bytes, ext.as_deref());
 
         Ok(Self {
             bytes,
-            path: None,
             kind,
+            path,
+            ext,
+            id,
         })
     }
 
@@ -163,7 +175,12 @@ impl McatFile {
             McatKind::PreMarkdown | McatKind::Markdown => {
                 let theme = config.theme.clone();
                 let html = self.to_html(Some(theme), config.inline_images_in_md)?;
-                let file = McatFile::from_bytes(html.into_bytes(), Some("html"))?;
+                let file = McatFile::from_bytes(
+                    html.into_bytes(),
+                    self.path.clone(),
+                    Some("html".to_owned()),
+                    self.id.clone(),
+                )?;
                 html_to_image(&file)?
             }
             McatKind::Html => html_to_image(self)?,
@@ -200,12 +217,8 @@ impl McatFile {
         )?;
         input.allow_inline_images = inline_images;
         input.path = self.path.clone();
-        input.ext = self
-            .path
-            .as_ref()
-            .and_then(|p| p.extension())
-            .and_then(|e| e.to_str())
-            .map(|e| e.to_lowercase());
+        input.ext = self.ext.clone();
+        input.id = self.id.clone().unwrap_or_default();
 
         Ok(input)
     }
@@ -294,7 +307,9 @@ impl McatFile {
         Ok(McatFile {
             bytes,
             kind: McatKind::Pdf,
-            path: None,
+            path: self.path.clone(),
+            ext: Some("pdf".to_owned()),
+            id: self.id.clone(),
         })
     }
 
@@ -339,7 +354,9 @@ impl McatFile {
         Ok(McatFile {
             bytes,
             kind: McatKind::Pdf,
-            path: Some(output_path),
+            path: self.path.clone(),
+            ext: Some("pdf".to_owned()),
+            id: self.id.clone(),
         })
     }
 

@@ -78,7 +78,7 @@ pub fn cat(files: Vec<McatFile>, out: &mut impl Write, config: &McatConfig) -> R
                 | McatKind::Url
                 | McatKind::Typst => {
                     let img = v.to_image(config, false, true)?;
-                    let f = McatFile::from_image(img);
+                    let f = McatFile::from_image(img, v.path, v.id);
                     Ok(f)
                 }
                 McatKind::Image => Ok(v),
@@ -90,7 +90,7 @@ pub fn cat(files: Vec<McatFile>, out: &mut impl Write, config: &McatConfig) -> R
             .map(|v| v.to_markdown_input(config.inline_images_in_md))
             .collect::<Result<Vec<_>>>()?;
         let md = markdownify::convert_files(files)?;
-        &McatFile::from_bytes(md.into_bytes(), Some("md"))?
+        &McatFile::from_bytes(md.into_bytes(), None, Some("md".to_owned()), None)?
     } else {
         mf
     };

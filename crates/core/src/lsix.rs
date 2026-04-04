@@ -319,7 +319,7 @@ pub fn lsix(input: impl AsRef<str>, out: &mut impl Write, mut ctx: McatConfig) -
                     } else {
                         ext_to_svg(&ext)
                     };
-                    let new_file = match McatFile::from_bytes(svg.as_bytes().to_owned(), Some("svg")) {
+                    let new_file = match McatFile::from_bytes(svg.as_bytes().to_owned(), None, Some("svg".to_owned()), None) {
                         Ok(f) => f,
                         Err(e) => {
                             warn!(path = %path.display(), error = %e, "failed to create svg fallback");

@@ -37,7 +37,7 @@ fn handle_data_uri(url: &str) -> Option<McatFile> {
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(data)
         .ok()?;
-    McatFile::from_bytes(bytes, None).ok()
+    McatFile::from_bytes(bytes, None, None, None).ok()
 }
 
 fn handle_local_image(path: &str, markdown_file_dir: Option<&Path>) -> Result<McatFile> {
