@@ -125,7 +125,11 @@ impl FileTree {
         let mut root: BTreeMap<String, Node> = BTreeMap::new();
 
         for path in self.files.keys() {
-            let parts: Vec<&str> = path.split('/').collect();
+            let parts: Vec<&str> = if path.contains("://") {
+                vec![path.as_str()]
+            } else {
+                path.split('/').collect()
+            };
             let mut current = &mut root;
 
             for (i, &part) in parts.iter().enumerate() {

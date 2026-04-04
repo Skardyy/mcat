@@ -12,7 +12,10 @@ use crate::markdown_viewer::utils::{string_len, trim_ansi_string, wrap_lines};
 use super::{
     image_preprocessor::ImagePreprocessor,
     themes::CustomTheme,
-    utils::{format_code_box, format_code_full, format_code_simple, format_tb, wrap_char_based, wrap_highlighted_line},
+    utils::{
+        format_code_box, format_code_full, format_code_simple, format_tb, wrap_char_based,
+        wrap_highlighted_line,
+    },
 };
 
 pub const RESET: &str = "\x1B[0m";
@@ -314,10 +317,12 @@ fn render_file_tree(tree: &str, ctx: &mut AnsiContext) -> String {
     let tree_chars = Regex::new(r"[│├└─]").unwrap();
     let folders = Regex::new(r"([a-zA-Z0-9_\-]+/)").unwrap();
     let files = Regex::new(r"([a-zA-Z0-9_\-]+\.[a-zA-Z0-9]+)").unwrap();
+    let urls = Regex::new(r"https?://[^\s]+").unwrap();
 
     let tree_char_color = &ctx.theme.guide.fg;
     let folder_color = &ctx.theme.blue.fg;
     let file_color = &ctx.theme.foreground.fg;
+    let url_color = &ctx.theme.magenta.fg;
 
     let mut result = tree.trim().to_string();
 
@@ -327,17 +332,32 @@ fn render_file_tree(tree: &str, ctx: &mut AnsiContext) -> String {
         })
         .to_string();
 
-    result = folders
-        .replace_all(&result, |caps: &regex::Captures| {
-            format!("{folder_color}{}{RESET}", &caps[1])
+    result = result
+        .lines()
+        .map(|line| {
+            let mut l = line.to_string();
+            if urls.is_match(line) {
+                l = urls
+                    .replace_all(&l, |caps: &regex::Captures| {
+                        format!("{url_color}{}{RESET}", &caps[0])
+                    })
+                    .to_string();
+            } else {
+                l = folders
+                    .replace_all(&l, |caps: &regex::Captures| {
+                        format!("{folder_color}{}{RESET}", &caps[1])
+                    })
+                    .to_string();
+                l = files
+                    .replace_all(&l, |caps: &regex::Captures| {
+                        format!("{file_color}{}{RESET}", &caps[1])
+                    })
+                    .to_string();
+            }
+            l
         })
-        .to_string();
-
-    result = files
-        .replace_all(&result, |caps: &regex::Captures| {
-            format!("{file_color}{}{RESET}", &caps[1])
-        })
-        .to_string();
+        .collect::<Vec<_>>()
+        .join("\n");
 
     result
 }
@@ -562,12 +582,9 @@ fn render_table<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
 
             for line in cell.iter() {
                 if string_len(line) > col_width {
-                    let wrapped = wrap_highlighted_line(
-                        line.clone(), col_width, col_width, "", false,
-                    );
-                    new_lines.extend(
-                        wrapped.split('\n').map(|s| s.to_string()),
-                    );
+                    let wrapped =
+                        wrap_highlighted_line(line.clone(), col_width, col_width, "", false);
+                    new_lines.extend(wrapped.split('\n').map(|s| s.to_string()));
                 } else {
                     new_lines.push(line.clone());
                 }

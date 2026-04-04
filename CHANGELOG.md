@@ -3,6 +3,7 @@
 - added pdf to the ls command, now pdf are printed as image rather then a stub svg
 - added ghostty loading bar for ghostty users, replaces the previous loading bar for when fetching images from urls
 - added logic to wrap table cells in the markdown_viewer, #63, (@sideshowbarker)
+- improved the file tree rendering for when there is multiple files
 - fixed an issue where files wouldn't carry over information in the pipeline, e.g. an pdf file would be converted to image, and the original path will be lost and not displayed
 - fixed an issue that made the ls command ignore files in .gitignore
 - fixed an issue in the markdown_viewer where color won't carry over in wrapped lines after a certain format

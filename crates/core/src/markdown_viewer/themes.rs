@@ -74,9 +74,8 @@ pub struct CustomTheme {
     pub blue: ThemeColor,
     pub cyan: ThemeColor,
     pub yellow: ThemeColor,
+    pub magenta: ThemeColor,
 
-    #[allow(dead_code)]
-    magenta: ThemeColor,
     #[allow(dead_code)]
     white: ThemeColor,
     pub black: ThemeColor,

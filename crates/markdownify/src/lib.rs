@@ -260,6 +260,16 @@ pub fn convert_files(files: Vec<MarkdownifyInput>) -> Result<String, ParsingErro
         return Ok(String::new());
     }
 
+    let files: Vec<MarkdownifyInput> = files
+        .into_iter()
+        .map(|mut f| {
+            if let Some(p) = f.path {
+                f.path = p.canonicalize().ok();
+            }
+            f
+        })
+        .collect();
+
     let common_root: PathBuf = files
         .iter()
         .filter_map(|f| f.path.as_ref()?.parent().map(|p| p.to_path_buf()))
@@ -275,7 +285,11 @@ pub fn convert_files(files: Vec<MarkdownifyInput>) -> Result<String, ParsingErro
             })
         })
         .unwrap_or_default();
-    let common_root = common_root.parent().unwrap_or(&common_root);
+    let common_root = if common_root.is_dir() {
+        &common_root
+    } else {
+        common_root.parent().unwrap_or(&common_root)
+    };
 
     let mut tree = FileTree::default();
 
