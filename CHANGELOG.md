@@ -1,4 +1,4 @@
-## Src
+## V0.5.3
 
 - added pdf to the ls command, now pdf are printed as image rather then a stub svg
 - added ghostty loading bar for ghostty users, replaces the previous loading bar for when fetching images from urls
