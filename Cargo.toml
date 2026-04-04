@@ -1,8 +1,8 @@
 [workspace]
 members = [
-    "crates/core",
-    "crates/markdownify",
-    "crates/rasteroid",
+  "crates/core",
+  "crates/markdownify",
+  "crates/rasteroid",
 ]
 resolver = "3"
 
@@ -40,7 +40,7 @@ crossterm = "0.29.0"
 pelite = { version = "0.10.0", default-features = false, features = ["std"] }
 image = { version = "0.25.9", default-features = false, features = ["bmp", "dds", "exr", "ff", "gif", "hdr", "ico", "jpeg", "png", "pnm", "qoi", "tga", "tiff", "webp"] }
 tempfile = "3.25.0"
-ffmpeg-sidecar = "2.4.0"
+ffmpeg-sidecar = { version = "2.4.0", default-features = false }
 syntect = "5.3.0"
 two-face = "0.5.1"
 resvg = "0.47.0"

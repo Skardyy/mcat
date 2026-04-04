@@ -6,10 +6,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use ffmpeg_sidecar::{
-    command::FfmpegCommand,
-    download::{download_ffmpeg_package, ffmpeg_download_url, unpack_ffmpeg},
-};
+use ffmpeg_sidecar::command::FfmpegCommand;
 use tracing::{debug, info, warn};
 use zip::ZipArchive;
 
@@ -38,8 +35,109 @@ pub fn fetch_chromium() -> Result<()> {
     }
 }
 
-pub fn is_poppler_installed() -> bool {
-    which::which("pdftocairo").is_ok() || which::which("pdftoppm").is_ok()
+fn ffmpeg_download_url() -> Result<&'static str> {
+    if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
+        Ok("https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip")
+    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        Ok("https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz")
+    } else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+        Ok("https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-arm64-static.tar.xz")
+    } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+        Ok("https://evermeet.cx/ffmpeg/getrelease/zip")
+    } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        Ok("https://www.osxexperts.net/ffmpeg80arm.zip")
+    } else {
+        anyhow::bail!("Unsupported platform")
+    }
+}
+
+fn download_ffmpeg_package(url: &str, download_dir: &Path) -> Result<PathBuf> {
+    let filename = Path::new(url)
+        .file_name()
+        .context("Failed to get filename")?;
+    let archive_path = download_dir.join(filename);
+    let mut file = File::create(&archive_path).context("Failed to create file")?;
+    let mut writer = BufWriter::new(&mut file);
+    get_rt().block_on(async {
+        let mut res = reqwest::get(url)
+            .await
+            .context("Failed to download ffmpeg")?;
+        while let Some(chunk) = res.chunk().await.context("Failed to read chunk")? {
+            writer.write_all(&chunk).context("Failed to write chunk")?;
+        }
+        writer.flush().context("Failed to flush")?;
+        Ok(archive_path)
+    })
+}
+
+fn unpack_ffmpeg(from_archive: &Path, binary_folder: &Path) -> Result<()> {
+    let temp_folder = binary_folder.join("_unpack_tmp");
+    fs::create_dir_all(&temp_folder)?;
+    let file = File::open(from_archive).context("Failed to open archive")?;
+
+    #[cfg(target_os = "linux")]
+    {
+        let tar_xz = lzma_rust2::XzReader::new(file, true);
+        let mut archive = tar::Archive::new(tar_xz);
+        archive
+            .unpack(&temp_folder)
+            .context("Failed to unpack ffmpeg")?;
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let mut archive = zip::ZipArchive::new(file).context("Failed to read ZIP archive")?;
+        archive
+            .extract(&temp_folder)
+            .context("Failed to unpack ffmpeg")?;
+    }
+
+    let (ffmpeg, ffplay, ffprobe) = if cfg!(target_os = "windows") {
+        let inner_folder = fs::read_dir(&temp_folder)?
+            .next()
+            .context("Failed to get inner folder")??
+            .path();
+        (
+            inner_folder.join("bin/ffmpeg.exe"),
+            inner_folder.join("bin/ffplay.exe"),
+            inner_folder.join("bin/ffprobe.exe"),
+        )
+    } else if cfg!(target_os = "linux") {
+        let inner_folder = fs::read_dir(&temp_folder)?
+            .next()
+            .context("Failed to get inner folder")??
+            .path();
+        (
+            inner_folder.join("ffmpeg"),
+            inner_folder.join("ffplay"),
+            inner_folder.join("ffprobe"),
+        )
+    } else {
+        (
+            temp_folder.join("ffmpeg"),
+            temp_folder.join("ffplay"),
+            temp_folder.join("ffprobe"),
+        )
+    };
+
+    let move_bin = |path: &Path| -> Result<()> {
+        if path.exists() {
+            let dest = binary_folder.join(path.file_name().context("No filename")?);
+            fs::rename(path, dest)?;
+        }
+        Ok(())
+    };
+    move_bin(&ffmpeg)?;
+    move_bin(&ffprobe)?;
+    move_bin(&ffplay)?;
+
+    if temp_folder.exists() {
+        fs::remove_dir_all(&temp_folder)?;
+    }
+    if from_archive.exists() {
+        fs::remove_file(from_archive)?;
+    }
+
+    Ok(())
 }
 
 pub fn fetch_ffmpeg() -> Result<()> {

@@ -159,7 +159,6 @@ fn expand_tilde(path: &str) -> String {
 fn report_full(config: &McatConfig) -> Result<()> {
     let is_chromium_installed = fetch_manager::is_chromium_installed();
     let is_ffmpeg_installed = fetch_manager::is_ffmpeg_installed();
-    let is_poppler_installed = fetch_manager::is_poppler_installed();
     let env = config
         .env_id
         .as_ref()
@@ -238,10 +237,6 @@ fn report_full(config: &McatConfig) -> Result<()> {
         format_status(is_chromium_installed)
     );
     println!("│   FFmpeg:   {:<47} │", format_status(is_ffmpeg_installed));
-    println!(
-        "│   Poppler:  {:<47} │",
-        format_status(is_poppler_installed)
-    );
 
     // terminal capabilities
     println!("├────────────────────────────────────────────────────┤");
