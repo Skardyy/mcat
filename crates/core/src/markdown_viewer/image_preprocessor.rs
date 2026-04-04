@@ -110,14 +110,15 @@ impl ImagePreprocessor {
             },
         };
 
+        if render_mode == &MdImageMode::None {
+            return Ok(ImagePreprocessor {
+                mapper: HashMap::new(),
+            });
+        }
+
         let items: Vec<(&ImageUrl, DynamicImage)> = urls
             .par_iter()
             .filter_map(|url| {
-                // fail everything early if needed.
-                if render_mode == &MdImageMode::None {
-                    return None;
-                }
-
                 let tmp = if url.base_url.starts_with("data:") {
                     handle_data_uri(&url.base_url)?
                 } else if is_local_path(&url.base_url) {
