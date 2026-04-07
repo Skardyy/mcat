@@ -2,6 +2,7 @@
 
 - added support for `JpegXL`
 - improving the image_preprocessor at the markdown_viewer, now 10% faster at rendering multiple images
+- fixed an issue that if an image with the same url will appear multiple times in the markdown_viewer, it will be rendered only once
 
 ## V0.5.4
 

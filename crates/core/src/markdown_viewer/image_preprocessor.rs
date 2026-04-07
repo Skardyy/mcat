@@ -249,8 +249,13 @@ impl ImageElement {
             .join("\n");
         let placeholder_line = self.placeholder.lines().nth(0).unwrap_or_default();
 
-        for img_line in img.lines() {
-            *text = text.replacen(placeholder_line, img_line, 1);
+        loop {
+            if !text.contains(placeholder_line) {
+                break;
+            }
+            for img_line in img.lines() {
+                *text = text.replacen(placeholder_line, img_line, 1);
+            }
         }
     }
 }
