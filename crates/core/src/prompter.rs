@@ -105,6 +105,14 @@ pub struct GhosttyBarHandle {
     manager: Weak<GhosttyBar>,
 }
 
+impl Drop for GhosttyBarHandle {
+    fn drop(&mut self) {
+        if let Some(mgr) = self.manager.upgrade() {
+            mgr.finish(&self.current);
+        }
+    }
+}
+
 impl GhosttyBarHandle {
     pub fn set_position(&self, pos: u64) {
         self.current.store(pos, Ordering::Release);
