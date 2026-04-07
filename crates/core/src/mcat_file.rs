@@ -2,7 +2,12 @@ use anyhow::{Context, Result};
 use flate2::read::GzDecoder;
 use hayro::hayro_syntax::Pdf;
 use image::{DynamicImage, GenericImage};
-use infer::{app::is_exe, archive::is_pdf, image::is_gif, is_video};
+use infer::{
+    app::is_exe,
+    archive::is_pdf,
+    image::{is_gif, is_jxl},
+    is_video,
+};
 use lzma_rust2::XzReader;
 use markdownify::MarkdownifyInput;
 use pelite::PeFile;
@@ -46,6 +51,7 @@ pub enum McatKind {
 
     Image,
     Svg, // svg is handled manually, since its not supported by the image crate
+    JpegXL,
 
     Url,
     Exe,
@@ -132,6 +138,7 @@ impl McatFile {
             (|b| image::guess_format(b).is_ok(), "", McatKind::Image),
             (is_video, "", McatKind::Video),
             (is_exe, "", McatKind::Exe),
+            (is_jxl, "", McatKind::JpegXL),
             (|_| false, "svg", McatKind::Svg),
             (|_| false, "html", McatKind::Html),
             (|_| false, "htm", McatKind::Html),
@@ -198,6 +205,11 @@ impl McatFile {
             McatKind::Pdf => pdf_to_image(&self.bytes, 0)?,
             McatKind::Tex => return self.tex_to_pdf()?.to_image(config, pad, resize),
             McatKind::Typst => return self.typst_to_pdf()?.to_image(config, pad, resize),
+            McatKind::JpegXL => {
+                let decoder =
+                    jxl_oxide::integration::JxlDecoder::new(Cursor::new(self.bytes.clone()))?;
+                image::DynamicImage::from_decoder(decoder)?
+            }
         };
 
         if resize {
@@ -233,6 +245,7 @@ impl McatFile {
             | McatKind::Svg
             | McatKind::Url
             | McatKind::Exe
+            | McatKind::JpegXL
             | McatKind::Lnk => {
                 let img = self.to_image(config, false, false)?;
                 Ok(vec![img])

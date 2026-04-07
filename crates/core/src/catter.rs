@@ -76,6 +76,7 @@ pub fn cat(files: Vec<McatFile>, out: &mut impl Write, config: &McatConfig) -> R
                 | McatKind::Pdf
                 | McatKind::Tex
                 | McatKind::Url
+                | McatKind::JpegXL
                 | McatKind::Typst => {
                     let img = v.to_image(config, false, true)?;
                     let f = McatFile::from_image(img, v.path, v.id);
@@ -105,10 +106,12 @@ pub fn cat(files: Vec<McatFile>, out: &mut impl Write, config: &McatConfig) -> R
             | McatKind::Svg
             | McatKind::Pdf
             | McatKind::Exe
+            | McatKind::JpegXL
             | McatKind::Lnk => Some(OutputFormat::Inline),
             _ => None,
         },
     };
+
     // converting
     match output {
         Some(OutputFormat::Html) => {

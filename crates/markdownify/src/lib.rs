@@ -235,6 +235,11 @@ fn is_image(buffer: &[u8]) -> bool {
         (b"farbfeld", b""),
     ];
 
+    // adding this too, won't hurt..
+    if infer::is_image(buffer) {
+        return true;
+    }
+
     for &(sig, mask) in MAGIC {
         if mask.is_empty() {
             if buffer.starts_with(sig) {

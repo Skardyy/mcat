@@ -1,3 +1,7 @@
+## Src
+
+- added support for `JpegXL`
+
 ## V0.5.4
 
 - added pdf to the ls command, now pdf are printed as image rather then a stub svg

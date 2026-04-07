@@ -63,6 +63,7 @@ hayro.workspace = true
 boxcar.workspace = true
 signal-hook.workspace = true
 tar.workspace = true
+jxl-oxide.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 winreg.workspace = true
