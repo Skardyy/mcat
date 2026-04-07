@@ -47,30 +47,40 @@ pub fn scrape_biggest_media(
         let response = get_response(client, &url, bar).await?;
 
         let mime = get_mime(&response);
-        let format = mime.as_deref().and_then(format_from_mime);
-        // if we know its not html, download directly
-        if let Some(fmt) = format
-        && fmt != McatKind::Html
-        {
-            let data = download(response, options, bar).await?;
-            let mut file = McatFile::from_bytes(data, None, ext_from_url(&url), Some(url))?;
-            if file.kind == McatKind::PreMarkdown {
-                file.kind = fmt;
+        let format = mime.as_deref().and_then(|m| {
+            if m == "application/octet-stream" {
+                ext_from_url(&url).as_deref().and_then(McatKind::from_ext)
+            } else {
+                format_from_mime(m)
             }
-            info!(url = %file.id.as_deref().unwrap_or_default(), kind = ?file.kind, size = file.bytes.len(), "scraped media");
-            return Ok(file);
+        });
+
+        match format {
+            // html, try to scrape for something
+            Some(McatKind::Html) => {
+                let html = response.text().await?;
+                let result = scrape_html(client, &url, &html, options, bar).await;
+                match &result {
+                    Ok(file) => {
+                        info!(url = %url, kind = ?file.kind, size = file.bytes.len(), "scraped media")
+                    }
+                    Err(e) => warn!(url = %url, error = %e, "no media found on page"),
+                }
+                result
+            },
+            // known type, just download
+            Some(fmt) => {
+                let data = download(response, options, bar).await?;
+                let mut file = McatFile::from_bytes(data, None, ext_from_url(&url), Some(url))?;
+                if file.kind == McatKind::PreMarkdown {
+                    file.kind = fmt;
+                }
+                info!(url = %file.id.as_deref().unwrap_or_default(), kind = ?file.kind, size = file.bytes.len(), "scraped media");
+                Ok(file)
+            },
+            None => anyhow::bail!("no media found at {}", url),
         }
 
-        // otherwise scrape html for biggest media
-        let html = response.text().await?;
-        let result = scrape_html(client, &url, &html, options, bar).await;
-        match &result {
-            Ok(file) => {
-                info!(url = %url, kind = ?file.kind, size = file.bytes.len(), "scraped media")
-            }
-            Err(e) => warn!(url = %url, error = %e, "no media found on page"),
-        }
-        result
     })
 }
 

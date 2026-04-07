@@ -7,6 +7,7 @@ use comrak::nodes::{AstNode, NodeValue};
 use image::GenericImageView;
 use itertools::Itertools;
 use rasteroid::Encoder;
+use rasteroid::term_misc::SizeDirection;
 use rasteroid::term_misc::Wininfo;
 use rasteroid::{
     RasterEncoder,
@@ -76,8 +77,6 @@ impl ImagePreprocessor {
         conf: &McatConfig,
         markdown_file_path: Option<&Path>,
     ) -> Result<Self> {
-        let mut urls = Vec::new();
-        extract_image_urls(node, &mut urls);
         let encoder = conf
             .encoder
             .as_ref()
@@ -86,6 +85,8 @@ impl ImagePreprocessor {
             .wininfo
             .as_ref()
             .context("this is likely a bug, wininfo isn't set at ImagePreprocessor new")?;
+        let mut urls = Vec::new();
+        extract_image_urls(node, wininfo, &mut urls);
 
         let render_mode = if conf.md_image != MdImageMode::Auto {
             &conf.md_image
@@ -143,8 +144,8 @@ impl ImagePreprocessor {
                 };
 
                 let (width, height) = img.dimensions();
-                let width = url.width.map(|v| v as u32).unwrap_or(width);
-                let height = url.height.map(|v| v as u32).unwrap_or(height);
+                let width = url.width.unwrap_or(width);
+                let height = url.height.unwrap_or(height);
                 let width_fm = if width as f32 > wininfo.spx_width as f32 * 0.8 {
                     "80%"
                 } else {
@@ -264,21 +265,25 @@ impl ImageElement {
 struct ImageUrl {
     base_url: String,
     original_url: String,
-    width: Option<u16>,
-    height: Option<u16>,
+    width: Option<u32>,
+    height: Option<u32>,
 }
-fn extract_image_urls<'a>(node: &'a AstNode<'a>, urls: &mut Vec<ImageUrl>) {
+fn extract_image_urls<'a>(node: &'a AstNode<'a>, wininfo: &Wininfo, urls: &mut Vec<ImageUrl>) {
     let data = node.data.borrow();
 
     if let NodeValue::Image(image_node) = &data.value {
         // regex for; <URL>#<Width>x<Height>
         // width and height are optional.
-        let regex = Regex::new(r"^(.+?)(?:#(\d+)?x(\d+)?)?$").unwrap();
+        let regex = Regex::new(r"^([^#]+)(?:#([^x]+)?x(.+)?)?$").unwrap();
         if let Some(captures) = regex.captures(&image_node.url)
             && let Some(base_url) = captures.get(1)
         {
-            let width = captures.get(2).and_then(|v| v.as_str().parse::<u16>().ok());
-            let height = captures.get(3).and_then(|v| v.as_str().parse::<u16>().ok());
+            let width = captures
+                .get(2)
+                .and_then(|v| wininfo.dim_to_px(v.as_str(), SizeDirection::Width).ok());
+            let height = captures
+                .get(3)
+                .and_then(|v| wininfo.dim_to_px(v.as_str(), SizeDirection::Height).ok());
             urls.push(ImageUrl {
                 base_url: base_url.as_str().to_owned(),
                 original_url: image_node.url.clone(),
@@ -289,6 +294,6 @@ fn extract_image_urls<'a>(node: &'a AstNode<'a>, urls: &mut Vec<ImageUrl>) {
     }
 
     for child in node.children() {
-        extract_image_urls(child, urls);
+        extract_image_urls(child, wininfo, urls);
     }
 }

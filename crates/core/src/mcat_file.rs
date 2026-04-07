@@ -63,6 +63,31 @@ pub enum McatKind {
     Typst,
 }
 
+impl McatKind {
+    pub fn from_ext(ext: &str) -> Option<Self> {
+        match ext.to_lowercase().as_str() {
+            "gif" => Some(Self::Gif),
+            "svg" => Some(Self::Svg),
+            "jxl" => Some(Self::JpegXL),
+            "png" | "jpg" | "jpeg" | "webp" | "tiff" | "bmp" | "ico" | "avif" | "exr" | "qoi"
+            | "hdr" | "dds" | "farbfeld" | "pnm" | "pbm" | "pgm" | "ppm" | "pam" => {
+                Some(Self::Image)
+            }
+            "mp4" | "webm" | "mkv" | "mov" | "avi" | "wmv" | "flv" | "mpeg" | "ogg" | "m4v" => {
+                Some(Self::Video)
+            }
+            "pdf" => Some(Self::Pdf),
+            "tex" => Some(Self::Tex),
+            "typ" => Some(Self::Typst),
+            "md" => Some(Self::Markdown),
+            "html" | "htm" => Some(Self::Html),
+            "exe" => Some(Self::Exe),
+            "lnk" => Some(Self::Lnk),
+            _ => None,
+        }
+    }
+}
+
 type Checker = fn(&[u8]) -> bool;
 
 pub struct McatFile {

@@ -2,7 +2,9 @@
 
 - added support for `JpegXL`
 - improving the image_preprocessor at the markdown_viewer, now 10% faster at rendering multiple images
+- improved queries from url, now detects types using the ext of the url too if exists (now also when the mime type is app)
 - fixed an issue that if an image with the same url will appear multiple times in the markdown_viewer, it will be rendered only once
+- fixed an issue where images with sizes (html) in the markdown_viewer will sometimes not be respected for their sizes, sizes currently only support % and px
 
 ## V0.5.4
 
