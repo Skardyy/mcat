@@ -1,6 +1,7 @@
 ## Src
 
 - added support for `JpegXL`
+- improving the image_preprocessor at the markdown_viewer, now 10% faster at rendering multiple images
 
 ## V0.5.4
 

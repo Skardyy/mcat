@@ -4,7 +4,6 @@ use anyhow::Context;
 use anyhow::Result;
 use base64::Engine;
 use comrak::nodes::{AstNode, NodeValue};
-use image::DynamicImage;
 use image::GenericImageView;
 use itertools::Itertools;
 use rasteroid::Encoder;
@@ -14,6 +13,7 @@ use rasteroid::{
     image_extended::InlineImage,
     term_misc::{self},
 };
+use rayon::iter::IndexedParallelIterator;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use regex::Regex;
 
@@ -116,9 +116,10 @@ impl ImagePreprocessor {
             });
         }
 
-        let items: Vec<(&ImageUrl, DynamicImage)> = urls
+        let mapper: HashMap<String, ImageElement> = urls
             .par_iter()
-            .filter_map(|url| {
+            .enumerate()
+            .filter_map(|(i, url)| {
                 let tmp = if url.base_url.starts_with("data:") {
                     handle_data_uri(&url.base_url)?
                 } else if is_local_path(&url.base_url) {
@@ -170,25 +171,25 @@ impl ImagePreprocessor {
                         }
                     };
 
-                Some((url, img))
+                let mut buffer = Vec::new();
+                if let Err(e) = encoder.encode_image(&img, &mut buffer, wininfo, None, None) {
+                    warn!(url = %url.original_url, error = %e, "failed to encode image");
+                    return None;
+                }
+
+                let img_str = String::from_utf8(buffer).unwrap_or_default();
+                let placeholder = create_placeholder(wininfo, &img_str, i, encoder, img.width());
+
+                Some((
+                    url.original_url.clone(),
+                    ImageElement {
+                        is_ok: true,
+                        placeholder,
+                        img: img_str,
+                    },
+                ))
             })
             .collect();
-
-        let mut mapper: HashMap<String, ImageElement> = HashMap::new();
-        for (i, (url, img)) in items.iter().enumerate() {
-            let mut buffer = Vec::new();
-            if let Err(e) = encoder.encode_image(img, &mut buffer, wininfo, None, None) {
-                warn!(url = %url.original_url, error = %e, "failed to encode image");
-            } else {
-                let img_str = String::from_utf8(buffer).unwrap_or_default();
-                let img = ImageElement {
-                    is_ok: true,
-                    placeholder: create_placeholder(wininfo, &img_str, i, encoder, img.width()),
-                    img: img_str,
-                };
-                mapper.insert(url.original_url.clone(), img);
-            }
-        }
 
         Ok(ImagePreprocessor { mapper })
     }
