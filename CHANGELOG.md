@@ -5,6 +5,7 @@
 - improved queries from url, now detects types using the ext of the url too if exists (now also when the mime type is app)
 - fixed an issue that if an image with the same url will appear multiple times in the markdown_viewer, it will be rendered only once
 - fixed an issue where images with sizes (html) in the markdown_viewer will sometimes not be respected for their sizes, sizes currently only support % and px
+- fixed an issue where using `-o image` the image would be resized, losing image quality.
 
 ## V0.5.4
 

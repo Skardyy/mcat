@@ -125,7 +125,7 @@ pub fn cat(files: Vec<McatFile>, out: &mut impl Write, config: &McatConfig) -> R
             out.write_all(md.as_bytes())?
         }
         Some(OutputFormat::Image) => {
-            let img = mcat_file.to_image(config, false, true)?;
+            let img = mcat_file.to_image(config, false, false)?;
             let mut buf = Vec::new();
             img.write_to(&mut Cursor::new(&mut buf), image::ImageFormat::Png)?;
             out.write_all(&buf)?;
