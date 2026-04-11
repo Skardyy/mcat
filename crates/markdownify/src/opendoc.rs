@@ -398,6 +398,24 @@ pub fn parse_opendoc(content: impl AsRef<[u8]>, inline: bool) -> Result<String, 
                 ctx.push_text(&styled);
             }
 
+            Ok(Event::GeneralRef(e)) => {
+                let name = parse_text(&*e)?;
+                let replacement = match name.as_ref() {
+                    "gt" => ">",
+                    "lt" => "<",
+                    "amp" => "&",
+                    "quot" => "\"",
+                    "apos" => "'",
+                    _ => continue,
+                };
+                let styled = if let Some(ref style) = ctx.active_span_style.clone() {
+                    ctx.apply_style(replacement, style)
+                } else {
+                    replacement.to_string()
+                };
+                ctx.push_text(&styled);
+            }
+
             Ok(Event::End(e)) => match e.name().as_ref() {
                 b"text:h" | b"text:p" => {
                     ctx.flush_para();
@@ -461,6 +479,7 @@ mod tests {
     fn headings() {
         let md = parse();
         assert!(md.contains("# Comprehensive ODT Fixture"), "title missing");
+        // the fixutre is broken here, heading count doesn't match the number..
         assert!(md.contains("## Heading 1"), "H1 missing");
         assert!(md.contains("### Heading 2"), "H2 missing");
         assert!(md.contains("#### Heading 3"), "H3 missing");

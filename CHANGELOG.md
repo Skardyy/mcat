@@ -6,6 +6,7 @@
 - fixed an issue that if an image with the same url will appear multiple times in the markdown_viewer, it will be rendered only once
 - fixed an issue where images with sizes (html) in the markdown_viewer will sometimes not be respected for their sizes, sizes currently only support % and px
 - fixed an issue where using `-o image` the image would be resized, losing image quality.
+- fixed an issue in markdownify where some chars such as ">" won't be rendered into the markdown. effected both docx, opendoc and pptx.
 
 ## V0.5.4
 

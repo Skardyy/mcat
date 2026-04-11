@@ -28,6 +28,7 @@ struct DocxContext {
     markdown: String,
     para: ParaStyle,
     run: RunStyle,
+    run_buf: String,
     in_table: bool,
     in_cell: bool,
     table_rows: Vec<Vec<String>>,
@@ -52,6 +53,7 @@ impl DocxContext {
             markdown: String::new(),
             para: ParaStyle::default(),
             run: RunStyle::default(),
+            run_buf: String::new(),
             in_table: false,
             in_cell: false,
             table_rows: Vec::new(),
@@ -404,45 +406,23 @@ pub fn parse_docx(content: impl AsRef<[u8]>, inline: bool) -> Result<String, Par
                     continue;
                 }
                 let raw = parse_text(&*e)?;
-                let styled = ctx.apply_run_style(&raw);
-                ctx.reset_run_style();
+                ctx.run_buf.push_str(&raw);
+            }
 
-                if !ctx.in_table && ctx.para.indent > 0 {
-                    let depth = ctx.para.indent as usize;
-                    let ilvl = (depth - 1).to_string();
-                    let ordered = ctx
-                        .para
-                        .num_id
-                        .as_ref()
-                        .and_then(|nid| ctx.numbering.get(&(nid.clone(), ilvl)))
-                        .copied()
-                        .unwrap_or(false);
-                    let indent_str = "  ".repeat(depth);
-                    if ordered {
-                        while ctx.para.order_counters.len() < depth {
-                            ctx.para.order_counters.push(0);
-                        }
-                        ctx.para.order_counters[depth - 1] += 1;
-                        let n = ctx.para.order_counters[depth - 1];
-                        ctx.markdown.push_str(&format!("{}{}. ", indent_str, n));
-                    } else {
-                        ctx.markdown.push_str(&format!("{}- ", indent_str));
-                    }
-                    ctx.para.indent = -1;
+            Ok(Event::GeneralRef(e)) => {
+                if ctx.in_drawing {
+                    continue;
                 }
-
-                if ctx.in_table || ctx.active_hyperlink_rid.is_some() {
-                    ctx.push_text(&styled);
-                } else if ctx.para.title {
-                    ctx.markdown.push_str(&format!("# {}", styled));
-                    ctx.para.title = false;
-                } else if ctx.para.heading_level > 0 {
-                    let hashes = "#".repeat(ctx.para.heading_level as usize + 1);
-                    ctx.markdown.push_str(&format!("{} {}", hashes, styled));
-                    ctx.para.heading_level = 0;
-                } else {
-                    ctx.markdown.push_str(&styled);
-                }
+                let name = parse_text(&*e)?;
+                let replacement = match name.as_ref() {
+                    "gt" => ">",
+                    "lt" => "<",
+                    "amp" => "&",
+                    "quot" => "\"",
+                    "apos" => "'",
+                    _ => continue,
+                };
+                ctx.run_buf.push_str(replacement);
             }
 
             Ok(Event::End(e)) => match e.name().as_ref() {
@@ -456,6 +436,50 @@ pub fn parse_docx(content: impl AsRef<[u8]>, inline: bool) -> Result<String, Par
                 }
                 b"w:tr" => {
                     ctx.table_rows.push(std::mem::take(&mut ctx.current_row));
+                }
+                b"w:r" => {
+                    let raw = std::mem::take(&mut ctx.run_buf);
+                    if !raw.is_empty() {
+                        let styled = ctx.apply_run_style(&raw);
+
+                        if !ctx.in_table && ctx.para.indent > 0 {
+                            let depth = ctx.para.indent as usize;
+                            let ilvl = (depth - 1).to_string();
+                            let ordered = ctx
+                                .para
+                                .num_id
+                                .as_ref()
+                                .and_then(|nid| ctx.numbering.get(&(nid.clone(), ilvl)))
+                                .copied()
+                                .unwrap_or(false);
+                            let indent_str = "  ".repeat(depth);
+                            if ordered {
+                                while ctx.para.order_counters.len() < depth {
+                                    ctx.para.order_counters.push(0);
+                                }
+                                ctx.para.order_counters[depth - 1] += 1;
+                                let n = ctx.para.order_counters[depth - 1];
+                                ctx.markdown.push_str(&format!("{}{}. ", indent_str, n));
+                            } else {
+                                ctx.markdown.push_str(&format!("{}- ", indent_str));
+                            }
+                            ctx.para.indent = -1;
+                        }
+
+                        if ctx.in_table || ctx.active_hyperlink_rid.is_some() {
+                            ctx.push_text(&styled);
+                        } else if ctx.para.title {
+                            ctx.markdown.push_str(&format!("# {}", styled));
+                            ctx.para.title = false;
+                        } else if ctx.para.heading_level > 0 {
+                            let hashes = "#".repeat(ctx.para.heading_level as usize);
+                            ctx.markdown.push_str(&format!("{} {}", hashes, styled));
+                            ctx.para.heading_level = 0;
+                        } else {
+                            ctx.markdown.push_str(&styled);
+                        }
+                    }
+                    ctx.reset_run_style();
                 }
                 b"w:p" => {
                     ctx.end_paragraph();
@@ -506,9 +530,9 @@ mod tests {
     fn headings() {
         let md = parse();
         assert!(md.contains("# Comprehensive DOCX Fixture"), "title missing");
-        assert!(md.contains("## Heading 1"), "H1 missing");
-        assert!(md.contains("### Heading 2"), "H2 missing");
-        assert!(md.contains("#### Heading 3"), "H3 missing");
+        assert!(md.contains("# Heading 1"), "H1 missing");
+        assert!(md.contains("## Heading 2"), "H2 missing");
+        assert!(md.contains("### Heading 3"), "H3 missing");
     }
 
     #[test]

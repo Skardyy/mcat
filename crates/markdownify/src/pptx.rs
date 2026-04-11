@@ -292,6 +292,22 @@ fn load_notes(archive: &mut ZipArchive<Cursor<&[u8]>>, slide_index: usize) -> Op
                     }
                 }
             }
+            Ok(Event::GeneralRef(e)) => {
+                if in_notes_body
+                    && in_tx_body
+                    && let Ok(name) = parse_text(&*e)
+                {
+                    let replacement = match name.as_ref() {
+                        "gt" => ">",
+                        "lt" => "<",
+                        "amp" => "&",
+                        "quot" => "\"",
+                        "apos" => "'",
+                        _ => continue,
+                    };
+                    text.push_str(replacement);
+                }
+            }
             Ok(Event::End(e)) => match e.name().as_ref() {
                 b"p:sp" => {
                     in_notes_body = false;
@@ -496,6 +512,22 @@ fn parse_slide(xml: &str, mut ctx: PptxContext) -> Result<String, ParsingError> 
                     s
                 };
                 ctx.push_run_text(&styled, &raw);
+            }
+
+            Ok(Event::GeneralRef(e)) => {
+                if !ctx.in_tx_body && !ctx.in_cell {
+                    continue;
+                }
+                let name = parse_text(&*e)?;
+                let replacement = match name.as_ref() {
+                    "gt" => ">",
+                    "lt" => "<",
+                    "amp" => "&",
+                    "quot" => "\"",
+                    "apos" => "'",
+                    _ => continue,
+                };
+                ctx.push_run_text(replacement, replacement);
             }
 
             Ok(Event::End(e)) => match e.name().as_ref() {
