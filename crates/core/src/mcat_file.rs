@@ -672,21 +672,11 @@ pub fn url_to_image(bytes: &[u8]) -> Result<DynamicImage> {
 }
 
 pub fn html_to_image(source: &McatFile) -> Result<DynamicImage> {
-    let (_tmp_file, url) = if let Some(path) = &source.path {
-        let abs = path
-            .canonicalize()
-            .map_err(|e| anyhow::anyhow!("failed to resolve path: {e}"))?;
-        let url = Url::from_file_path(&abs)
-            .map_err(|_| anyhow::anyhow!("failed to create url for chromium"))?;
-        (None, url)
-    } else {
-        let (html, _, _) = encoding_rs::UTF_8.decode(&source.bytes);
-        let mut tmp_file = NamedTempFile::with_suffix(".html")?;
-        tmp_file.write_all(html.as_bytes())?;
-        let url = Url::from_file_path(tmp_file.path())
-            .map_err(|_| anyhow::anyhow!("failed to create url for chromium"))?;
-        (Some(tmp_file), url)
-    };
+    let (html, _, _) = encoding_rs::UTF_8.decode(&source.bytes);
+    let mut tmp_file = NamedTempFile::with_suffix(".html")?;
+    tmp_file.write_all(html.as_bytes())?;
+    let url = Url::from_file_path(tmp_file.path())
+        .map_err(|_| anyhow::anyhow!("failed to create url for chromium"))?;
 
     let img_bytes: Vec<u8> = get_rt().block_on(async {
         let browser = ChromeHeadless::new(url.as_str()).await?;
