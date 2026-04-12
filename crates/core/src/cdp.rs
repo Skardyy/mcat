@@ -40,7 +40,6 @@ impl ChromeHeadless {
                     "--user-data-dir={}",
                     std::env::temp_dir().join("mcat-chrome-profile").display()
                 ),
-                "--disable-gpu",
                 "--hide-scrollbars",
                 "--force-color-profile=srgb",
                 "--disable-dev-shm-usage",
@@ -125,12 +124,8 @@ impl ChromeHeadless {
             )
             .await
             {
-                Ok(Ok(_)) => {
-                    return Ok(());
-                }
-                Ok(Err(_)) | Err(_) => {
-                    tokio::task::yield_now().await;
-                }
+                Ok(Ok(_)) => return Ok(()),
+                Ok(Err(_)) | Err(_) => tokio::task::yield_now().await,
             }
         }
     }
@@ -184,14 +179,7 @@ impl ChromeHeadless {
             &mut ws_stream,
             6,
             "Emulation.setDefaultBackgroundColorOverride",
-            Some(json!({
-                "color": {
-                    "r": 0,
-                    "g": 0,
-                    "b": 0,
-                    "a": 0
-                }
-            })),
+            Some(json!({ "color": { "r": 0, "g": 0, "b": 0, "a": 0 } })),
             false,
         )
         .await?;
@@ -202,10 +190,7 @@ impl ChromeHeadless {
                 &mut ws_stream,
                 4,
                 "Page.captureScreenshot",
-                Some(json!({
-                    "format": "png",
-                    "captureBeyondViewport": true,
-                })),
+                Some(json!({ "format": "png", "captureBeyondViewport": true })),
                 true,
             )
             .await?;
@@ -214,6 +199,12 @@ impl ChromeHeadless {
             .as_str()
             .context("failed to get screenshot")?;
         let bytes = general_purpose::STANDARD.decode(screenshot_data)?;
+
+        {
+            let mut process = self.process.lock().unwrap();
+            let _ = process.kill();
+        }
+
         tracing::info!(
             size = bytes.len(),
             "captured screenshot via headless chrome"
@@ -248,15 +239,8 @@ impl ChromeHeadless {
         wait: bool,
     ) -> Result<Value> {
         let command = match params {
-            Some(params) => json!({
-                "id": id,
-                "method": method,
-                "params": params
-            }),
-            None => json!({
-                "id": id,
-                "method": method
-            }),
+            Some(params) => json!({ "id": id, "method": method, "params": params }),
+            None => json!({ "id": id, "method": method }),
         };
 
         ws_stream
@@ -270,13 +254,12 @@ impl ChromeHeadless {
                     let response: Value = serde_json::from_str(&text)?;
                     if response["id"] == id {
                         if let Some(error) = response.get("error") {
-                            anyhow::bail!(format!("Chrome error: {}", error));
+                            anyhow::bail!("Chrome error: {}", error);
                         }
                         return Ok(response["result"].to_owned());
                     }
                 }
             }
-
             anyhow::bail!("WebSocket connection closed unexpectedly")
         } else {
             Ok(Value::Null)
@@ -293,9 +276,7 @@ impl ChromeHeadless {
                 ws_stream,
                 100,
                 "Runtime.evaluate",
-                Some(json!({
-                    "expression": "document.readyState"
-                })),
+                Some(json!({ "expression": "document.readyState" })),
                 true,
             )
             .await?;
