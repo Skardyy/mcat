@@ -36,6 +36,10 @@ impl ChromeHeadless {
             .args([
                 "--headless=new",
                 &format!("--remote-debugging-port={}", port),
+                &format!(
+                    "--user-data-dir={}",
+                    std::env::temp_dir().join("mcat-chrome-profile").display()
+                ),
                 "--disable-gpu",
                 "--hide-scrollbars",
                 "--force-color-profile=srgb",
