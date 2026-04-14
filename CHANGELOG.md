@@ -1,6 +1,7 @@
 ## Src
 
 - improved the html to image, now upto 3x faster on retries of the same/similar html
+- fixed an regression where text from stdin will not be considered markdown.
 
 ## V0.5.5
 

@@ -67,3 +67,7 @@ jxl-oxide.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 winreg.workspace = true
+
+[dev-dependencies]
+assert_cmd.workspace = true
+predicates.workspace = true

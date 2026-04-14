@@ -74,3 +74,6 @@ signal-hook = "0.4.3"
 libc = "0.2.183"
 windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
 winreg = "0.55.0"
+
+assert_cmd = "2.2.0"
+predicates = "3.1.4"

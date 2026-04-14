@@ -16,6 +16,7 @@ use config::McatConfig;
 use crossterm::tty::IsTty;
 use dirs::home_dir;
 use scrapy::MediaScrapeOptions;
+use std::io::Write;
 use std::{
     io::{BufWriter, Read},
     path::Path,
@@ -108,7 +109,12 @@ fn main() -> Result<()> {
         let mut buffer = Vec::new();
         std::io::stdin().read_to_end(&mut buffer)?;
 
-        let file = McatFile::from_bytes(buffer, None, None, Some("stdin".to_owned()))?;
+        let file = McatFile::from_bytes(
+            buffer,
+            None,
+            Some("md".to_owned()),
+            Some("stdin".to_owned()),
+        )?;
         files.push(file);
     }
 
@@ -139,6 +145,13 @@ fn main() -> Result<()> {
                 files.push(McatFile::from_path(path)?);
             }
         }
+    }
+
+    if config.testing {
+        for file in &files {
+            writeln!(out, "kind: {:?}", file.kind)?;
+        }
+        return Ok(());
     }
 
     if !files.is_empty() {

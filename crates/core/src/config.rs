@@ -35,6 +35,9 @@ pub struct McatConfig {
     #[arg(long, hide = true, env = "MCAT_STDIN_PIPED")]
     stdin_piped: bool,
 
+    #[arg(long, hide = true)]
+    pub testing: bool,
+
     // ## Core Options ##
     /// Color theme
     #[arg(
