@@ -6,6 +6,7 @@
 | pdf                                                                         | 🟩              | 🟩          | 🟩                 | 🟩  | png                 |
 | md                                                                          | 🟩              | 🟩          | 🟩                 | 🟨  | html, png           |
 | html                                                                        | 🟨              | 🟩          | 🟩                 | 🟨  | png                 |
+| mermaid                                                                     | 🟩              | 🟩          | 🟩                 | 🟨  | png                 |
 | svg, bmp, dds, exr, ff, hdr, ico, jpeg, png, pnm, qoi, tga, tiff, webp, jxl | 🟩              | 🟩          | 🟩                 | 🟩  | png                 |
 | url, exe, lnk                                                               | 🟩              | 🟩          | 🟩                 | 🟩  | png                 |
 | csv, docx, xls, xlsx, xlsm, xlsb, xla, xlam, odt, odp, pptx, ods, zip, tar  | 🟩              | 🟩          | 🟩                 | 🟨  | markdown, html, png |

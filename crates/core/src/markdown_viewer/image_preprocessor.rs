@@ -15,7 +15,8 @@ use rasteroid::{
     term_misc::{self},
 };
 use rayon::iter::IndexedParallelIterator;
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::iter::IntoParallelIterator;
+use rayon::iter::ParallelIterator;
 use regex::Regex;
 
 use tracing::{info, warn};
@@ -118,10 +119,18 @@ impl ImagePreprocessor {
         }
 
         let mapper: HashMap<String, ImageElement> = urls
-            .par_iter()
+            .into_par_iter()
             .enumerate()
             .filter_map(|(i, url)| {
-                let tmp = if url.base_url.starts_with("data:") {
+                let tmp = if url.is_mermaid {
+                    McatFile::from_bytes(
+                        url.mermaid_content?.into_bytes(),
+                        None,
+                        Some("mermaid".to_owned()),
+                        None,
+                    )
+                    .ok()?
+                } else if url.base_url.starts_with("data:") {
                     handle_data_uri(&url.base_url)?
                 } else if is_local_path(&url.base_url) {
                     match handle_local_image(&url.base_url, markdown_dir) {
@@ -182,7 +191,7 @@ impl ImagePreprocessor {
                 let placeholder = create_placeholder(wininfo, &img_str, i, encoder, img.width());
 
                 Some((
-                    url.original_url.clone(),
+                    url.original_url,
                     ImageElement {
                         is_ok: true,
                         placeholder,
@@ -267,6 +276,8 @@ struct ImageUrl {
     original_url: String,
     width: Option<u32>,
     height: Option<u32>,
+    is_mermaid: bool,
+    mermaid_content: Option<String>,
 }
 fn extract_image_urls<'a>(node: &'a AstNode<'a>, wininfo: &Wininfo, urls: &mut Vec<ImageUrl>) {
     let data = node.data.borrow();
@@ -289,8 +300,21 @@ fn extract_image_urls<'a>(node: &'a AstNode<'a>, wininfo: &Wininfo, urls: &mut V
                 original_url: image_node.url.clone(),
                 width,
                 height,
+                is_mermaid: false,
+                mermaid_content: None,
             });
         }
+    } else if let NodeValue::CodeBlock(cb) = &data.value
+        && matches!(cb.info.trim(), "mermaid" | "mmd")
+    {
+        urls.push(ImageUrl {
+            base_url: "".to_owned(),
+            original_url: cb.literal.clone(),
+            width: None,
+            height: None,
+            is_mermaid: true,
+            mermaid_content: Some(cb.literal.clone()),
+        });
     }
 
     for child in node.children() {

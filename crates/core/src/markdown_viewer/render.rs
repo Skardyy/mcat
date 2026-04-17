@@ -71,6 +71,20 @@ fn collect<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext, sep: &str) -> Strin
     content
 }
 
+fn center_lines(text: &str, start_col: usize, sc_width: u16) -> String {
+    text.lines()
+        .map(|line| {
+            let line = trim_ansi_string(line.into());
+            let le = string_len(&line);
+            let offset = start_col.saturating_sub(1);
+            let offset = (sc_width as usize - offset)
+                .saturating_sub(le)
+                .saturating_div(2);
+            format!("{}{line}", " ".repeat(offset))
+        })
+        .join("\n")
+}
+
 pub fn parse_node<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     let data = node.data.borrow();
 
@@ -301,8 +315,17 @@ fn render_code_block<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String
 
     let info = if info.trim().is_empty() { "text" } else { info };
 
-    // force_simple_code_block is a number because it may be recursive
-    if info == "file-tree" {
+    if matches!(info, "mermaid" | "mmd")
+        && let Some(img) = ctx.image_preprocessor.mapper.get(literal)
+        && img.is_ok
+    {
+        let placeholder = &img.placeholder;
+        if ctx.center {
+            let sps = node.data.borrow().sourcepos;
+            return center_lines(placeholder, sps.start.column, ctx.wininfo.sc_width);
+        }
+        placeholder.clone()
+    } else if info == "file-tree" {
         render_file_tree(literal, ctx)
     } else if literal.lines().count() <= 10
         || ctx.force_simple_code_block > 0
@@ -393,19 +416,7 @@ fn render_paragraph<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String 
     ctx.paragraph_collecting_line = None;
 
     if ctx.center {
-        lines
-            .lines()
-            .map(|line| {
-                let line = trim_ansi_string(line.into());
-                let le = string_len(&line);
-                // 1 based index
-                let offset = sps.start.column.saturating_sub(1);
-                let offset = (ctx.wininfo.sc_width as usize - offset)
-                    .saturating_sub(le)
-                    .saturating_div(2);
-                format!("{}{line}", " ".repeat(offset))
-            })
-            .join("\n")
+        center_lines(&lines, sps.start.column, ctx.wininfo.sc_width)
     } else {
         lines
             .lines()
