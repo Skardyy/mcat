@@ -1,4 +1,4 @@
-## Src
+## V0.5.6
 
 - improved the html to image, now upto 3x faster on retries of the same/similar html
 - improved markdownify to be more relaxed, instead of failing it will give fallbacks more often.
