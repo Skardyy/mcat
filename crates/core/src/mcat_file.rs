@@ -50,6 +50,7 @@ pub enum McatKind {
     Gif, // have different logic on iterm
 
     Image,
+    Mermaid,
     Svg, // svg is handled manually, since its not supported by the image crate
     JpegXL,
 
@@ -165,6 +166,7 @@ impl McatFile {
             (is_exe, "", McatKind::Exe),
             (is_jxl, "", McatKind::JpegXL),
             (|_| false, "svg", McatKind::Svg),
+            (|_| false, "mermaid", McatKind::Mermaid), // mmd can mean mathpix markdown
             (|_| false, "html", McatKind::Html),
             (|_| false, "htm", McatKind::Html),
             (|_| false, "md", McatKind::Markdown),
@@ -214,6 +216,18 @@ impl McatFile {
                     self.id.clone(),
                 )?;
                 html_to_image(&file)?
+            }
+            McatKind::Mermaid => {
+                let svg = mermaid_rs_renderer::render(str::from_utf8(&self.bytes)?)?;
+                svg_to_image(
+                    svg.as_bytes(),
+                    wininfo,
+                    width,
+                    height,
+                    is_ascii,
+                    pad,
+                    resize,
+                )?
             }
             McatKind::Html => html_to_image(self)?,
             McatKind::Video => anyhow::bail!(
@@ -271,6 +285,7 @@ impl McatFile {
             | McatKind::Url
             | McatKind::Exe
             | McatKind::JpegXL
+            | McatKind::Mermaid
             | McatKind::Lnk => {
                 let img = self.to_image(config, false, false)?;
                 Ok(vec![img])
