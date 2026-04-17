@@ -1,9 +1,9 @@
 pub mod html_preprocessor;
 pub mod image_preprocessor;
 pub mod render;
-pub mod themes;
 pub mod utils;
 
+use crate::themes::CustomTheme;
 use comrak::{
     Arena, markdown_to_html_with_plugins, options, plugins::syntect::SyntectAdapterBuilder,
 };
@@ -11,7 +11,6 @@ use image_preprocessor::ImagePreprocessor;
 use itertools::Itertools;
 use render::{AnsiContext, RESET, parse_node};
 use syntect::highlighting::ThemeSet;
-use themes::CustomTheme;
 
 use crate::config::{McatConfig, Theme};
 use anyhow::{Context, Result};
@@ -39,7 +38,7 @@ pub fn md_to_ansi(
     wininfo.sc_width = wininfo.sc_width.saturating_sub((padding * 2) as u16);
 
     let ps = two_face::syntax::extra_newlines();
-    let theme = CustomTheme::from(&config.theme);
+    let theme = config.theme.to_custom();
     let image_preprocessor = ImagePreprocessor::new(root, &config, markdown_file_path)?;
     let mut ctx = AnsiContext {
         ps,

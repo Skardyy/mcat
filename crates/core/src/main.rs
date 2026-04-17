@@ -8,6 +8,7 @@ mod markdown_viewer;
 mod mcat_file;
 mod prompter;
 mod scrapy;
+mod themes;
 
 use anyhow::{Context, Result};
 use clap::{Command, CommandFactory, Parser};

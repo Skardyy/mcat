@@ -7,11 +7,13 @@ use regex::Regex;
 use strip_ansi_escapes::strip_str;
 use syntect::parsing::SyntaxSet;
 
-use crate::markdown_viewer::utils::{string_len, trim_ansi_string, wrap_lines};
+use crate::{
+    markdown_viewer::utils::{string_len, trim_ansi_string, wrap_lines},
+    themes::CustomTheme,
+};
 
 use super::{
     image_preprocessor::ImagePreprocessor,
-    themes::CustomTheme,
     utils::{
         format_code_box, format_code_full, format_code_simple, format_tb, wrap_char_based,
         wrap_highlighted_line,

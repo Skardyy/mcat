@@ -15,7 +15,7 @@ use rasteroid::{
 };
 use tracing::debug;
 
-use crate::prompter::MultiBar;
+use crate::{prompter::MultiBar, themes::CustomTheme};
 
 #[derive(Parser)]
 #[command(
@@ -450,6 +450,12 @@ pub enum Theme {
     Everforest,
     Autumn,
     Spring,
+}
+
+impl Theme {
+    pub fn to_custom(&self) -> CustomTheme {
+        CustomTheme::from(self)
+    }
 }
 
 impl std::fmt::Display for Theme {

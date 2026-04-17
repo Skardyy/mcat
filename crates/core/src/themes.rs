@@ -4,6 +4,46 @@ use syntect::highlighting::{Color, ScopeSelectors, StyleModifier, Theme, ThemeSe
 
 use crate::config;
 
+fn lighten_hex(hex: &str, factor: f32) -> String {
+    let hex = hex.trim_start_matches('#');
+    if hex.len() != 6 {
+        return format!("#{hex}");
+    }
+    let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
+    let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
+    let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
+    let blend = |c: u8| (c as f32 + (255.0 - c as f32) * factor).round() as u8;
+    format!("#{:02X}{:02X}{:02X}", blend(r), blend(g), blend(b))
+}
+
+fn darken_hex(hex: &str, factor: f32) -> String {
+    let hex = hex.trim_start_matches('#');
+    if hex.len() != 6 {
+        return format!("#{hex}");
+    }
+    let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0);
+    let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
+    let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
+    let scale = |c: u8| (c as f32 * factor).round() as u8;
+    format!("#{:02X}{:02X}{:02X}", scale(r), scale(g), scale(b))
+}
+
+fn readable_on(hex: &str) -> String {
+    let hex = hex.trim_start_matches('#');
+    if hex.len() != 6 {
+        return "#000000".to_string();
+    }
+    let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(0) as f32;
+    let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0) as f32;
+    let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0) as f32;
+    let lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    if lum > 140.0 {
+        "#000000".to_string()
+    } else {
+        "#FFFFFF".to_string()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ThemeColor {
     value: String,
@@ -635,6 +675,97 @@ impl CustomTheme {
         }
     }
 
+    pub fn to_mermaid_theme(&self) -> mermaid_rs_renderer::Theme {
+        let mut t = mermaid_rs_renderer::Theme::modern();
+
+        t.primary_color = self.surface.value.clone();
+        t.secondary_color = self.keyword_bg.value.clone();
+        t.tertiary_color = self.background.value.clone();
+        t.primary_text_color = self.foreground.value.clone();
+        t.primary_border_color = self.border.value.clone();
+        t.line_color = self.foreground.value.clone();
+        t.edge_label_background = self.background.value.clone();
+        t.cluster_background = self.keyword_bg.value.clone();
+        t.cluster_border = self.border.value.clone();
+        t.background = self.background.value.clone();
+
+        t.sequence_actor_fill = self.surface.value.clone();
+        t.sequence_actor_border = self.border.value.clone();
+        t.sequence_actor_line = self.comment.value.clone();
+        t.sequence_note_fill = self.keyword_bg.value.clone();
+        t.sequence_note_border = self.yellow.value.clone();
+        t.sequence_activation_fill = self.surface.value.clone();
+        t.sequence_activation_border = self.border.value.clone();
+
+        t.text_color = self.foreground.value.clone();
+
+        t.git_colors = [
+            self.red.value.clone(),
+            self.blue.value.clone(),
+            self.green.value.clone(),
+            self.yellow.value.clone(),
+            self.magenta.value.clone(),
+            self.cyan.value.clone(),
+            darken_hex(&self.red.value, 0.65),
+            darken_hex(&self.blue.value, 0.65),
+        ];
+        t.git_inv_colors = [
+            lighten_hex(&self.red.value, 0.6),
+            lighten_hex(&self.blue.value, 0.6),
+            lighten_hex(&self.green.value, 0.6),
+            lighten_hex(&self.yellow.value, 0.6),
+            lighten_hex(&self.magenta.value, 0.6),
+            lighten_hex(&self.cyan.value, 0.6),
+            lighten_hex(&darken_hex(&self.red.value, 0.65), 0.6),
+            lighten_hex(&darken_hex(&self.blue.value, 0.65), 0.6),
+        ];
+        t.git_branch_label_colors = [
+            readable_on(&t.git_colors[0]),
+            readable_on(&t.git_colors[1]),
+            readable_on(&t.git_colors[2]),
+            readable_on(&t.git_colors[3]),
+            readable_on(&t.git_colors[4]),
+            readable_on(&t.git_colors[5]),
+            readable_on(&t.git_colors[6]),
+            readable_on(&t.git_colors[7]),
+        ];
+        t.git_commit_label_color = self.foreground.value.clone();
+        t.git_commit_label_background = self.surface.value.clone();
+        t.git_tag_label_color = self.foreground.value.clone();
+        t.git_tag_label_background = self.surface.value.clone();
+        t.git_tag_label_border = self.border.value.clone();
+
+        t.pie_title_text_color = self.foreground.value.clone();
+        t.pie_section_text_color = self.foreground.value.clone();
+        t.pie_legend_text_color = self.foreground.value.clone();
+        t.pie_stroke_color = self.background.value.clone();
+        t.pie_outer_stroke_color = self.border.value.clone();
+        let base = [
+            &self.red.value,
+            &self.blue.value,
+            &self.green.value,
+            &self.yellow.value,
+            &self.magenta.value,
+            &self.cyan.value,
+        ];
+        t.pie_colors = [
+            lighten_hex(base[0], 0.45),
+            darken_hex(base[0], 0.65),
+            lighten_hex(base[1], 0.45),
+            darken_hex(base[1], 0.65),
+            lighten_hex(base[2], 0.45),
+            darken_hex(base[2], 0.65),
+            lighten_hex(base[3], 0.45),
+            darken_hex(base[3], 0.65),
+            lighten_hex(base[4], 0.45),
+            darken_hex(base[4], 0.65),
+            lighten_hex(base[5], 0.45),
+            darken_hex(base[5], 0.65),
+        ];
+
+        t
+    }
+
     pub fn to_syntect_theme(&self) -> Theme {
         let settings = ThemeSettings {
             foreground: Some(self.foreground.color),
@@ -732,7 +863,7 @@ impl CustomTheme {
             self.surface.value,
             self.border.value
         );
-        let full_css = include_str!("../../assets/style.css");
+        let full_css = include_str!("../assets/style.css");
         format!("{full_css}\n\n{root_css}")
     }
 }

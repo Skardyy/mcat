@@ -631,8 +631,8 @@ mod tests {
     use rasteroid::{RasterEncoder, term_misc::Wininfo};
 
     use crate::{
-        config::McatConfig,
-        markdown_viewer::{image_preprocessor::ImagePreprocessor, themes::CustomTheme},
+        config::McatConfig, markdown_viewer::image_preprocessor::ImagePreprocessor,
+        themes::CustomTheme,
     };
 
     use super::*;

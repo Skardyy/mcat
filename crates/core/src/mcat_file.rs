@@ -218,7 +218,11 @@ impl McatFile {
                 html_to_image(&file)?
             }
             McatKind::Mermaid => {
-                let svg = mermaid_rs_renderer::render(str::from_utf8(&self.bytes)?)?;
+                let theme = config.theme.to_custom().to_mermaid_theme();
+                let mut opts = mermaid_rs_renderer::RenderOptions::modern();
+                opts.theme = theme;
+                let svg =
+                    mermaid_rs_renderer::render_with_options(str::from_utf8(&self.bytes)?, opts)?;
                 svg_to_image(
                     svg.as_bytes(),
                     wininfo,
