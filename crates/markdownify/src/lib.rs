@@ -131,33 +131,44 @@ impl MarkdownifyInput {
         // add more here, also add ext checking in too
         let inline = self.allow_inline_images;
         let bytes = &self.bytes;
-        let handlers: &[(Checker, &str, Parser)] = &[
-            (is_tar, "tar", &|| archives::parse_tar(bytes, inline)),
-            (is_docx, "docx", &|| docx::parse_docx(bytes, inline)),
-            (is_pptx, "pptx", &|| pptx::parse_pptx(bytes, inline)),
-            (is_odt, "odt", &|| opendoc::parse_opendoc(bytes, inline)),
-            (is_odp, "odp", &|| opendoc::parse_opendoc(bytes, inline)),
-            (is_ods, "ods", &|| sheets::parse_sheets(bytes)),
-            (is_xlsx, "xlsx", &|| sheets::parse_sheets(bytes)),
-            (is_xls, "xls", &|| sheets::parse_sheets(bytes)),
-            (is_zip, "zip", &|| archives::parse_zip(bytes, inline)),
-            (|_| false, "csv", &|| sheets::parse_csv(bytes)),
-            (|_| false, "xlsm", &|| sheets::parse_sheets(bytes)),
-            (|_| false, "xlsb", &|| sheets::parse_sheets(bytes)),
-            (|_| false, "xla", &|| sheets::parse_sheets(bytes)),
-            (|_| false, "xlam", &|| sheets::parse_sheets(bytes)),
-            (|_| false, "html", &|| {
+        let handlers: &[(Checker, &[&str], Parser)] = &[
+            (
+                |_| false,
+                &[
+                    "apk", "ipa", "jar", "aar", "war", "ear", "deb", "rpm", "xpi", "crx", "nupkg",
+                    "whl", "egg",
+                ],
+                &|| {
+                    Ok(binary_fallback(
+                        self.path.as_ref().map(|v| v.to_string_lossy()).as_deref(),
+                        self.ext.as_deref(),
+                    ))
+                },
+            ),
+            (is_docx, &["docx"], &|| docx::parse_docx(bytes, inline)),
+            (is_pptx, &["pptx"], &|| pptx::parse_pptx(bytes, inline)),
+            (is_odt, &["odt"], &|| opendoc::parse_opendoc(bytes, inline)),
+            (is_odp, &["odp"], &|| opendoc::parse_opendoc(bytes, inline)),
+            (is_ods, &["ods"], &|| sheets::parse_sheets(bytes)),
+            (is_xlsx, &["xlsx"], &|| sheets::parse_sheets(bytes)),
+            (is_xls, &["xls"], &|| sheets::parse_sheets(bytes)),
+            (is_zip, &["zip"], &|| archives::parse_zip(bytes, inline)),
+            (is_tar, &["tar"], &|| archives::parse_tar(bytes, inline)),
+            (|_| false, &["csv"], &|| sheets::parse_csv(bytes)),
+            (|_| false, &["xlsm", "xlsb", "xla", "xlam"], &|| {
+                sheets::parse_sheets(bytes)
+            }),
+            (|_| false, &["html"], &|| {
                 let html = parse_text(bytes)?;
                 let md = format!("```html\n{html}\n```");
                 Ok(md)
             }),
-            (|_| false, "md", &|| parse_text(bytes)),
+            (|_| false, &["md"], &|| parse_text(bytes)),
         ];
-
         let ext = self.ext.clone().unwrap_or_default();
         let result = handlers
             .iter()
-            .find(|(check, e, _)| check(bytes) || ext == **e)
+            .find(|(check, exts, _)| check(bytes) || exts.contains(&ext.as_str()))
             .map(|(_, _, parse)| parse());
 
         if let Some(result) = result {
@@ -196,13 +207,15 @@ impl MarkdownifyInput {
                     None,
                 ));
             }
-            let text = parse_text(&self.bytes).map_err(|e| {
-                ParsingError::UnsupportedFormat(format!(
-                    "couldn't find a matching format for the file, and file failed to decode as text: {e}"
-                ))
-            })?;
 
-            Ok(file_fallback(&text, self.ext.as_deref()))
+            // fallback
+            match parse_text(&self.bytes) {
+                Ok(text) => Ok(file_fallback(&text, self.ext.as_deref())),
+                Err(_) => Ok(binary_fallback(
+                    self.path.as_ref().map(|v| v.to_string_lossy()).as_deref(),
+                    self.ext.as_deref(),
+                )),
+            }
         }
     }
 }
