@@ -2233,7 +2233,7 @@ checksum = "c41e0c4fef86961ac6d6f8a82609f55f31b05e4fce149ac5710e439df7619ba4"
 
 [[package]]
 name = "markdownify"
-version = "0.3.3"
+version = "0.3.4"
 dependencies = [
  "base64",
  "calamine",
@@ -2270,7 +2270,7 @@ dependencies = [
 
 [[package]]
 name = "mcat"
-version = "0.5.5"
+version = "0.5.6"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -2952,7 +2952,7 @@ checksum = "63b8176103e19a2643978565ca18b50549f6101881c443590420e4dc998a3c69"
 
 [[package]]
 name = "rasteroid"
-version = "0.3.2"
+version = "0.3.1"
 dependencies = [
  "base64",
  "color_quant",
