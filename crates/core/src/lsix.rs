@@ -131,7 +131,7 @@ fn ext_to_svg(ext: &str) -> &'static str {
         "bash_logout" | "profile" | "zshenv" | "zshrc" | "zprofile" | "zlogin" | 
         "zlogout" | "fishrc" | "fish_variables" | "fish_config" | "fish_plugins" | 
         "fish_functions" | "fish_completions" | "fish_aliases" | "fish_abbreviations" | 
-         "fish_user_init" | "fish_user_paths" | 
+        "fish_user_init" | "fish_user_paths" | 
         "fish_user_variables" | "fish_user_functions" | "fish_user_completions" | 
         "fish_user_abbreviations" | "fish_user_aliases" | "fish_user_key_bindings"
     ) {
@@ -306,8 +306,14 @@ pub fn lsix(input: impl AsRef<str>, out: &mut impl Write, mut ctx: McatConfig) -
                     | McatKind::Exe
                     | McatKind::Pdf
                     | McatKind::JpegXL
+                    | McatKind::Mermaid
                     | McatKind::Lnk => mcat_file.to_image(&ctx, true, true).ok(),
-                    _ => None,
+                    McatKind::PreMarkdown |
+                    McatKind::Markdown |
+                    McatKind::Html |
+                    McatKind::Video |
+                    McatKind::Tex |
+                    McatKind::Typst => None
                 };
                 (img, kind)
             };

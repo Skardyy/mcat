@@ -1,3 +1,7 @@
+## Src
+
+- added `mermaid` support to the `ls` command
+
 ## V0.5.6
 
 - improved the html to image, now upto 3x faster on retries of the same/similar html

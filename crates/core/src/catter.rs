@@ -110,7 +110,12 @@ pub fn cat(files: Vec<McatFile>, out: &mut impl Write, config: &McatConfig) -> R
             | McatKind::JpegXL
             | McatKind::Mermaid
             | McatKind::Lnk => Some(OutputFormat::Inline),
-            _ => None,
+            McatKind::PreMarkdown
+            | McatKind::Markdown
+            | McatKind::Html
+            | McatKind::Url
+            | McatKind::Tex
+            | McatKind::Typst => None,
         },
     };
 
