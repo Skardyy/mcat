@@ -39,7 +39,7 @@ fn handle_data_uri(url: &str) -> Option<McatFile> {
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(data)
         .ok()?;
-    McatFile::from_bytes(bytes, None, None, None).ok()
+    McatFile::from_bytes(bytes, None, None, None, true).ok()
 }
 
 fn handle_local_image(path: &str, markdown_file_dir: Option<&Path>) -> Result<McatFile> {
@@ -47,14 +47,14 @@ fn handle_local_image(path: &str, markdown_file_dir: Option<&Path>) -> Result<Mc
 
     // Try absolute or CWD-relative path first
     if original_path.exists() {
-        return McatFile::from_path(original_path);
+        return McatFile::from_path(original_path, true);
     }
 
     // If that fails and we have a markdown file directory, try relative to that
     if let Some(md_dir) = markdown_file_dir {
         let relative_path = md_dir.join(path);
         if relative_path.exists() {
-            return McatFile::from_path(relative_path);
+            return McatFile::from_path(relative_path, true);
         } else {
             anyhow::bail!(
                 "Local image file not found: {} (tried {} and {})",
@@ -128,6 +128,7 @@ impl ImagePreprocessor {
                         None,
                         Some("mermaid".to_owned()),
                         None,
+                        true,
                     )
                     .ok()?
                 } else if url.base_url.starts_with("data:") {

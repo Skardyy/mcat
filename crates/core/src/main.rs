@@ -115,6 +115,7 @@ fn main() -> Result<()> {
             None,
             Some("md".to_owned()),
             Some("stdin".to_owned()),
+            true,
         )?;
         files.push(file);
     }
@@ -139,11 +140,11 @@ fn main() -> Result<()> {
                 selected_files.sort();
                 let new_files = selected_files
                     .iter()
-                    .map(McatFile::from_path)
+                    .map(|v| McatFile::from_path(v, true))
                     .collect::<Result<Vec<_>, _>>()?;
                 files.extend(new_files);
             } else {
-                files.push(McatFile::from_path(path)?);
+                files.push(McatFile::from_path(path, true)?);
             }
         }
     }

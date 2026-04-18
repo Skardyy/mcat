@@ -1,6 +1,7 @@
 ## Src
 
 - added `mermaid` support to the `ls` command
+- improved the `ls` speed, now no longer auto decompressing
 
 ## V0.5.6
 

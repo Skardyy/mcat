@@ -290,7 +290,8 @@ pub fn lsix(input: impl AsRef<str>, out: &mut impl Write, mut ctx: McatConfig) -
             let (img, kind) = if path.is_dir() {
                 (None, McatKind::PreMarkdown)
             } else {
-                let mcat_file = match McatFile::from_path(&path) {
+                // compressed files rarely are the once we want, and they will be heavy cpu time.
+                let mcat_file = match McatFile::from_path(&path, false) {
                     Ok(f) => f,
                     Err(e) => {
                         warn!(path = %path.display(), error = %e, "failed to read file");
@@ -326,7 +327,7 @@ pub fn lsix(input: impl AsRef<str>, out: &mut impl Write, mut ctx: McatConfig) -
                     } else {
                         ext_to_svg(&ext)
                     };
-                    let new_file = match McatFile::from_bytes(svg.as_bytes().to_owned(), None, Some("svg".to_owned()), None) {
+                    let new_file = match McatFile::from_bytes(svg.as_bytes().to_owned(), None, Some("svg".to_owned()), None, true) {
                         Ok(f) => f,
                         Err(e) => {
                             warn!(path = %path.display(), error = %e, "failed to create svg fallback");

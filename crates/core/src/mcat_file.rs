@@ -102,13 +102,13 @@ pub struct McatFile {
 }
 
 impl McatFile {
-    pub fn from_path(path: impl AsRef<Path>) -> Result<Self> {
+    pub fn from_path(path: impl AsRef<Path>, decompress: bool) -> Result<Self> {
         let path = path.as_ref();
         let pathbuf = path.to_path_buf();
         let ext = path.extension().map(|v| v.to_string_lossy().to_string());
         let bytes = fs::read(path)?;
 
-        let s = Self::from_bytes(bytes, Some(pathbuf), ext, None)?;
+        let s = Self::from_bytes(bytes, Some(pathbuf), ext, None, decompress)?;
         info!(path = %path.display(), kind = ?s.kind, "loaded file");
         Ok(s)
     }
@@ -131,13 +131,14 @@ impl McatFile {
         path: Option<PathBuf>,
         ext: Option<String>,
         id: Option<String>,
+        decompress: bool,
     ) -> Result<Self> {
-        let bytes: Vec<u8> = if infer::archive::is_gz(&bytes) {
+        let bytes: Vec<u8> = if decompress && infer::archive::is_gz(&bytes) {
             let mut decoder = GzDecoder::new(bytes.as_slice());
             let mut out = Vec::new();
             decoder.read_to_end(&mut out)?;
             out
-        } else if infer::archive::is_xz(&bytes) {
+        } else if decompress && infer::archive::is_xz(&bytes) {
             let mut decoder = XzReader::new(bytes.as_slice(), true);
             let mut out = Vec::new();
             decoder.read_to_end(&mut out)?;
@@ -214,6 +215,7 @@ impl McatFile {
                     self.path.clone(),
                     Some("html".to_owned()),
                     self.id.clone(),
+                    true,
                 )?;
                 html_to_image(&file)?
             }
@@ -682,7 +684,7 @@ pub fn url_to_image(bytes: &[u8]) -> Result<DynamicImage> {
     let icon_path = Path::new(icon_path);
     anyhow::ensure!(icon_path.exists(), "icon path does not exist");
 
-    let icon_file = McatFile::from_path(icon_path)?;
+    let icon_file = McatFile::from_path(icon_path, true)?;
     match icon_file.kind {
         McatKind::Image => Ok(image::load_from_memory(&icon_file.bytes)?),
         McatKind::Exe => exe_to_image(&icon_file.bytes),

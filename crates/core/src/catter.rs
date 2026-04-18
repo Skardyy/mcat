@@ -92,7 +92,7 @@ pub fn cat(files: Vec<McatFile>, out: &mut impl Write, config: &McatConfig) -> R
             .map(|v| v.to_markdown_input(config.inline_images_in_md))
             .collect::<Result<Vec<_>>>()?;
         let md = markdownify::convert_files(files)?;
-        &McatFile::from_bytes(md.into_bytes(), None, Some("md".to_owned()), None)?
+        &McatFile::from_bytes(md.into_bytes(), None, Some("md".to_owned()), None, true)?
     } else {
         mf
     };

@@ -71,7 +71,7 @@ pub fn scrape_biggest_media(
             // known type, just download
             Some(fmt) => {
                 let data = download(response, options, bar).await?;
-                let mut file = McatFile::from_bytes(data, None, ext_from_url(&url), Some(url))?;
+                let mut file = McatFile::from_bytes(data, None, ext_from_url(&url), Some(url), true)?;
                 if file.kind == McatKind::PreMarkdown {
                     file.kind = fmt;
                 }
@@ -205,7 +205,7 @@ async fn scrape_html(
         };
         let size = data.len();
 
-        let mut file = McatFile::from_bytes(data, None, None, Some(base_url.to_owned()))?;
+        let mut file = McatFile::from_bytes(data, None, None, Some(base_url.to_owned()), true)?;
         if let Some(fmt) = format {
             file.kind = fmt;
         }
