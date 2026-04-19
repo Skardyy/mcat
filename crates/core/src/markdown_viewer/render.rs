@@ -747,7 +747,7 @@ fn render_link<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
             if i == 0 {
                 format!("{osc8_start}{UNDERLINE}{cyan}\u{f0339} {line}{RESET}{osc8_end}")
             } else {
-                format!("  {osc8_start}{UNDERLINE}{cyan}{line}{RESET}{osc8_end}")
+                format!("\u{00A0}\u{00A0}{osc8_start}{UNDERLINE}{cyan}{line}{RESET}{osc8_end}")
             }
         })
         .join("\n")
