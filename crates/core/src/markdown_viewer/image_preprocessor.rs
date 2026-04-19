@@ -161,14 +161,17 @@ impl ImagePreprocessor {
                 } else {
                     &format!("{width}px")
                 };
+                let one_cell_px = wininfo
+                    .dim_to_px("1c", term_misc::SizeDirection::Height)
+                    .ok()?
+                    .saturating_sub(1); // it ceils, so we must make sure 1c
                 let height_fm = if render_mode == &MdImageMode::Small {
-                    let px = wininfo
-                        .dim_to_px("1c", term_misc::SizeDirection::Height)
-                        .unwrap_or_default()
-                        .saturating_sub(1); // it ceils, so we must make sure 1c
-                    &format!("{px}px")
+                    &format!("{one_cell_px}px")
                 } else if height as f32 > wininfo.spx_height as f32 * 0.4 {
                     "40%"
+                } else if height <= one_cell_px * 2 {
+                    // small images cap to 1 cell to prevent
+                    &format!("{one_cell_px}px")
                 } else {
                     &format!("{height}px")
                 };
