@@ -75,7 +75,7 @@ pub fn scrape_biggest_media(
                 if file.kind == McatKind::PreMarkdown {
                     file.kind = fmt;
                 }
-                info!(url = %file.id.as_deref().unwrap_or_default(), kind = ?file.kind, size = file.bytes.len(), "scraped media");
+                info!(url = %file.id.as_deref().unwrap_or_default(), kind = ?file.kind, size = file.bytes.len(), "downloaded media");
                 Ok(file)
             },
             None => anyhow::bail!("no media found at {}", url),
@@ -153,8 +153,8 @@ async fn scrape_html(
     let document = Html::parse_document(html);
     let base = reqwest::Url::parse(base_url)?;
 
-    // collect all candidate media urls
-    let mut candidates: Vec<String> = Vec::new();
+    // collect candidates as (url, area)
+    let mut candidates: Vec<(String, u64)> = Vec::new();
 
     for selector in &[
         "img[src]",
@@ -165,62 +165,44 @@ async fn scrape_html(
     ] {
         if let Ok(sel) = scraper::Selector::parse(selector) {
             for el in document.select(&sel) {
-                if let Some(src) = el.value().attr("src").or_else(|| el.value().attr("data"))
-                    && let Ok(url) = base.join(src)
-                {
-                    candidates.push(url.to_string());
-                }
+                let src = el.value().attr("src").or_else(|| el.value().attr("data"));
+                let Some(src) = src else { continue };
+                let Ok(url) = base.join(src) else { continue };
+
+                let (w, h) = resolve_dimensions(&el);
+                let area = w * h;
+
+                candidates.push((url.to_string(), area));
             }
         }
     }
 
     anyhow::ensure!(!candidates.is_empty(), "no media found on page");
 
-    // download all candidates, keep biggest
-    let mut biggest: Option<McatFile> = None;
-    for url in candidates {
-        let Ok(response) = get_response(client, &url, bar).await else {
-            continue;
-        };
-        let mime = get_mime(&response);
-        let format = mime.as_deref().and_then(format_from_mime);
+    let best_url = candidates
+        .iter()
+        .max_by_key(|(_, area)| *area)
+        .map(|(url, _)| url.clone())
+        .context("no valid media found on page")?;
+    debug!(url = %best_url, "selected best candidate");
 
-        // only keep image/video/svg
-        let is_media = format
-            .as_ref()
-            .map(|f| {
-                matches!(
-                    f,
-                    McatKind::Gif | McatKind::Image | McatKind::Svg | McatKind::Video
-                )
-            })
-            .unwrap_or(false);
-        if !is_media {
-            continue;
-        }
+    let response = get_response(client, &best_url, bar).await?;
+    let mime = get_mime(&response);
+    let format = mime.as_deref().and_then(format_from_mime);
+    let data = download(response, options, bar).await?;
 
-        let Ok(data) = download(response, options, bar).await else {
-            warn!(url = %url, "failed to download candidate");
-            continue;
-        };
-        let size = data.len();
-
-        let mut file = McatFile::from_bytes(data, None, None, Some(base_url.to_owned()), true)?;
-        if let Some(fmt) = format {
-            file.kind = fmt;
-        }
-
-        debug!(url = %url, size, kind = ?file.kind, "downloaded candidate");
-        if biggest
-            .as_ref()
-            .map(|b| size > b.bytes.len())
-            .unwrap_or(true)
-        {
-            biggest = Some(file);
-        }
+    let mut file = McatFile::from_bytes(
+        data,
+        None,
+        ext_from_url(&best_url),
+        Some(base_url.to_owned()),
+        true,
+    )?;
+    if let Some(fmt) = format {
+        file.kind = fmt;
     }
 
-    biggest.context("no valid media found on page")
+    Ok(file)
 }
 
 async fn get_response(client: &Client, url: &str, bar: Option<&MultiBar>) -> Result<Response> {
@@ -245,6 +227,153 @@ async fn get_response(client: &Client, url: &str, bar: Option<&MultiBar>) -> Res
     anyhow::ensure!(response.status().is_success(), response.status());
 
     Ok(response)
+}
+
+fn resolve_dimensions(el: &scraper::ElementRef) -> (u64, u64) {
+    let (w_style, h_style) = extract_style_dims(el.value().attr("style"));
+    let w_raw = el.value().attr("width").or(w_style.as_deref());
+    let h_raw = el.value().attr("height").or(h_style.as_deref());
+
+    let (w_raw, h_raw) = match (w_raw, h_raw) {
+        (Some(w), Some(h)) => (w, h),
+        _ => return (0, 0),
+    };
+
+    let parent_w = resolve_parent_dim(el, "width");
+    let parent_h = resolve_parent_dim(el, "height");
+
+    let w = dim_to_px(w_raw, parent_w);
+    let h = dim_to_px(h_raw, parent_h);
+    (w, h)
+}
+
+fn extract_style_dims(style: Option<&str>) -> (Option<String>, Option<String>) {
+    let Some(style) = style else {
+        return (None, None);
+    };
+    let mut w = None;
+    let mut h = None;
+    for prop in style.split(';') {
+        let prop = prop.trim();
+        if let Some((key, val)) = prop.split_once(':') {
+            let key = key.trim();
+            let val = val.trim();
+            match key {
+                "width" | "max-width" if w.is_none() => w = Some(val.to_string()),
+                "height" | "max-height" if h.is_none() => h = Some(val.to_string()),
+                _ => {}
+            }
+        }
+    }
+    (w, h)
+}
+
+fn get_element_dim(element: &scraper::node::Element, dim: &str) -> Option<String> {
+    // check attribute first, then style
+    if let Some(v) = element.attr(dim) {
+        return Some(v.to_string());
+    }
+    let style = element.attr("style")?;
+    for prop in style.split(';') {
+        let prop = prop.trim();
+        if let Some((key, val)) = prop.split_once(':') {
+            let key = key.trim();
+            let val = val.trim();
+            if key == dim || key == format!("max-{dim}") {
+                return Some(val.to_string());
+            }
+        }
+    }
+    None
+}
+
+fn get_style_prop(element: &scraper::node::Element, prop: &str) -> Option<String> {
+    let style = element.attr("style")?;
+    for part in style.split(';') {
+        let part = part.trim();
+        if let Some((key, val)) = part.split_once(':')
+            && key.trim() == prop
+        {
+            return Some(val.trim().to_string());
+        }
+    }
+    None
+}
+
+fn resolve_parent_dim(el: &scraper::ElementRef, dim: &str) -> f64 {
+    let default = if dim == "width" { 1920.0 } else { 1080.0 };
+    let mut node = el.parent();
+    while let Some(n) = node {
+        if let Some(element) = n.value().as_element() {
+            if let Some(v) = get_element_dim(element, dim)
+                && let Some(px) = try_parse_absolute(&v)
+            {
+                return px;
+            }
+            // if no explicit dim, try to derive from aspect-ratio + the other dim
+            if let Some(ar) = get_style_prop(element, "aspect-ratio")
+                && let Ok(ar) = ar.parse::<f64>()
+                && ar > 0.0
+            {
+                let other_dim = if dim == "height" { "width" } else { "height" };
+                if let Some(v) = get_element_dim(element, other_dim)
+                    && let Some(other_px) = try_parse_absolute(&v)
+                {
+                    // aspect-ratio = width / height
+                    return if dim == "height" {
+                        other_px / ar
+                    } else {
+                        other_px * ar
+                    };
+                }
+            }
+        }
+        node = n.parent();
+    }
+    default
+}
+
+fn try_parse_absolute(value: &str) -> Option<f64> {
+    let s = value.trim();
+    let font_size: f64 = 14.0; // yeah just assumming..
+
+    if s.ends_with('%') || s.ends_with("vw") || s.ends_with("vh") {
+        return None; // relative, keep walking up
+    }
+
+    let px = if let Some(v) = s.strip_suffix("rem") {
+        v.parse::<f64>().ok()? * font_size
+    } else if let Some(v) = s.strip_suffix("em") {
+        v.parse::<f64>().ok()? * font_size
+    } else {
+        s.strip_suffix("px").unwrap_or(s).parse::<f64>().ok()?
+    };
+
+    if px > 0.0 { Some(px) } else { None }
+}
+
+fn dim_to_px(value: &str, parent: f64) -> u64 {
+    let s = value.trim();
+    let font_size: f64 = 14.0;
+
+    let px = if let Some(v) = s.strip_suffix('%') {
+        v.parse::<f64>().unwrap_or(0.0) / 100.0 * parent
+    } else if let Some(v) = s.strip_suffix("rem") {
+        v.parse::<f64>().unwrap_or(0.0) * font_size
+    } else if let Some(v) = s.strip_suffix("em") {
+        v.parse::<f64>().unwrap_or(0.0) * font_size
+    } else if let Some(v) = s.strip_suffix("vw") {
+        v.parse::<f64>().unwrap_or(0.0) / 100.0 * 1920.0
+    } else if let Some(v) = s.strip_suffix("vh") {
+        v.parse::<f64>().unwrap_or(0.0) / 100.0 * 1080.0
+    } else {
+        s.strip_suffix("px")
+            .unwrap_or(s)
+            .parse::<f64>()
+            .unwrap_or(0.0)
+    };
+
+    px.max(0.0) as u64
 }
 
 fn format_from_mime(mime: &str) -> Option<McatKind> {
