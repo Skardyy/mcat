@@ -105,7 +105,46 @@ impl ProcessingContext {
                 format!("| {} |", padded.join(" | "))
             };
 
-            let separator = format!("| {} |", vec!["---"; col_count].join(" | "));
+            // if 1 td/th in the col contains align, they all get. not sure i can do it in another
+            // way, given its markdown.
+            let mut col_alignments: Vec<Option<&str>> = vec![None; col_count];
+            for tr in element
+                .descendants()
+                .filter_map(ElementRef::wrap)
+                .filter(|e| e.value().name() == "tr")
+            {
+                for (col_idx, cell) in tr
+                    .children()
+                    .filter_map(ElementRef::wrap)
+                    .filter(|e| matches!(e.value().name(), "td" | "th"))
+                    .enumerate()
+                {
+                    if col_idx >= col_count {
+                        break;
+                    }
+                    if col_alignments[col_idx].is_none()
+                        && let Some(a) = cell.value().attr("align")
+                    {
+                        let a = a.trim();
+                        if matches!(a, "left" | "center" | "right") {
+                            col_alignments[col_idx] = Some(a);
+                        }
+                    }
+                }
+            }
+
+            let separator = {
+                let cells: Vec<&str> = col_alignments
+                    .iter()
+                    .map(|a| match *a {
+                        Some("center") => ":---:",
+                        Some("right") => "---:",
+                        Some("left") => ":---",
+                        _ => "---",
+                    })
+                    .collect();
+                format!("| {} |", cells.join(" | "))
+            };
 
             let mut out = render_row(&header);
             out.push('\n');
