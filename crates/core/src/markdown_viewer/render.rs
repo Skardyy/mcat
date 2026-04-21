@@ -718,23 +718,25 @@ fn render_table<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
 }
 
 fn render_strong<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
-    let content = collect(node, ctx, "");
+    let content = collect(node, ctx, "").replace(RESET, &format!("{RESET}{BOLD}"));
     format!("{BOLD}{content}{NORMAL}")
 }
 
 fn render_emph<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
-    let content = collect(node, ctx, "");
+    let content = collect(node, ctx, "").replace(RESET, &format!("{RESET}{ITALIC}"));
     format!("{ITALIC}{content}{ITALIC_OFF}")
 }
 
 fn render_highlight<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     let content = collect(node, ctx, "");
     let color = &ctx.theme.yellow.fg;
-    format!("{BOLD}{color}{content}{RESET}")
+    let start = format!("{BOLD}{color}");
+    let content = content.replace(RESET, &format!("{RESET}{start}"));
+    format!("{start}{content}{RESET}")
 }
 
 fn render_strikethrough<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
-    let content = collect(node, ctx, "");
+    let content = collect(node, ctx, "").replace(RESET, &format!("{RESET}{STRIKETHROUGH}"));
     format!("{STRIKETHROUGH}{content}{STRIKETHROUGH_OFF}")
 }
 
@@ -745,7 +747,9 @@ fn render_link<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     let url = &node_link.url;
 
     let content = collect(node, ctx, "");
-    let cyan = ctx.theme.cyan.fg.clone();
+    let cyan = &ctx.theme.cyan.fg;
+    let start = format!("{UNDERLINE}{cyan}");
+    let content = content.replace(RESET, &format!("{RESET}{start}"));
     let osc8_start = format!("\x1b]8;;{}\x1b\\", url);
     let osc8_end = "\x1b]8;;\x1b\\";
     content
@@ -753,9 +757,9 @@ fn render_link<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         .enumerate()
         .map(|(i, line)| {
             if i == 0 {
-                format!("{osc8_start}{UNDERLINE}{cyan}\u{f0339} {line}{RESET}{osc8_end}")
+                format!("{osc8_start}{start}\u{f0339} {line}{RESET}{osc8_end}")
             } else {
-                format!("\u{00A0}\u{00A0}{osc8_start}{UNDERLINE}{cyan}{line}{RESET}{osc8_end}")
+                format!("\u{00A0}\u{00A0}{osc8_start}{start}{line}{RESET}{osc8_end}")
             }
         })
         .join("\n")
@@ -774,8 +778,10 @@ fn render_image<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     }
 
     let content = collect(node, ctx, "");
-    let cyan = ctx.theme.cyan.fg.clone();
-    format!("{UNDERLINE}{cyan}\u{f0976} {}{RESET}", content)
+    let cyan = &ctx.theme.cyan.fg;
+    let start = format!("{UNDERLINE}{cyan}");
+    let content = content.replace(RESET, &format!("{RESET}{start}"));
+    format!("{start}\u{f0976} {}{RESET}", content)
 }
 
 fn render_code<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
@@ -791,11 +797,32 @@ fn render_html_inline<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> Strin
     let NodeValue::HtmlInline(ref literal) = node.data.borrow().value else {
         panic!()
     };
-
     let string_color = ctx.theme.string.fg.clone();
     match literal.to_lowercase().as_str() {
         "<u>" | "<ins>" => UNDERLINE.to_owned(),
         "</u>" | "</ins>" => UNDERLINE_OFF.to_owned(),
+
+        "<b>" | "<strong>" => BOLD.to_owned(),
+        "</b>" | "</strong>" => NORMAL.to_owned(),
+
+        "<i>" | "<em>" | "<var>" => ITALIC.to_owned(),
+        "</i>" | "</em>" | "</var>" => ITALIC_OFF.to_owned(),
+
+        "<s>" | "<del>" | "<strike>" => STRIKETHROUGH.to_owned(),
+        "</s>" | "</del>" | "</strike>" => STRIKETHROUGH_OFF.to_owned(),
+
+        "<q>" => "\"".to_owned(),
+        "</q>" => "\"".to_owned(),
+
+        "<mark>" => {
+            let color = &ctx.theme.yellow.fg;
+            format!("{BOLD}{color}")
+        }
+        "</mark>" => RESET.to_owned(),
+
+        "<code>" => ctx.theme.green.fg.clone(),
+        "</code>" => RESET.to_owned(),
+
         _ => format!("{string_color}{literal}{RESET}"),
     }
 }
@@ -827,27 +854,34 @@ fn render_wiki_link<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String 
 
     let content = collect(node, ctx, "");
     let cyan = &ctx.theme.cyan.fg;
+    let content = content.replace(RESET, &format!("{RESET}{cyan}"));
     format!("{cyan}\u{f15d6} {}{RESET}", content)
 }
 
 fn render_spoilered_text<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     let content = collect(node, ctx, "");
     let comment = &ctx.theme.comment.fg;
-    format!("{FAINT}{comment}{content}{RESET}")
+    let start = format!("{FAINT}{comment}");
+    let content = content.replace(RESET, &format!("{RESET}{start}"));
+    format!("{start}{content}{RESET}")
 }
 
 fn render_alert<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     let NodeValue::Alert(ref node_alert) = node.data.borrow().value else {
         panic!()
     };
-    let alert_type = &node_alert.alert_type;
 
+    ctx.force_simple_code_block += 1;
+    let alert_content = collect(node, ctx, "\n");
+    ctx.force_simple_code_block -= 1;
+
+    let alert_type = &node_alert.alert_type;
     let kind = alert_type;
-    let blue = ctx.theme.blue.fg.clone();
-    let red = ctx.theme.red.fg.clone();
-    let green = ctx.theme.green.fg.clone();
-    let cyan = ctx.theme.cyan.fg.clone();
-    let yellow = ctx.theme.yellow.fg.clone();
+    let blue = &ctx.theme.blue.fg;
+    let red = &ctx.theme.red.fg;
+    let green = &ctx.theme.green.fg;
+    let cyan = &ctx.theme.cyan.fg;
+    let yellow = &ctx.theme.yellow.fg;
 
     let (prefix, color) = match kind {
         comrak::nodes::AlertType::Note => ("\u{f05d6} NOTE", blue),
@@ -858,10 +892,6 @@ fn render_alert<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     };
 
     let mut result = format!("{}▌ {BOLD}{}{RESET}", color, prefix);
-
-    ctx.force_simple_code_block += 1;
-    let alert_content = collect(node, ctx, "\n");
-    ctx.force_simple_code_block -= 1;
 
     result.push('\n');
     let alert_content = alert_content

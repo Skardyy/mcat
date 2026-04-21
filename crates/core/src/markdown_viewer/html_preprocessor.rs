@@ -19,61 +19,24 @@ pub struct ProcessingContext {
 
 type ProcessorFn = fn(ElementRef, &ProcessingContext) -> String;
 
-#[rustfmt::skip]
-fn is_block(tag: &str) -> bool {
-    matches!(tag,
-        "address" | "article" | "aside" | "blockquote" | "body"
-        | "caption" | "col" | "colgroup" | "dd" | "details" | "dialog"
-        | "div" | "dl" | "dt" | "fieldset" | "figcaption" | "figure"
-        | "footer" | "form"
-        | "h1" | "h2" | "h3" | "h4" | "h5" | "h6"
-        | "header" | "hgroup" | "hr" | "html" | "li" | "main" | "nav"
-        | "ol" | "p" | "pre" | "section" | "summary"
-        | "table" | "tbody" | "td" | "tfoot" | "th" | "thead" | "tr"
-        | "ul")
-}
-
-// handles blocky and non blocky different
 fn collect(element: ElementRef, ctx: &ProcessingContext, sep: &str) -> String {
-    let mut parts: Vec<String> = Vec::new();
-    let mut inline_run: Vec<String> = Vec::new();
-
-    let flush = |run: &mut Vec<String>, parts: &mut Vec<String>| {
-        if !run.is_empty() {
-            let joined: String = run.join("");
-            let collapsed = joined.split_whitespace().join(" ");
-            if !collapsed.is_empty() {
-                parts.push(collapsed);
-            }
-            run.clear();
-        }
-    };
-
-    for child in element.children() {
-        if let Some(el) = ElementRef::wrap(child) {
-            let tag = el.value().name();
-            let rendered = if let Some(rule) = ctx.rules.get(tag) {
-                rule(el, ctx)
-            } else {
-                collect(el, ctx, "")
-            };
-
-            if is_block(tag) {
-                flush(&mut inline_run, &mut parts);
-                let trimmed = rendered.trim();
-                if !trimmed.is_empty() {
-                    parts.push(trimmed.to_string());
+    element
+        .children()
+        .filter_map(|child| {
+            if let Some(el) = ElementRef::wrap(child) {
+                let tag = el.value().name();
+                if let Some(rule) = ctx.rules.get(tag) {
+                    Some(rule(el, ctx))
+                } else {
+                    Some(collect(el, ctx, ""))
                 }
             } else {
-                inline_run.push(rendered);
+                child.value().as_text().map(|v| v.to_string())
             }
-        } else if let Some(text) = child.value().as_text() {
-            inline_run.push(text.to_string());
-        }
-    }
-    flush(&mut inline_run, &mut parts);
-
-    parts.join(sep)
+        })
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .join(sep)
 }
 
 impl ProcessingContext {
@@ -84,7 +47,6 @@ impl ProcessingContext {
 
         ctx.add_div_rules();
         ctx.add_details_rules();
-        ctx.add_quote_rules();
         ctx.add_heading_rules();
         ctx.add_formatting_rules();
         ctx.add_link_rules();
@@ -235,11 +197,6 @@ impl ProcessingContext {
 
             format!("```\n{}\n```", content)
         });
-
-        self.rules.insert("code".to_string(), |element, ctx| {
-            let content = collect(element, ctx, "");
-            format!("`{}`", content)
-        });
     }
 
     fn add_link_rules(&mut self) {
@@ -275,53 +232,8 @@ impl ProcessingContext {
         self.rules
             .insert("br".to_string(), |_element, _ctx| "\n".to_string());
 
-        self.rules.insert("mark".to_string(), |element, ctx| {
-            let content = collect(element, ctx, "");
-            format!("=={}==", content.trim())
-        });
-
-        self.rules.insert("var".to_string(), |element, ctx| {
-            let content = collect(element, ctx, "");
-            format!("*{}*", content.trim())
-        });
-
-        self.rules.insert("i".to_string(), |element, ctx| {
-            let content = collect(element, ctx, "");
-            format!("*{}*", content.trim())
-        });
-
         self.rules
             .insert("hr".to_string(), |_element, _ctx| "---".to_string());
-
-        self.rules.insert("b".to_string(), |element, ctx| {
-            let content = collect(element, ctx, "");
-            format!("**{}**", content.trim())
-        });
-
-        self.rules.insert("strong".to_string(), |element, ctx| {
-            let content = collect(element, ctx, "");
-            format!("**{}**", content.trim())
-        });
-
-        self.rules.insert("em".to_string(), |element, ctx| {
-            let content = collect(element, ctx, "");
-            format!("*{}*", content.trim())
-        });
-
-        self.rules.insert("del".to_string(), |element, ctx| {
-            let content = collect(element, ctx, "");
-            format!("~~{}~~", content.trim())
-        });
-
-        self.rules.insert("s".to_string(), |element, ctx| {
-            let content = collect(element, ctx, "");
-            format!("~~{}~~", content.trim())
-        });
-
-        self.rules.insert("strike".to_string(), |element, ctx| {
-            let content = collect(element, ctx, "");
-            format!("~~{}~~", content.trim())
-        });
     }
 
     fn add_heading_rules(&mut self) {
@@ -333,17 +245,15 @@ impl ProcessingContext {
         self.rules.insert("h6".to_string(), heading_processor!(6));
     }
 
-    fn add_quote_rules(&mut self) {
-        self.rules.insert("q".to_string(), |element, ctx| {
-            let content = collect(element, ctx, "");
-            format!("\"{}\"", content)
-        });
-    }
-
     fn add_div_rules(&mut self) {
         for item in ["div", "p"] {
             self.rules.insert(item.to_string(), |element, ctx| {
-                let content = collect(element, ctx, "\n\n");
+                let sep = if element.value().name() == "p" {
+                    " "
+                } else {
+                    "\n\n"
+                };
+                let content = collect(element, ctx, sep);
 
                 if content.is_empty() {
                     return content;
@@ -408,39 +318,12 @@ impl ProcessingContext {
     }
 }
 
-// we need to wrap root level inline text with para for better result
-fn wrap_inline_in_paragraphs(input: &str) -> String {
-    input
-        .split("\n\n")
-        .map(|chunk| {
-            let trimmed = chunk.trim();
-            if trimmed.is_empty() {
-                return String::new();
-            }
-            // if chunk starts with a known block tag, leave as is
-            let starts_with_block = trimmed.starts_with('<') && {
-                let after_lt = &trimmed[1..];
-                let tag_end = after_lt
-                    .find(|c: char| !c.is_ascii_alphanumeric())
-                    .unwrap_or(after_lt.len());
-                let tag = &after_lt[..tag_end].to_ascii_lowercase();
-                is_block(tag)
-            };
-            if starts_with_block {
-                chunk.to_string()
-            } else {
-                format!("<p>{}</p>", trimmed)
-            }
-        })
-        .filter(|s| !s.is_empty())
-        .join("\n\n")
-}
-
+// only add blocky elements logic, inline ones are rendered at the markdown viewer.
+// only exceptions is <a> and <img>, which in some cases will be treated as blocky sadly.
 pub fn process(markdown: &str) -> String {
     let ctx = ProcessingContext::new();
 
-    let wrapped = wrap_inline_in_paragraphs(markdown);
-    let escaped_markdown = ctx.escape_unknown_elements(&wrapped);
+    let escaped_markdown = ctx.escape_unknown_elements(markdown);
     let document = Html::parse_fragment(&escaped_markdown);
 
     collect(document.root_element(), &ctx, "\n\n")
