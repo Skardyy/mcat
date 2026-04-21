@@ -140,6 +140,7 @@ fn comrak_options<'a>() -> options::Options<'a> {
     options.extension.highlight = true;
     options.parse.smart = true;
     options.parse.relaxed_tasklist_matching = true;
+    options.extension.shortcodes = true;
 
     options.extension.tagfilter = true;
     options.render.r#unsafe = true;

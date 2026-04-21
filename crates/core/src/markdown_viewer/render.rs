@@ -116,27 +116,27 @@ pub fn parse_node<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         NodeValue::FootnoteDefinition(_) => render_footnote_def(node, ctx),
         NodeValue::FootnoteReference(_) => render_footnote_ref(node, ctx),
         NodeValue::Highlight => render_highlight(node, ctx),
+        NodeValue::DescriptionList => render_description_list(node, ctx),
+        NodeValue::DescriptionItem(_) => render_description_item(node, ctx),
+        NodeValue::DescriptionTerm => render_description_term(node, ctx),
+        NodeValue::DescriptionDetails => render_description_details(node, ctx),
         NodeValue::Text(literal) => literal.to_string(),
         NodeValue::Raw(literal) => literal.to_owned(),
         NodeValue::Math(NodeMath { literal, .. }) => literal.to_owned(),
+        NodeValue::ShortCode(sc) => sc.emoji.to_string(),
         NodeValue::SoftBreak => " ".to_owned(),
         NodeValue::LineBreak => "\n".to_owned(),
         NodeValue::TableRow(_) => String::new(), // handled in table
         NodeValue::TableCell => String::new(),   // handled in table
         NodeValue::Escaped => String::new(),     // feature not enabled per char
-        NodeValue::DescriptionList => String::new(),
-        NodeValue::DescriptionItem(_) => String::new(),
-        NodeValue::DescriptionTerm => String::new(),
-        NodeValue::DescriptionDetails => String::new(),
         NodeValue::EscapedTag(_) => String::new(), // i think its only html
-        NodeValue::Underline => String::new(),     // feature not enabled
-        NodeValue::Subscript => String::new(),     // feature not enabled (can't render them)
-        NodeValue::HeexBlock(_) => String::new(),  // feature not enabled
+        NodeValue::Underline => String::new(),   // feature not enabled
+        NodeValue::Subscript => String::new(),   // feature not enabled (can't render them)
+        NodeValue::HeexBlock(_) => String::new(), // feature not enabled
         NodeValue::HeexInline(_) => String::new(), // feature not enabled
-        NodeValue::ShortCode(_) => String::new(),
-        NodeValue::Subtext => String::new(),
-        NodeValue::Insert => String::new(),
-        NodeValue::BlockDirective(_) => String::new(),
+        NodeValue::Subtext => String::new(),     // feature not enabled (can't render this)
+        NodeValue::Insert => String::new(),      // too niche, not enabled
+        NodeValue::BlockDirective(_) => String::new(), // too niche, not enabled
     }
 }
 
@@ -145,6 +145,24 @@ fn render_document<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         .map(|child| parse_node(child, ctx))
         .filter(|s| !s.is_empty())
         .join("\n\n")
+}
+
+fn render_description_list<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
+    collect(node, ctx, "\n\n")
+}
+
+fn render_description_item<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
+    collect(node, ctx, "\n")
+}
+
+fn render_description_term<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
+    let content = collect(node, ctx, "").replace(RESET, &format!("{RESET}{BOLD}"));
+    format!("{BOLD}{content}{NORMAL}")
+}
+
+fn render_description_details<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
+    let content = collect(node, ctx, "");
+    content.lines().map(|l| format!("  {l}")).join("\n")
 }
 
 fn render_front_matter<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
