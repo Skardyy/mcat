@@ -128,7 +128,7 @@ pub fn parse_node<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         NodeValue::DescriptionTerm => String::new(),
         NodeValue::DescriptionDetails => String::new(),
         NodeValue::EscapedTag(_) => String::new(),
-        NodeValue::Underline => String::new(),
+        NodeValue::Underline => String::new(), // feature not enabled
         NodeValue::Subscript => String::new(),
         NodeValue::HeexBlock(_) => String::new(),
         NodeValue::HeexInline(_) => String::new(),
@@ -787,7 +787,11 @@ fn render_html_inline<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> Strin
     };
 
     let string_color = ctx.theme.string.fg.clone();
-    format!("{string_color}{literal}{RESET}")
+    match literal.to_lowercase().as_str() {
+        "<u>" | "<ins>" => UNDERLINE.to_owned(),
+        "</u>" | "</ins>" => UNDERLINE_OFF.to_owned(),
+        _ => format!("{string_color}{literal}{RESET}"),
+    }
 }
 
 fn render_superscript<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
