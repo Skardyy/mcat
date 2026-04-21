@@ -55,8 +55,84 @@ impl ProcessingContext {
         ctx.add_code_rules();
         ctx.add_block_rules();
         ctx.add_empty_rules();
+        ctx.add_table_rules();
 
         ctx
+    }
+
+    fn add_table_rules(&mut self) {
+        self.rules.insert("table".to_string(), |element, ctx| {
+            let rows: Vec<Vec<String>> = element
+                .descendants()
+                .filter_map(ElementRef::wrap)
+                .filter(|e| e.value().name() == "tr")
+                .map(|tr| {
+                    tr.children()
+                        .filter_map(ElementRef::wrap)
+                        .filter(|e| matches!(e.value().name(), "td" | "th"))
+                        .map(|cell| {
+                            let rule = ctx.rules.get(cell.value().name()).unwrap();
+                            let raw = rule(cell, ctx);
+
+                            // if there is going to be > 1 con \n, this will be better then replace,
+                            // though not sure its a thing?
+                            raw.trim()
+                                .replace('|', r"\|")
+                                .split('\n')
+                                .map(str::trim)
+                                .filter(|l| !l.is_empty())
+                                .join("<br>")
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .filter(|r| !r.is_empty())
+                .collect();
+
+            if rows.is_empty() {
+                return String::new();
+            }
+
+            // our markdown render doesn't care if table is only headers
+            let col_count = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+            let header = rows[0].clone();
+            let body = &rows[1..];
+
+            let render_row = |cells: &[String]| -> String {
+                let mut padded = cells.to_vec();
+                while padded.len() < col_count {
+                    padded.push(String::new());
+                }
+                format!("| {} |", padded.join(" | "))
+            };
+
+            let separator = format!("| {} |", vec!["---"; col_count].join(" | "));
+
+            let mut out = render_row(&header);
+            out.push('\n');
+            out.push_str(&separator);
+            for row in body {
+                out.push('\n');
+                out.push_str(&render_row(row));
+            }
+
+            if let Some(align) = element.value().attr("align")
+                && align.trim().to_lowercase() == "center"
+            {
+                return format!("<!--CENTER_ON-->\n\n{out}\n\n<!--CENTER_OFF-->");
+            }
+
+            out
+        });
+
+        self.rules
+            .insert("td".to_string(), |element, ctx| collect(element, ctx, "\n"));
+        self.rules
+            .insert("th".to_string(), |element, ctx| collect(element, ctx, "\n"));
+
+        self.rules.insert("tr".to_string(), |_, _| String::new());
+        self.rules.insert("thead".to_string(), |_, _| String::new());
+        self.rules.insert("tbody".to_string(), |_, _| String::new());
+        self.rules.insert("tfoot".to_string(), |_, _| String::new());
     }
 
     fn add_img_rules(&mut self) {

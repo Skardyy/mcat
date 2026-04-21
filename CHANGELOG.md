@@ -1,6 +1,7 @@
 ## Src
 
 - added `mermaid` support to the `ls` command
+- improved the html_preprocessor, now the markdown_viewer also renders html tables!
 - improved the `ls` speed, now no longer auto decompressing
 - improved the scraping logic, now does it based on width and height (not content-size) and now also doesn't download candidates (should make it way faster)
 - fixed an issue in the markdown_viewer, that certain images would get splitted
