@@ -115,24 +115,24 @@ pub fn parse_node<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         NodeValue::Alert(_) => render_alert(node, ctx),
         NodeValue::FootnoteDefinition(_) => render_footnote_def(node, ctx),
         NodeValue::FootnoteReference(_) => render_footnote_ref(node, ctx),
+        NodeValue::Highlight => render_highlight(node, ctx),
         NodeValue::Text(literal) => literal.to_string(),
         NodeValue::Raw(literal) => literal.to_owned(),
         NodeValue::Math(NodeMath { literal, .. }) => literal.to_owned(),
         NodeValue::SoftBreak => " ".to_owned(),
         NodeValue::LineBreak => "\n".to_owned(),
-        NodeValue::TableRow(_) => String::new(),
-        NodeValue::TableCell => String::new(),
-        NodeValue::Escaped => String::new(),
+        NodeValue::TableRow(_) => String::new(), // handled in table
+        NodeValue::TableCell => String::new(),   // handled in table
+        NodeValue::Escaped => String::new(),     // feature not enabled per char
         NodeValue::DescriptionList => String::new(),
         NodeValue::DescriptionItem(_) => String::new(),
         NodeValue::DescriptionTerm => String::new(),
         NodeValue::DescriptionDetails => String::new(),
-        NodeValue::EscapedTag(_) => String::new(),
-        NodeValue::Underline => String::new(), // feature not enabled
-        NodeValue::Subscript => String::new(),
-        NodeValue::HeexBlock(_) => String::new(),
-        NodeValue::HeexInline(_) => String::new(),
-        NodeValue::Highlight => String::new(),
+        NodeValue::EscapedTag(_) => String::new(), // i think its only html
+        NodeValue::Underline => String::new(),     // feature not enabled
+        NodeValue::Subscript => String::new(),     // feature not enabled (can't render them)
+        NodeValue::HeexBlock(_) => String::new(),  // feature not enabled
+        NodeValue::HeexInline(_) => String::new(), // feature not enabled
         NodeValue::ShortCode(_) => String::new(),
         NodeValue::Subtext => String::new(),
         NodeValue::Insert => String::new(),
@@ -725,6 +725,12 @@ fn render_strong<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
 fn render_emph<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     let content = collect(node, ctx, "");
     format!("{ITALIC}{content}{ITALIC_OFF}")
+}
+
+fn render_highlight<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
+    let content = collect(node, ctx, "");
+    let color = &ctx.theme.yellow.fg;
+    format!("{BOLD}{color}{content}{RESET}")
 }
 
 fn render_strikethrough<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {

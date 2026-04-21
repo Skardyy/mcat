@@ -123,11 +123,11 @@ pub fn md_to_html(markdown: &str, theme: &Theme, style: bool) -> String {
 
 fn comrak_options<'a>() -> options::Options<'a> {
     let mut options = options::Options::default();
+
     options.extension.strikethrough = true;
     options.extension.footnotes = true;
     options.extension.front_matter_delimiter = Some("---".to_owned());
     options.extension.superscript = true;
-    options.extension.tagfilter = true;
     options.extension.table = true;
     options.extension.autolink = true;
     options.extension.tasklist = true;
@@ -137,10 +137,11 @@ fn comrak_options<'a>() -> options::Options<'a> {
     options.extension.wikilinks_title_after_pipe = true;
     options.extension.spoiler = true;
     options.extension.multiline_block_quotes = true;
-
+    options.extension.highlight = true;
     options.parse.smart = true;
     options.parse.relaxed_tasklist_matching = true;
 
+    options.extension.tagfilter = true;
     options.render.r#unsafe = true;
 
     options
