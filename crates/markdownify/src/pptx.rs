@@ -6,7 +6,7 @@ use super::sheets;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 use std::collections::HashMap;
-use std::io::{Cursor, Read};
+use std::io::{BufRead, Cursor, Read};
 use zip::ZipArchive;
 
 #[derive(Default, Clone)]
@@ -161,10 +161,18 @@ impl PptxContext {
     }
 }
 
-fn get_attr(e: &quick_xml::events::BytesStart, key: &[u8]) -> Option<String> {
+fn get_attr(
+    e: &quick_xml::events::BytesStart,
+    key: &[u8],
+    reader: &Reader<impl BufRead>,
+) -> Option<String> {
     for attr in e.attributes().with_checks(false).flatten() {
         if attr.key.as_ref() == key {
-            return Some(attr.unescape_value().ok()?.into_owned());
+            return Some(
+                attr.decode_and_unescape_value(reader.decoder())
+                    .ok()?
+                    .into_owned(),
+            );
         }
     }
     None
@@ -199,7 +207,10 @@ fn load_slide_rels(
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Empty(e)) if e.name().as_ref() == b"Relationship" => {
-                if let (Some(id), Some(target)) = (get_attr(&e, b"Id"), get_attr(&e, b"Target")) {
+                if let (Some(id), Some(target)) = (
+                    get_attr(&e, b"Id", &reader),
+                    get_attr(&e, b"Target", &reader),
+                ) {
                     map.insert(id, target);
                 }
             }
@@ -275,7 +286,7 @@ fn load_notes(archive: &mut ZipArchive<Cursor<&[u8]>>, slide_index: usize) -> Op
             },
             Ok(Event::Empty(e)) => {
                 if e.name().as_ref() == b"p:ph" {
-                    ph_is_body = get_attr(&e, b"type").as_deref() == Some("body");
+                    ph_is_body = get_attr(&e, b"type", &reader).as_deref() == Some("body");
                 }
             }
             Ok(Event::Text(e)) => {
@@ -362,10 +373,10 @@ fn detect_title_shape_id(xml: &str) -> Option<String> {
                     in_ph = false;
                 }
                 b"p:cNvPr" => {
-                    current_sp_id = get_attr(&e, b"id");
+                    current_sp_id = get_attr(&e, b"id", &reader);
                 }
                 b"p:ph" => {
-                    let t = get_attr(&e, b"type");
+                    let t = get_attr(&e, b"type", &reader);
                     if matches!(t.as_deref(), Some("title") | Some("ctrTitle")) {
                         return current_sp_id;
                     }
@@ -373,7 +384,8 @@ fn detect_title_shape_id(xml: &str) -> Option<String> {
                 }
                 b"a:rPr" => {
                     if !in_ph
-                        && let Some(sz) = get_attr(&e, b"sz").and_then(|v| v.parse::<u32>().ok())
+                        && let Some(sz) =
+                            get_attr(&e, b"sz", &reader).and_then(|v| v.parse::<u32>().ok())
                         && sz > best_sz
                     {
                         best_sz = sz;
@@ -403,11 +415,11 @@ fn parse_slide(xml: &str, mut ctx: PptxContext) -> Result<String, ParsingError> 
                     ctx.in_title_shape = false;
                 }
                 b"p:cNvPr" => {
-                    let id = get_attr(&e, b"id");
+                    let id = get_attr(&e, b"id", &reader);
                     ctx.in_title_shape = title_shape_id.is_some() && id == title_shape_id;
                 }
                 b"p:ph" => {
-                    let t = get_attr(&e, b"type");
+                    let t = get_attr(&e, b"type", &reader);
                     ctx.in_title_shape = matches!(t.as_deref(), Some("title") | Some("ctrTitle"));
                 }
                 b"p:txBody" => {
@@ -417,7 +429,7 @@ fn parse_slide(xml: &str, mut ctx: PptxContext) -> Result<String, ParsingError> 
                     if ctx.in_tx_body && !ctx.para.ppr_seen {
                         ctx.in_para_pr = true;
                         ctx.para.ppr_seen = true;
-                        let mar_l = get_attr(&e, b"marL")
+                        let mar_l = get_attr(&e, b"marL", &reader)
                             .and_then(|v| v.parse::<u32>().ok())
                             .unwrap_or(0);
                         if mar_l > 0 {
@@ -429,18 +441,18 @@ fn parse_slide(xml: &str, mut ctx: PptxContext) -> Result<String, ParsingError> 
                 b"a:rPr" => {
                     if ctx.in_tx_body {
                         ctx.in_run_pr = true;
-                        ctx.run.bold = get_attr(&e, b"b").as_deref() == Some("1");
-                        ctx.run.italic = get_attr(&e, b"i").as_deref() == Some("1");
+                        ctx.run.bold = get_attr(&e, b"b", &reader).as_deref() == Some("1");
+                        ctx.run.italic = get_attr(&e, b"i", &reader).as_deref() == Some("1");
                         ctx.run.strike = matches!(
-                            get_attr(&e, b"strike").as_deref(),
+                            get_attr(&e, b"strike", &reader).as_deref(),
                             Some("sngStrike") | Some("dblStrike")
                         );
-                        ctx.run.underline = matches!(get_attr(&e, b"u").as_deref(),
+                        ctx.run.underline = matches!(get_attr(&e, b"u", &reader).as_deref(),
                                                 Some(u) if u != "none");
                     }
                 }
                 b"a:hlinkClick" => {
-                    ctx.active_hlink_rid = get_attr(&e, b"r:id");
+                    ctx.active_hlink_rid = get_attr(&e, b"r:id", &reader);
                     ctx.hlink_run_text = Some(String::new());
                 }
                 b"a:tbl" => {
@@ -459,7 +471,7 @@ fn parse_slide(xml: &str, mut ctx: PptxContext) -> Result<String, ParsingError> 
                     }
                 }
                 b"a:blip" => {
-                    if let Some(rid) = get_attr(&e, b"r:embed") {
+                    if let Some(rid) = get_attr(&e, b"r:embed", &reader) {
                         ctx.emit_image(&rid);
                     }
                 }
@@ -468,11 +480,11 @@ fn parse_slide(xml: &str, mut ctx: PptxContext) -> Result<String, ParsingError> 
 
             Ok(Event::Empty(e)) => match e.name().as_ref() {
                 b"p:cNvPr" => {
-                    let id = get_attr(&e, b"id");
+                    let id = get_attr(&e, b"id", &reader);
                     ctx.in_title_shape = title_shape_id.is_some() && id == title_shape_id;
                 }
                 b"p:ph" => {
-                    let t = get_attr(&e, b"type");
+                    let t = get_attr(&e, b"type", &reader);
                     ctx.in_title_shape = matches!(t.as_deref(), Some("title") | Some("ctrTitle"));
                 }
                 b"a:buChar" | b"a:buAutoNum" => {
@@ -485,11 +497,11 @@ fn parse_slide(xml: &str, mut ctx: PptxContext) -> Result<String, ParsingError> 
                     }
                 }
                 b"a:hlinkClick" => {
-                    ctx.active_hlink_rid = get_attr(&e, b"r:id");
+                    ctx.active_hlink_rid = get_attr(&e, b"r:id", &reader);
                     ctx.hlink_run_text = Some(String::new());
                 }
                 b"a:blip" => {
-                    if let Some(rid) = get_attr(&e, b"r:embed") {
+                    if let Some(rid) = get_attr(&e, b"r:embed", &reader) {
                         ctx.emit_image(&rid);
                     }
                 }

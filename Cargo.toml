@@ -22,10 +22,10 @@ tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
 tokio = { version = "1.49.0", default-features = false, features = ["macros"] }
-tokio-tungstenite = "0.28.0"
+tokio-tungstenite = "0.29.0"
 
 mermaid-rs-renderer = { version = "0.2.1", default-features = false }
-hayro = "0.5.0"
+hayro = "0.6.0"
 encoding_rs = "0.8.35"
 infer = "0.19.0"
 strip-ansi-escapes = "0.2.1"
@@ -36,7 +36,7 @@ inquire = "0.9.3"
 shell-words = "1.1.1"
 ignore = "0.4.25"
 textwrap = "0.16.2"
-comrak = "0.50.0"
+comrak = "0.52.0"
 crossterm = "0.29.0"
 pelite = { version = "0.10.0", default-features = false, features = ["std"] }
 image = { version = "0.25.9", default-features = false, features = ["bmp", "dds", "exr", "ff", "gif", "hdr", "ico", "jpeg", "png", "pnm", "qoi", "tga", "tiff", "webp"] }
@@ -52,7 +52,7 @@ base64 = "0.22.1"
 futures = "0.3.31"
 unicode-width = "0.2.2"
 dirs = "6.0.0"
-scraper = "0.25.0"
+scraper = "0.26.0"
 reqwest = { version = "0.13.2", default-features = false, features = ["rustls", "stream"] }
 indicatif = "0.18.3"
 regex = "1.12.3"
@@ -63,7 +63,7 @@ zip = { version = "8.1.0", features = [ "deflate-flate2" ], default-features = f
 tar = "0.4.44"
 flate2 = "1.1.9"
 lzma-rust2 = { version = "0.16.2", default-features = false, features = ["std", "xz"] }
-calamine = "0.33.0"
+calamine = "0.34.0"
 csv = "1.4.0"
 quick-xml = "0.39.0"
 
@@ -74,7 +74,7 @@ fast_image_resize = { version = "6.0.0", features = ["image"] }
 signal-hook = "0.4.3"
 libc = "0.2.183"
 windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
-winreg = "0.55.0"
+winreg = "0.56.0"
 
 assert_cmd = "2.2.0"
 predicates = "3.1.4"

@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use flate2::read::GzDecoder;
-use hayro::hayro_syntax::Pdf;
+use hayro::{RenderCache, hayro_syntax::Pdf};
 use image::{DynamicImage, GenericImage};
 use infer::{
     app::is_exe,
@@ -533,7 +533,11 @@ pub fn svg_to_image(
     Ok(dyn_img)
 }
 
-fn render_pdf_page(pdf: &Pdf, page_index: usize) -> Result<DynamicImage> {
+fn render_pdf_page<'a>(
+    pdf: &'a Pdf,
+    page_index: usize,
+    cache: Option<&'a RenderCache<'a>>,
+) -> Result<DynamicImage> {
     let pages = pdf.pages();
     let page = pages
         .get(page_index)
@@ -543,8 +547,13 @@ fn render_pdf_page(pdf: &Pdf, page_index: usize) -> Result<DynamicImage> {
         bg_color: hayro::vello_cpu::color::AlphaColor::WHITE,
         ..Default::default()
     };
+    let cache = match cache {
+        Some(v) => v,
+        None => &RenderCache::new(),
+    };
     let pixmap = hayro::render(
         page,
+        cache,
         &hayro::hayro_interpret::InterpreterSettings::default(),
         &render_settings,
     );
@@ -576,14 +585,17 @@ fn render_pdf_page(pdf: &Pdf, page_index: usize) -> Result<DynamicImage> {
 fn pdf_to_image(bytes: &[u8], page_index: usize) -> Result<DynamicImage> {
     let pdf = Pdf::new(Arc::new(bytes.to_vec()))
         .map_err(|e| anyhow::anyhow!("failed to load PDF: {e:?}"))?;
-    render_pdf_page(&pdf, page_index)
+    render_pdf_page(&pdf, page_index, None)
 }
 
 fn pdf_to_album(bytes: &[u8]) -> Result<Vec<DynamicImage>> {
     let pdf = Pdf::new(Arc::new(bytes.to_vec()))
         .map_err(|e| anyhow::anyhow!("failed to load PDF: {e:?}"))?;
     let page_count = pdf.pages().len();
-    (0..page_count).map(|i| render_pdf_page(&pdf, i)).collect()
+    let cache = RenderCache::new();
+    (0..page_count)
+        .map(|i| render_pdf_page(&pdf, i, Some(&cache)))
+        .collect()
 }
 
 pub fn exe_to_image(bytes: &[u8]) -> Result<DynamicImage> {

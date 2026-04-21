@@ -4,7 +4,7 @@ use super::sheets;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 use std::collections::HashMap;
-use std::io::{Cursor, Read};
+use std::io::{BufRead, Cursor, Read};
 use zip::ZipArchive;
 
 #[derive(Default, Clone)]
@@ -168,10 +168,18 @@ impl OpendocContext {
     }
 }
 
-fn get_attr(e: &quick_xml::events::BytesStart, key: &[u8]) -> Option<String> {
+fn get_attr(
+    e: &quick_xml::events::BytesStart,
+    key: &[u8],
+    reader: &Reader<impl BufRead>,
+) -> Option<String> {
     for attr in e.attributes().with_checks(false).flatten() {
         if attr.key.as_ref() == key {
-            return Some(attr.unescape_value().ok()?.into_owned());
+            return Some(
+                attr.decode_and_unescape_value(reader.decoder())
+                    .ok()?
+                    .into_owned(),
+            );
         }
     }
     None
@@ -218,8 +226,8 @@ fn parse_styles(xml: &str) -> (HashMap<String, TextStyle>, HashMap<String, bool>
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e) | Event::Empty(e)) => match e.name().as_ref() {
                 b"style:style" => {
-                    let name = get_attr(&e, b"style:name").unwrap_or_default();
-                    let family = get_attr(&e, b"style:family").unwrap_or_default();
+                    let name = get_attr(&e, b"style:name", &reader).unwrap_or_default();
+                    let family = get_attr(&e, b"style:family", &reader).unwrap_or_default();
                     if family == "text" {
                         current_style_name = Some(name.clone());
                         text_styles.entry(name).or_default();
@@ -228,18 +236,18 @@ fn parse_styles(xml: &str) -> (HashMap<String, TextStyle>, HashMap<String, bool>
                 b"style:text-properties" => {
                     if let Some(ref name) = current_style_name {
                         let entry = text_styles.entry(name.clone()).or_default();
-                        if get_attr(&e, b"fo:font-weight").as_deref() == Some("bold") {
+                        if get_attr(&e, b"fo:font-weight", &reader).as_deref() == Some("bold") {
                             entry.bold = true;
                         }
-                        if get_attr(&e, b"fo:font-style").as_deref() == Some("italic") {
+                        if get_attr(&e, b"fo:font-style", &reader).as_deref() == Some("italic") {
                             entry.italic = true;
                         }
-                        if matches!(get_attr(&e, b"style:text-line-through-style").as_deref(),
+                        if matches!(get_attr(&e, b"style:text-line-through-style", &reader).as_deref(),
                             Some(s) if s != "none")
                         {
                             entry.strike = true;
                         }
-                        if matches!(get_attr(&e, b"style:text-underline-style").as_deref(),
+                        if matches!(get_attr(&e, b"style:text-underline-style", &reader).as_deref(),
                             Some(s) if s != "none")
                         {
                             entry.underline = true;
@@ -247,7 +255,7 @@ fn parse_styles(xml: &str) -> (HashMap<String, TextStyle>, HashMap<String, bool>
                     }
                 }
                 b"text:list-style" => {
-                    let name = get_attr(&e, b"style:name").unwrap_or_default();
+                    let name = get_attr(&e, b"style:name", &reader).unwrap_or_default();
                     current_list_name = Some(name.clone());
                     list_styles.entry(name).or_insert(false);
                 }
@@ -306,7 +314,7 @@ pub fn parse_opendoc(content: impl AsRef<[u8]>, inline: bool) -> Result<String, 
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e)) => match e.name().as_ref() {
                 b"text:h" => {
-                    let level = get_attr(&e, b"text:outline-level")
+                    let level = get_attr(&e, b"text:outline-level", &reader)
                         .and_then(|v| v.parse::<u8>().ok())
                         .unwrap_or(1);
                     ctx.in_heading = Some(level);
@@ -316,15 +324,15 @@ pub fn parse_opendoc(content: impl AsRef<[u8]>, inline: bool) -> Result<String, 
                     ctx.in_para = true;
                 }
                 b"text:span" => {
-                    let style_name = get_attr(&e, b"text:style-name").unwrap_or_default();
+                    let style_name = get_attr(&e, b"text:style-name", &reader).unwrap_or_default();
                     ctx.active_span_style = ctx.text_styles.get(&style_name).cloned();
                 }
                 b"text:a" => {
-                    ctx.active_link_href = get_attr(&e, b"xlink:href");
+                    ctx.active_link_href = get_attr(&e, b"xlink:href", &reader);
                     ctx.link_text.clear();
                 }
                 b"text:list" => {
-                    let style_name = get_attr(&e, b"text:style-name").unwrap_or_default();
+                    let style_name = get_attr(&e, b"text:style-name", &reader).unwrap_or_default();
                     let ordered = ctx.list_styles.get(&style_name).copied().unwrap_or(false);
                     let depth = ctx.list_stack.last().map(|c| c.depth + 1).unwrap_or(1);
                     ctx.list_stack.push(ListContext {
@@ -348,7 +356,7 @@ pub fn parse_opendoc(content: impl AsRef<[u8]>, inline: bool) -> Result<String, 
                     ctx.current_row.push(String::new());
                 }
                 b"draw:image" => {
-                    if let Some(href) = get_attr(&e, b"xlink:href")
+                    if let Some(href) = get_attr(&e, b"xlink:href", &reader)
                         && let Some((mt, b64)) = ctx.images.get(&href)
                     {
                         let img = if ctx.inline {
@@ -370,7 +378,7 @@ pub fn parse_opendoc(content: impl AsRef<[u8]>, inline: bool) -> Result<String, 
                     ctx.push_text("\t");
                 }
                 b"draw:image" => {
-                    if let Some(href) = get_attr(&e, b"xlink:href")
+                    if let Some(href) = get_attr(&e, b"xlink:href", &reader)
                         && let Some((mt, b64)) = ctx.images.get(&href)
                     {
                         let img = if ctx.inline {

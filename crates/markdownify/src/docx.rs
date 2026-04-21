@@ -4,7 +4,7 @@ use super::sheets;
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
 use std::collections::HashMap;
-use std::io::{Cursor, Read};
+use std::io::{BufRead, Cursor, Read};
 use zip::ZipArchive;
 
 #[derive(Default, Clone)]
@@ -137,10 +137,18 @@ impl DocxContext {
     }
 }
 
-fn get_attr(e: &quick_xml::events::BytesStart, key: &[u8]) -> Option<String> {
+fn get_attr(
+    e: &quick_xml::events::BytesStart,
+    key: &[u8],
+    reader: &Reader<impl BufRead>,
+) -> Option<String> {
     for attr in e.attributes().with_checks(false).flatten() {
         if attr.key.as_ref() == key {
-            return Some(attr.unescape_value().ok()?.into_owned());
+            return Some(
+                attr.decode_and_unescape_value(reader.decoder())
+                    .ok()?
+                    .into_owned(),
+            );
         }
     }
     None
@@ -163,7 +171,10 @@ fn load_relationships(archive: &mut ZipArchive<Cursor<&[u8]>>) -> HashMap<String
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Empty(e)) if e.name().as_ref() == b"Relationship" => {
-                if let (Some(id), Some(target)) = (get_attr(&e, b"Id"), get_attr(&e, b"Target")) {
+                if let (Some(id), Some(target)) = (
+                    get_attr(&e, b"Id", &reader),
+                    get_attr(&e, b"Target", &reader),
+                ) {
                     map.insert(id, target);
                 }
             }
@@ -194,13 +205,13 @@ fn load_numbering(archive: &mut ZipArchive<Cursor<&[u8]>>) -> HashMap<(String, S
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e)) => match e.name().as_ref() {
                 b"w:abstractNum" => {
-                    current_abstract_id = get_attr(&e, b"w:abstractNumId");
+                    current_abstract_id = get_attr(&e, b"w:abstractNumId", &reader);
                 }
                 b"w:lvl" => {
-                    current_ilvl = get_attr(&e, b"w:ilvl");
+                    current_ilvl = get_attr(&e, b"w:ilvl", &reader);
                 }
                 b"w:num" => {
-                    current_num_id = get_attr(&e, b"w:numId");
+                    current_num_id = get_attr(&e, b"w:numId", &reader);
                 }
                 _ => {}
             },
@@ -209,7 +220,7 @@ fn load_numbering(archive: &mut ZipArchive<Cursor<&[u8]>>) -> HashMap<(String, S
                     if let (Some(abs_id), Some(ilvl), Some(val)) = (
                         current_abstract_id.as_ref(),
                         current_ilvl.as_ref(),
-                        get_attr(&e, b"w:val"),
+                        get_attr(&e, b"w:val", &reader),
                     ) {
                         abstract_level_ordered
                             .insert((abs_id.clone(), ilvl.clone()), val == "decimal");
@@ -217,7 +228,7 @@ fn load_numbering(archive: &mut ZipArchive<Cursor<&[u8]>>) -> HashMap<(String, S
                 }
                 b"w:abstractNumId" => {
                     if let (Some(num_id), Some(abs_id)) =
-                        (current_num_id.as_ref(), get_attr(&e, b"w:val"))
+                        (current_num_id.as_ref(), get_attr(&e, b"w:val", &reader))
                     {
                         num_to_abstract.insert(num_id.clone(), abs_id);
                     }
@@ -317,7 +328,7 @@ pub fn parse_docx(content: impl AsRef<[u8]>, inline: bool) -> Result<String, Par
                     ctx.current_row.push(String::new());
                 }
                 b"w:hyperlink" => {
-                    ctx.active_hyperlink_rid = get_attr(&e, b"r:id");
+                    ctx.active_hyperlink_rid = get_attr(&e, b"r:id", &reader);
                     ctx.hyperlink_text.clear();
                 }
                 b"w:drawing" => {
@@ -328,19 +339,19 @@ pub fn parse_docx(content: impl AsRef<[u8]>, inline: bool) -> Result<String, Par
 
             Ok(Event::Empty(e)) => match e.name().as_ref() {
                 b"w:b" => {
-                    ctx.run.bold = match get_attr(&e, b"w:val").as_deref() {
+                    ctx.run.bold = match get_attr(&e, b"w:val", &reader).as_deref() {
                         Some(v) => v == "true",
                         None => true,
                     };
                 }
                 b"w:i" => {
-                    ctx.run.italics = match get_attr(&e, b"w:val").as_deref() {
+                    ctx.run.italics = match get_attr(&e, b"w:val", &reader).as_deref() {
                         Some(v) => v == "true",
                         None => true,
                     };
                 }
                 b"w:strike" => {
-                    ctx.run.strike = match get_attr(&e, b"w:val").as_deref() {
+                    ctx.run.strike = match get_attr(&e, b"w:val", &reader).as_deref() {
                         Some(v) => v == "true",
                         None => true,
                     };
@@ -349,7 +360,7 @@ pub fn parse_docx(content: impl AsRef<[u8]>, inline: bool) -> Result<String, Par
                     ctx.run.underline = true;
                 }
                 b"w:pStyle" => {
-                    if let Some(val) = get_attr(&e, b"w:val") {
+                    if let Some(val) = get_attr(&e, b"w:val", &reader) {
                         let lower = val.to_lowercase();
                         if lower.contains("title") {
                             ctx.para.title = true;
@@ -369,14 +380,14 @@ pub fn parse_docx(content: impl AsRef<[u8]>, inline: bool) -> Result<String, Par
                 }
                 b"w:ilvl" => {
                     if ctx.para.heading_level > 0 || ctx.para.title {
-                    } else if let Some(val) = get_attr(&e, b"w:val")
+                    } else if let Some(val) = get_attr(&e, b"w:val", &reader)
                         && let Ok(v) = val.parse::<i8>()
                     {
                         ctx.para.indent = v + 1;
                     }
                 }
                 b"w:numId" => {
-                    if let Some(val) = get_attr(&e, b"w:val") {
+                    if let Some(val) = get_attr(&e, b"w:val", &reader) {
                         ctx.para.num_id = Some(val);
                     }
                 }
@@ -387,7 +398,7 @@ pub fn parse_docx(content: impl AsRef<[u8]>, inline: bool) -> Result<String, Par
                     ctx.push_text("\n");
                 }
                 b"a:blip" => {
-                    if let Some(rid) = get_attr(&e, b"r:embed")
+                    if let Some(rid) = get_attr(&e, b"r:embed", &reader)
                         && let Some((media_type, b64)) = ctx.images.get(&rid)
                     {
                         let img = if ctx.inline {

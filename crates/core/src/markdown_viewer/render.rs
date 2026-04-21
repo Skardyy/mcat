@@ -135,6 +135,8 @@ pub fn parse_node<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         NodeValue::Highlight => String::new(),
         NodeValue::ShortCode(_) => String::new(),
         NodeValue::Subtext => String::new(),
+        NodeValue::Insert => String::new(),
+        NodeValue::BlockDirective(_) => String::new(),
     }
 }
 
