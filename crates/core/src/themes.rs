@@ -685,9 +685,9 @@ impl CustomTheme {
         t.primary_border_color = self.border.value.clone();
         t.line_color = self.foreground.value.clone();
         t.edge_label_background = self.background.value.clone();
-        t.cluster_background = self.keyword_bg.value.clone();
+        t.cluster_background = self.background.value.clone();
         t.cluster_border = self.border.value.clone();
-        t.background = self.background.value.clone();
+        t.background = "#FFFFFF00".to_owned();
 
         t.sequence_actor_fill = self.surface.value.clone();
         t.sequence_actor_border = self.border.value.clone();
