@@ -1,14 +1,14 @@
 use itertools::Itertools;
 use regex::Regex;
 use scraper::{ElementRef, Html};
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::LazyLock};
 
 macro_rules! heading_processor {
     ($level:expr) => {
         |element: ElementRef, ctx: &ProcessingContext| -> String {
             let prefix = "#".repeat($level);
-            let content = collect(element, ctx, "");
-            format!("{} {}", prefix, content.trim())
+            let content = collect(element, ctx);
+            format!("\n\n{} {}\n\n", prefix, content.trim())
         }
     };
 }
@@ -19,24 +19,28 @@ pub struct ProcessingContext {
 
 type ProcessorFn = fn(ElementRef, &ProcessingContext) -> String;
 
-fn collect(element: ElementRef, ctx: &ProcessingContext, sep: &str) -> String {
-    element
-        .children()
-        .filter_map(|child| {
-            if let Some(el) = ElementRef::wrap(child) {
-                let tag = el.value().name();
-                if let Some(rule) = ctx.rules.get(tag) {
-                    Some(rule(el, ctx))
-                } else {
-                    Some(collect(el, ctx, ""))
-                }
+static BLANKS_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[ \t]*(\n[ \t]*){2,}").unwrap());
+
+fn collapse_blanks(s: &str) -> String {
+    BLANKS_RE.replace_all(s, "\n\n").to_string()
+}
+
+fn collect(element: ElementRef, ctx: &ProcessingContext) -> String {
+    let mut result = String::new();
+    for child in element.children() {
+        if let Some(el) = ElementRef::wrap(child) {
+            let tag = el.value().name();
+            let rendered = if let Some(rule) = ctx.rules.get(tag) {
+                rule(el, ctx)
             } else {
-                child.value().as_text().map(|v| v.to_string())
-            }
-        })
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .join(sep)
+                collect(el, ctx)
+            };
+            result.push_str(&rendered);
+        } else if let Some(text) = child.value().as_text() {
+            result.push_str(text);
+        }
+    }
+    result
 }
 
 impl ProcessingContext {
@@ -47,6 +51,7 @@ impl ProcessingContext {
 
         ctx.add_div_rules();
         ctx.add_details_rules();
+        ctx.add_quote_rules();
         ctx.add_heading_rules();
         ctx.add_formatting_rules();
         ctx.add_link_rules();
@@ -153,19 +158,23 @@ impl ProcessingContext {
                 out.push_str(&render_row(row));
             }
 
-            if let Some(align) = element.value().attr("align")
+            let out = if let Some(align) = element.value().attr("align")
                 && align.trim().to_lowercase() == "center"
             {
-                return format!("<!--CENTER_ON-->\n\n{out}\n\n<!--CENTER_OFF-->");
-            }
+                format!("<!--CENTER_ON-->\n\n{out}\n\n<!--CENTER_OFF-->")
+            } else {
+                out
+            };
 
-            out
+            format!("\n\n{}\n\n", out)
         });
 
-        self.rules
-            .insert("td".to_string(), |element, ctx| collect(element, ctx, "\n"));
-        self.rules
-            .insert("th".to_string(), |element, ctx| collect(element, ctx, "\n"));
+        self.rules.insert("td".to_string(), |element, ctx| {
+            collect(element, ctx).trim().to_string()
+        });
+        self.rules.insert("th".to_string(), |element, ctx| {
+            collect(element, ctx).trim().to_string()
+        });
 
         self.rules.insert("tr".to_string(), |_, _| String::new());
         self.rules.insert("thead".to_string(), |_, _| String::new());
@@ -193,16 +202,19 @@ impl ProcessingContext {
 
     fn add_code_rules(&mut self) {
         self.rules.insert("pre".to_string(), |element, ctx| {
-            let content = collect(element, ctx, "");
+            let content = collect(element, ctx);
+            format!("\n\n```\n{}\n```\n\n", content.trim_end())
+        });
 
-            format!("```\n{}\n```", content)
+        self.rules.insert("code".to_string(), |element, ctx| {
+            let content = collect(element, ctx);
+            format!("`{}`", content)
         });
     }
 
     fn add_link_rules(&mut self) {
         self.rules.insert("a".to_string(), |element, ctx| {
-            let content = collect(element, ctx, "");
-
+            let content = collect(element, ctx);
             if let Some(href) = element.value().attr("href") {
                 format!("[{}]({})", content.trim(), href.trim())
             } else {
@@ -213,27 +225,75 @@ impl ProcessingContext {
 
     fn add_block_rules(&mut self) {
         self.rules.insert("blockquote".to_string(), |element, ctx| {
-            let content = collect(element, ctx, "\n\n");
-
-            content.lines().map(|line| format!("> {line}")).join("\n")
+            let content = collect(element, ctx);
+            let content = collapse_blanks(content.trim());
+            let body = content.lines().map(|line| format!("> {line}")).join("\n");
+            format!("\n\n{}\n\n", body)
         });
     }
 
     fn add_empty_rules(&mut self) {
         self.rules.insert("figure".to_string(), |element, ctx| {
-            collect(element, ctx, "\n\n")
+            let content = collect(element, ctx);
+            format!("\n\n{}\n\n", content.trim())
         });
         self.rules.insert("figcaption".to_string(), |element, ctx| {
-            collect(element, ctx, "")
+            let content = collect(element, ctx);
+            format!("\n\n{}\n\n", content.trim())
         });
     }
 
     fn add_formatting_rules(&mut self) {
         self.rules
-            .insert("br".to_string(), |_element, _ctx| "\n".to_string());
+            .insert("br".to_string(), |_element, _ctx| "  \n".to_string());
 
         self.rules
-            .insert("hr".to_string(), |_element, _ctx| "---".to_string());
+            .insert("hr".to_string(), |_element, _ctx| "\n\n---\n\n".to_string());
+
+        self.rules.insert("mark".to_string(), |element, ctx| {
+            let content = collect(element, ctx);
+            format!("=={}==", content.trim())
+        });
+
+        self.rules.insert("var".to_string(), |element, ctx| {
+            let content = collect(element, ctx);
+            format!("*{}*", content.trim())
+        });
+
+        self.rules.insert("i".to_string(), |element, ctx| {
+            let content = collect(element, ctx);
+            format!("*{}*", content.trim())
+        });
+
+        self.rules.insert("b".to_string(), |element, ctx| {
+            let content = collect(element, ctx);
+            format!("**{}**", content.trim())
+        });
+
+        self.rules.insert("strong".to_string(), |element, ctx| {
+            let content = collect(element, ctx);
+            format!("**{}**", content.trim())
+        });
+
+        self.rules.insert("em".to_string(), |element, ctx| {
+            let content = collect(element, ctx);
+            format!("*{}*", content.trim())
+        });
+
+        self.rules.insert("del".to_string(), |element, ctx| {
+            let content = collect(element, ctx);
+            format!("~~{}~~", content.trim())
+        });
+
+        self.rules.insert("s".to_string(), |element, ctx| {
+            let content = collect(element, ctx);
+            format!("~~{}~~", content.trim())
+        });
+
+        self.rules.insert("strike".to_string(), |element, ctx| {
+            let content = collect(element, ctx);
+            format!("~~{}~~", content.trim())
+        });
     }
 
     fn add_heading_rules(&mut self) {
@@ -245,41 +305,44 @@ impl ProcessingContext {
         self.rules.insert("h6".to_string(), heading_processor!(6));
     }
 
+    fn add_quote_rules(&mut self) {
+        self.rules.insert("q".to_string(), |element, ctx| {
+            let content = collect(element, ctx);
+            format!("\"{}\"", content)
+        });
+    }
+
     fn add_div_rules(&mut self) {
         for item in ["div", "p"] {
             self.rules.insert(item.to_string(), |element, ctx| {
-                let sep = if element.value().name() == "p" {
-                    " "
-                } else {
-                    "\n\n"
-                };
-                let content = collect(element, ctx, sep);
+                let content = collect(element, ctx);
 
-                if content.is_empty() {
-                    return content;
+                if content.trim().is_empty() {
+                    return String::new();
                 }
 
                 if let Some(align) = element.value().attr("align")
                     && align.trim().to_lowercase() == "center"
                 {
-                    return format!("<!--CENTER_ON-->\n\n{content}\n\n<!--CENTER_OFF-->");
+                    return format!("\n\n<!--CENTER_ON-->\n\n{content}\n\n<!--CENTER_OFF-->\n\n");
                 }
 
-                content
+                format!("\n\n{}\n\n", content)
             });
         }
     }
 
     fn add_details_rules(&mut self) {
         self.rules.insert("details".to_string(), |element, ctx| {
-            let content = collect(element, ctx, "\n\n");
-
-            content.lines().map(|line| format!("> {line}")).join("\n")
+            let content = collect(element, ctx);
+            let content = collapse_blanks(content.trim());
+            let body = content.lines().map(|line| format!("> {line}")).join("\n");
+            format!("\n\n{}\n\n", body)
         });
 
         self.rules.insert("summary".to_string(), |element, ctx| {
-            let content = collect(element, ctx, "");
-            format!("▼ {}", content.trim())
+            let content = collect(element, ctx);
+            format!("\n\n▼ {}\n\n", content.trim())
         });
     }
 
@@ -318,13 +381,12 @@ impl ProcessingContext {
     }
 }
 
-// only add blocky elements logic, inline ones are rendered at the markdown viewer.
-// only exceptions is <a> and <img>, which in some cases will be treated as blocky sadly.
 pub fn process(markdown: &str) -> String {
     let ctx = ProcessingContext::new();
 
     let escaped_markdown = ctx.escape_unknown_elements(markdown);
     let document = Html::parse_fragment(&escaped_markdown);
 
-    collect(document.root_element(), &ctx, "\n\n")
+    let result = collect(document.root_element(), &ctx);
+    collapse_blanks(result.trim()).to_string()
 }

@@ -820,26 +820,7 @@ fn render_html_inline<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> Strin
         "<u>" | "<ins>" => UNDERLINE.to_owned(),
         "</u>" | "</ins>" => UNDERLINE_OFF.to_owned(),
 
-        "<b>" | "<strong>" => BOLD.to_owned(),
-        "</b>" | "</strong>" => NORMAL.to_owned(),
-
-        "<i>" | "<em>" | "<var>" => ITALIC.to_owned(),
-        "</i>" | "</em>" | "</var>" => ITALIC_OFF.to_owned(),
-
-        "<s>" | "<del>" | "<strike>" => STRIKETHROUGH.to_owned(),
-        "</s>" | "</del>" | "</strike>" => STRIKETHROUGH_OFF.to_owned(),
-
-        "<q>" => "\"".to_owned(),
-        "</q>" => "\"".to_owned(),
-
-        "<mark>" => {
-            let color = &ctx.theme.yellow.fg;
-            format!("{BOLD}{color}")
-        }
-        "</mark>" => RESET.to_owned(),
-
-        "<code>" => ctx.theme.green.fg.clone(),
-        "</code>" => RESET.to_owned(),
+        "<br>" | "<br/>" | "<br />" => "\n".to_owned(),
 
         _ => format!("{string_color}{literal}{RESET}"),
     }
