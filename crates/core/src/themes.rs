@@ -846,6 +846,7 @@ impl CustomTheme {
   --constant: {};
   --comment: {};
   --foreground: {};
+  --highlight: {};
   
   /* UI Colors */
   --background: {};
@@ -859,6 +860,7 @@ impl CustomTheme {
             self.constant.value,
             self.comment.value,
             self.foreground.value,
+            self.yellow.value,
             self.background.value,
             self.surface.value,
             self.border.value

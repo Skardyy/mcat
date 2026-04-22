@@ -89,6 +89,32 @@ blockquote {
   margin: 1em 0;
 }
 
+mark {
+  background-color: var(--highlight);
+  color: #000;
+  padding: 0.1em 0.2em;
+  border-radius: 2px;
+}
+
+ins {
+  text-decoration: underline;
+  text-decoration-color: var(--function);
+}
+
+del, s {
+  text-decoration: line-through;
+  color: var(--comment);
+}
+
+kbd {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.1em 0.4em;
+  font-family: monospace;
+  font-size: 0.9em;
+}
+
 ul,
 ol {
   padding-left: 2em;
