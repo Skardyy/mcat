@@ -808,6 +808,15 @@ fn render_code<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         panic!()
     };
 
+    // special formatting, we'll treat code blocks wrapped [] to be kbd.
+    if literal.starts_with('[') && literal.ends_with(']') {
+        let inner = &literal[1..literal.len() - 1];
+        let fg = &ctx.theme.foreground.fg;
+        let bg = &ctx.theme.surface.bg;
+        let cap_fg = &ctx.theme.surface.fg;
+        return format!("{cap_fg}\u{e0b6}{fg}{bg}{inner}{RESET}{cap_fg}\u{e0b4}{RESET}");
+    }
+
     let fg = &ctx.theme.green.fg;
     format!("{fg}{}{RESET}", literal)
 }
