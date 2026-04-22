@@ -255,6 +255,11 @@ impl ProcessingContext {
             format!("=={}==", content.trim())
         });
 
+        self.rules.insert("kbd".to_string(), |element, ctx| {
+            let content = collect(element, ctx);
+            format!("`[{}]`", content.trim())
+        });
+
         self.rules.insert("var".to_string(), |element, ctx| {
             let content = collect(element, ctx);
             format!("*{}*", content.trim())
