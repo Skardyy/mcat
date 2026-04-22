@@ -1,7 +1,7 @@
 ## Src
 
 - added `mermaid` support to the `ls` command
-- improved the markdown_viewer, now also renders html tables and `<u>` `<ins>` `<mark>` `<kbd>` tags
+- improved the markdown_viewer, now also renders html tables and `<u>` `<ins>` `<mark>` `<kbd>` `<ul>` `<ol>` `<li>` tags
 - improved the markdown_viewer, now html is parsed in a more correct way, fixing excessive new lines
 - improved the markdown_viewer, now supports description lists, shortcodes (e.g. `:thumbsup:`)
 - improved the markdown_viewer, now nested inline formatting (e.g. bold containing highlight) preserves outer styling

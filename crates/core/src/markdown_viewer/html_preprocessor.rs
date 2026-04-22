@@ -19,7 +19,7 @@ pub struct ProcessingContext {
 
 type ProcessorFn = fn(ElementRef, &ProcessingContext) -> String;
 
-static BLANKS_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[ \t]*(\n[ \t]*){2,}").unwrap());
+static BLANKS_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[ \t]*(\n[ \t]*){3,}").unwrap());
 
 fn collapse_blanks(s: &str) -> String {
     BLANKS_RE.replace_all(s, "\n\n").to_string()
@@ -58,6 +58,7 @@ impl ProcessingContext {
         ctx.add_img_rules();
         ctx.add_code_rules();
         ctx.add_block_rules();
+        ctx.add_list_rules();
         ctx.add_empty_rules();
         ctx.add_table_rules();
 
@@ -209,6 +210,74 @@ impl ProcessingContext {
         self.rules.insert("code".to_string(), |element, ctx| {
             let content = collect(element, ctx);
             format!("`{}`", content)
+        });
+    }
+
+    fn add_list_rules(&mut self) {
+        self.rules.insert("ul".to_string(), |element, ctx| {
+            let items: Vec<String> = element
+                .children()
+                .filter_map(ElementRef::wrap)
+                .filter(|e| e.value().name() == "li")
+                .map(|li| {
+                    let rule = ctx.rules.get("li").unwrap();
+                    let raw = rule(li, ctx);
+                    let indented = raw
+                        .lines()
+                        .enumerate()
+                        .map(|(i, line)| {
+                            if i == 0 {
+                                line.to_string()
+                            } else if line.is_empty() {
+                                String::new()
+                            } else {
+                                format!("    {}", line)
+                            }
+                        })
+                        .join("\n");
+                    format!("- {}", indented)
+                })
+                .collect();
+            format!("\n\n{}\n\n", items.join("\n"))
+        });
+
+        self.rules.insert("ol".to_string(), |element, ctx| {
+            let start: usize = element
+                .value()
+                .attr("start")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(1);
+            let items: Vec<String> = element
+                .children()
+                .filter_map(ElementRef::wrap)
+                .filter(|e| e.value().name() == "li")
+                .enumerate()
+                .map(|(i, li)| {
+                    let rule = ctx.rules.get("li").unwrap();
+                    let raw = rule(li, ctx);
+                    let indented = raw
+                        .lines()
+                        .enumerate()
+                        .map(|(j, line)| {
+                            if j == 0 {
+                                line.to_string()
+                            } else if line.is_empty() {
+                                String::new()
+                            } else {
+                                format!("    {}", line)
+                            }
+                        })
+                        .join("\n");
+                    let marker = format!("{}. ", start + i);
+                    format!("{}{}", marker, indented)
+                })
+                .collect();
+            format!("\n\n{}\n\n", items.join("\n"))
+        });
+
+        self.rules.insert("li".to_string(), |element, ctx| {
+            let raw = collect(element, ctx);
+            collapse_blanks(raw.trim()).to_string()
         });
     }
 
