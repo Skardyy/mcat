@@ -747,8 +747,9 @@ fn render_emph<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
 
 fn render_highlight<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     let content = collect(node, ctx, "");
-    let color = &ctx.theme.yellow.fg;
-    let start = format!("{BOLD}{color}");
+    let color = &ctx.theme.yellow.bg;
+    let fg = &ctx.theme.black.fg;
+    let start = format!("{fg}{color}");
     let content = content.replace(RESET, &format!("{RESET}{start}"));
     format!("{start}{content}{RESET}")
 }
