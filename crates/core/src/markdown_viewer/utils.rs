@@ -1,4 +1,8 @@
-use std::{collections::HashMap, sync::OnceLock};
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    sync::{LazyLock, OnceLock},
+};
 
 use itertools::Itertools;
 use regex::Regex;
@@ -652,6 +656,35 @@ pub fn to_superscript(ch: char) -> Option<char> {
 
         _ => return None,
     })
+}
+
+static COLOR_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"(?i)color\s*:\s*([a-z]+|#[0-9a-f]{3,8})"#).unwrap());
+
+pub fn extract_span_color<'a>(lit: &str, ctx: &'a AnsiContext) -> Option<Cow<'a, str>> {
+    let caps = COLOR_RE.captures(lit)?;
+    let color = caps.get(1)?.as_str().to_lowercase();
+    let theme = &ctx.theme;
+
+    if let Some(hex) = color.strip_prefix('#') {
+        let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+        let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+        let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+        return Some(Cow::Owned(format!("\x1b[38;2;{r};{g};{b}m")));
+    }
+
+    let name = match color.as_str() {
+        "red" => &theme.red.fg,
+        "green" => &theme.green.fg,
+        "blue" => &theme.blue.fg,
+        "yellow" => &theme.yellow.fg,
+        "magenta" | "purple" | "pink" => &theme.magenta.fg,
+        "cyan" => &theme.cyan.fg,
+        "black" => &theme.black.fg,
+        "white" | "gray" | "grey" => &theme.foreground.fg,
+        _ => return None,
+    };
+    Some(Cow::Borrowed(name))
 }
 
 // we only test core wrapping logic..

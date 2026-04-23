@@ -8,7 +8,9 @@ use strip_ansi_escapes::strip_str;
 use syntect::parsing::SyntaxSet;
 
 use crate::{
-    markdown_viewer::utils::{string_len, to_superscript, trim_ansi_string, wrap_lines},
+    markdown_viewer::utils::{
+        extract_span_color, string_len, to_superscript, trim_ansi_string, wrap_lines,
+    },
     themes::CustomTheme,
 };
 
@@ -826,11 +828,19 @@ fn render_html_inline<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> Strin
         panic!()
     };
     let string_color = ctx.theme.string.fg.clone();
+
+    if literal.starts_with("<span")
+        && let Some(color) = extract_span_color(literal, ctx)
+    {
+        return color.into_owned();
+    }
+
     match literal.to_lowercase().as_str() {
         "<u>" | "<ins>" => UNDERLINE.to_owned(),
         "</u>" | "</ins>" => UNDERLINE_OFF.to_owned(),
 
         "<br>" | "<br/>" | "<br />" => "\n".to_owned(),
+        "</span>" => RESET.to_owned(),
 
         _ => format!("{string_color}{literal}{RESET}"),
     }
