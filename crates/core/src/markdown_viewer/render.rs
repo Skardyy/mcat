@@ -8,7 +8,7 @@ use strip_ansi_escapes::strip_str;
 use syntect::parsing::SyntaxSet;
 
 use crate::{
-    markdown_viewer::utils::{string_len, trim_ansi_string, wrap_lines},
+    markdown_viewer::utils::{string_len, to_superscript, trim_ansi_string, wrap_lines},
     themes::CustomTheme,
 };
 
@@ -837,8 +837,17 @@ fn render_html_inline<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> Strin
 }
 
 fn render_superscript<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
-    // no real thing I can do
-    collect(node, ctx, "")
+    let content = collect(node, ctx, "");
+    let trimmed = content.trim();
+
+    let mut result = String::with_capacity(trimmed.len());
+    for ch in trimmed.chars() {
+        match to_superscript(ch) {
+            Some(sup) => result.push(sup),
+            None => return format!("^({})", trimmed),
+        }
+    }
+    result
 }
 
 fn render_multiline_block_quote<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {

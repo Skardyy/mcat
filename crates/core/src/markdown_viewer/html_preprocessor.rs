@@ -319,6 +319,11 @@ impl ProcessingContext {
         self.rules
             .insert("hr".to_string(), |_element, _ctx| "\n\n---\n\n".to_string());
 
+        self.rules.insert("sup".to_string(), |element, ctx| {
+            let content = collect(element, ctx);
+            format!("^{}^", content.trim())
+        });
+
         self.rules.insert("mark".to_string(), |element, ctx| {
             let content = collect(element, ctx);
             format!("=={}==", content.trim())
