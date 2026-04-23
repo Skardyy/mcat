@@ -4,7 +4,7 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use inquire::MultiSelect;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 use std::sync::atomic::AtomicBool;
 use std::sync::{
     Arc, Weak,
@@ -14,11 +14,8 @@ use tokio::runtime::{Builder, Runtime};
 
 use crate::markdown_viewer::utils::get_lang_icon_and_color;
 
-static RUNTIME: OnceLock<Runtime> = OnceLock::new();
-
-pub fn get_rt() -> &'static Runtime {
-    RUNTIME.get_or_init(|| Builder::new_current_thread().enable_all().build().unwrap())
-}
+pub static RUNTIME: LazyLock<Runtime> =
+    LazyLock::new(|| Builder::new_current_thread().enable_all().build().unwrap());
 
 #[derive(Clone)]
 pub enum MultiBar {

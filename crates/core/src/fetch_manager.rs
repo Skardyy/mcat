@@ -10,7 +10,7 @@ use ffmpeg_sidecar::command::FfmpegCommand;
 use tracing::{debug, info, warn};
 use zip::ZipArchive;
 
-use crate::prompter::get_rt;
+use crate::prompter::RUNTIME;
 
 pub fn is_chromium_installed() -> bool {
     BrowserConfig::default().is_some()
@@ -58,7 +58,7 @@ fn download_ffmpeg_package(url: &str, download_dir: &Path) -> Result<PathBuf> {
     let archive_path = download_dir.join(filename);
     let mut file = File::create(&archive_path).context("Failed to create file")?;
     let mut writer = BufWriter::new(&mut file);
-    get_rt().block_on(async {
+    RUNTIME.block_on(async {
         let mut res = reqwest::get(url)
             .await
             .context("Failed to download ffmpeg")?;
@@ -346,7 +346,7 @@ impl ChromeRevision {
 
         // Download and Unzip
         let url = url.parse::<reqwest::Url>().context("Invalid archive url")?;
-        get_rt().block_on(async {
+        RUNTIME.block_on(async {
             // Download
             let mut res = reqwest::get(url)
                 .await

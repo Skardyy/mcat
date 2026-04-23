@@ -36,7 +36,7 @@ use crate::{
     cdp::ChromeHeadless,
     config::{McatConfig, Theme},
     fetch_manager, markdown_viewer,
-    prompter::get_rt,
+    prompter::RUNTIME,
 };
 
 #[derive(Clone, Default, Debug, PartialEq)]
@@ -711,7 +711,7 @@ pub fn html_to_image(source: &McatFile) -> Result<DynamicImage> {
     let url = Url::from_file_path(tmp_file.path())
         .map_err(|_| anyhow::anyhow!("failed to create url for chromium"))?;
 
-    let img_bytes: Vec<u8> = get_rt().block_on(async {
+    let img_bytes: Vec<u8> = RUNTIME.block_on(async {
         let browser = ChromeHeadless::new(url.as_str()).await?;
         browser.capture_screenshot().await
     })?;

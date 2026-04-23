@@ -1,8 +1,4 @@
-use std::{
-    borrow::Cow,
-    collections::HashMap,
-    sync::{LazyLock, OnceLock},
-};
+use std::{borrow::Cow, collections::HashMap, sync::LazyLock};
 
 use itertools::Itertools;
 use regex::Regex;
@@ -16,7 +12,11 @@ use unicode_width::UnicodeWidthStr;
 
 use super::render::{AnsiContext, BOLD, RESET};
 
-static ANSI_ESCAPE_REGEX: OnceLock<Regex> = OnceLock::new();
+static ANSI_ESCAPE_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\x1b\[[0-9;]*m").unwrap());
+
+static COLOR_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"(?i)color\s*:\s*([a-z]+|#[0-9a-f]{3,8})"#).unwrap());
 
 pub fn get_lang_icon_and_color(lang: &str) -> Option<(&'static str, &'static str)> {
     let map: HashMap<&str, (&str, &str)> = [
@@ -194,8 +194,6 @@ pub fn string_len(str: &str) -> usize {
 }
 
 fn find_last_format(text: &str) -> Option<String> {
-    let re = ANSI_ESCAPE_REGEX.get_or_init(|| Regex::new(r"\x1b\[[0-9;]*m").unwrap());
-
     let mut fg: Option<String> = None;
     let mut bold = false;
     let mut faint = false;
@@ -204,7 +202,7 @@ fn find_last_format(text: &str) -> Option<String> {
     let mut strikethrough = false;
     let mut ever_set = false;
 
-    for m in re.find_iter(text) {
+    for m in ANSI_ESCAPE_REGEX.find_iter(text) {
         let seq = m.as_str();
         let codes_str = &seq[2..seq.len() - 1];
         ever_set = true;
@@ -657,9 +655,6 @@ pub fn to_superscript(ch: char) -> Option<char> {
         _ => return None,
     })
 }
-
-static COLOR_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"(?i)color\s*:\s*([a-z]+|#[0-9a-f]{3,8})"#).unwrap());
 
 pub fn extract_span_color<'a>(lit: &str, ctx: &'a AnsiContext) -> Option<Cow<'a, str>> {
     let caps = COLOR_RE.captures(lit)?;

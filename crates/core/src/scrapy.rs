@@ -3,19 +3,25 @@ use futures::StreamExt;
 use regex::Regex;
 use reqwest::{Client, Response};
 use scraper::Html;
-use std::sync::OnceLock;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use tracing::{debug, info, warn};
 
 use crate::{
     mcat_file::{McatFile, McatKind},
-    prompter::MultiBar,
-    prompter::get_rt,
+    prompter::{MultiBar, RUNTIME},
 };
 
-static GITHUB_BLOB_URL: OnceLock<Regex> = OnceLock::new();
-static HTTP_CLIENT: OnceLock<Client> = OnceLock::new();
+static GITHUB_BLOB_URL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^.*github\.com.*[\\\/]blob[\\\/].*$").unwrap());
+
+static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(|| {
+    Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+        .build()
+        .unwrap_or_default()
+});
 
 #[derive(Default)]
 pub struct MediaScrapeOptions {
@@ -27,23 +33,16 @@ pub fn scrape_biggest_media(
     options: &MediaScrapeOptions,
     bar: Option<&MultiBar>,
 ) -> Result<McatFile> {
-    let client = HTTP_CLIENT.get_or_init(|| {
-        Client::builder()
-            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
-            .build()
-            .unwrap_or_default()
-    });
-    let re =
-        GITHUB_BLOB_URL.get_or_init(|| Regex::new(r"^.*github\.com.*[\\\/]blob[\\\/].*$").unwrap());
+    let client = &HTTP_CLIENT;
 
-    let url = if re.is_match(url) {
+    let url = if GITHUB_BLOB_URL.is_match(url) {
         url.replace("github.com", "raw.githubusercontent.com")
             .replace("/blob/", "/")
     } else {
         url.to_string()
     };
 
-    get_rt().block_on(async {
+    RUNTIME.block_on(async {
         let response = get_response(client, &url, bar).await?;
 
         let mime = get_mime(&response);
