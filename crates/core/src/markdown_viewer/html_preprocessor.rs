@@ -469,3 +469,258 @@ pub fn process(markdown: &str) -> String {
     let result = collect(document.root_element(), &ctx);
     collapse_blanks(result.trim()).to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use indoc::indoc;
+
+    #[test]
+    fn test_inline_formatters_convert_to_markdown() {
+        assert_eq!(process("<b>bold</b>"), "**bold**");
+        assert_eq!(process("<strong>bold</strong>"), "**bold**");
+        assert_eq!(process("<i>italic</i>"), "*italic*");
+        assert_eq!(process("<em>italic</em>"), "*italic*");
+        assert_eq!(process("<var>var</var>"), "*var*");
+        assert_eq!(process("<s>strike</s>"), "~~strike~~");
+        assert_eq!(process("<del>strike</del>"), "~~strike~~");
+        assert_eq!(process("<strike>strike</strike>"), "~~strike~~");
+        assert_eq!(process("<mark>highlighted</mark>"), "==highlighted==");
+        assert_eq!(process("<sup>2</sup>"), "^2^");
+        assert_eq!(process("<kbd>Ctrl</kbd>"), "`[Ctrl]`");
+        assert_eq!(process("<q>quoted</q>"), "\"quoted\"");
+    }
+
+    #[test]
+    fn test_nested_inline_formatters() {
+        assert_eq!(
+            process("<b>bold with <i>italic</i> inside</b>"),
+            "**bold with *italic* inside**"
+        );
+        assert_eq!(
+            process("<p>Text with <b>bold <mark>and mark</mark></b>.</p>"),
+            "Text with **bold ==and mark==**."
+        );
+    }
+
+    #[test]
+    fn test_img_with_dimensions_appends_hash() {
+        assert_eq!(
+            process(r#"<img src="foo.png" alt="x" width="10" height="20"/>"#),
+            "![x](foo.png#10x20)"
+        );
+        assert_eq!(
+            process(r#"<img src="foo.png" alt="x" width="10"/>"#),
+            "![x](foo.png#10x)"
+        );
+        assert_eq!(
+            process(r#"<img src="foo.png" alt="x" height="20"/>"#),
+            "![x](foo.png#x20)"
+        );
+        assert_eq!(process(r#"<img src="foo.png"/>"#), "![IMG](foo.png)");
+    }
+
+    #[test]
+    fn test_link_with_nested_image() {
+        let result = process(r#"<a href="http://e.com"><img src="i.png" alt="icon"/></a>"#);
+        assert_eq!(result, "[![icon](i.png)](http://e.com)");
+    }
+
+    #[test]
+    fn test_link_with_amp_in_url() {
+        let result = process(r#"<a href="http://e.com?a=1&b=2">text</a>"#);
+        assert_eq!(result, "[text](http://e.com?a=1&b=2)");
+    }
+
+    #[test]
+    fn test_link_without_href_returns_content() {
+        assert_eq!(process("<a>text</a>"), "text");
+    }
+
+    #[test]
+    fn test_img_with_amp_in_src() {
+        let result = process(r#"<img src="http://e.com?a=1&b=2" alt="x"/>"#);
+        assert_eq!(result, "![x](http://e.com?a=1&b=2)");
+    }
+
+    #[test]
+    fn test_headings_convert() {
+        assert_eq!(process("<h1>Title</h1>"), "# Title");
+        assert_eq!(process("<h2>Title</h2>"), "## Title");
+        assert_eq!(process("<h6>Title</h6>"), "###### Title");
+    }
+
+    #[test]
+    fn test_hr_emits_thematic_break() {
+        let expected = indoc! {"
+            a
+
+            ---
+
+            b
+        "};
+        assert_eq!(process("a<hr/>b"), expected.trim_end());
+    }
+
+    #[test]
+    fn test_nested_blockquote() {
+        let input = indoc! {"
+            <blockquote>outer
+                <blockquote>inner</blockquote>
+            </blockquote>
+        "};
+
+        let expected = indoc! {"
+            > outer
+            > 
+            > > inner
+        "};
+
+        assert_eq!(process(input), expected.trim_end());
+    }
+
+    #[test]
+    fn test_center_alignment_becomes_comment() {
+        let input = indoc! {r#"
+            <div align="center">hello</div>
+        "#};
+
+        let expected = indoc! {"
+            <!--CENTER_ON-->
+
+            hello
+
+            <!--CENTER_OFF-->
+        "};
+
+        assert_eq!(process(input), expected.trim_end());
+    }
+
+    #[test]
+    fn test_unknown_tag_passes_through() {
+        assert_eq!(
+            process("<YouDontKnowMe>unknown</YouDontKnowMe>"),
+            "<YouDontKnowMe>unknown</YouDontKnowMe>"
+        );
+    }
+
+    #[test]
+    fn test_code_block_contents_not_touched() {
+        let input = indoc! {"
+            ```
+            <b>not bold</b>
+            ```
+        "};
+
+        let expected = indoc! {"
+            ```
+            <b>not bold</b>
+            ```
+        "};
+
+        assert_eq!(process(input), expected.trim_end());
+    }
+
+    #[test]
+    fn test_inline_code_contents_not_touched() {
+        assert_eq!(process("`<b>text</b>`"), "`<b>text</b>`");
+    }
+
+    #[test]
+    fn test_table_renders_with_alignment() {
+        let input = indoc! {r#"
+            <table>
+                <tr>
+                    <th align="left">L</th>
+                    <th align="center">C</th>
+                    <th align="right">R</th>
+                </tr>
+                <tr>
+                    <td>1</td>
+                    <td>2</td>
+                    <td>3</td>
+                </tr>
+            </table>
+        "#};
+
+        let expected = indoc! {"
+            | L | C | R |
+            | :--- | :---: | ---: |
+            | 1 | 2 | 3 |
+        "};
+
+        assert_eq!(process(input), expected.trim_end());
+    }
+
+    #[test]
+    fn test_table_cell_pipe_escaped() {
+        let input = indoc! {"
+            <table><tr><td>a|b</td></tr></table>
+        "};
+
+        let expected = indoc! {r"
+            | a\|b |
+            | --- |
+        "};
+
+        assert_eq!(process(input), expected.trim_end());
+    }
+
+    #[test]
+    fn test_ul_with_nested_and_multi_paragraph() {
+        let input = indoc! {"
+            <ul>
+                <li>
+                    <p>First paragraph.</p>
+                    <p>Second paragraph.</p>
+                </li>
+                <li>outer
+                    <ul>
+                        <li>nested one</li>
+                        <li>nested two</li>
+                    </ul>
+                </li>
+                <li>simple</li>
+            </ul>
+        "};
+
+        let expected = indoc! {"
+            - First paragraph.
+
+                Second paragraph.
+            - outer
+
+                - nested one
+                - nested two
+            - simple
+        "};
+
+        assert_eq!(process(input), expected.trim_end());
+    }
+
+    #[test]
+    fn test_details_summary() {
+        let input = indoc! {"
+            <details>
+                <summary>Summary here</summary>
+                Body content.
+            </details>
+        "};
+
+        let expected = indoc! {"
+            > ▼ Summary here
+            > 
+            > Body content.
+        "};
+
+        assert_eq!(process(input), expected.trim_end());
+    }
+
+    #[test]
+    fn test_collapse_blanks_limits_con_newlines() {
+        assert_eq!(collapse_blanks("a\n\n\n\nb"), "a\n\nb");
+        assert_eq!(collapse_blanks("a\n\nb"), "a\n\nb");
+        assert_eq!(collapse_blanks("a\nb"), "a\nb");
+        assert_eq!(collapse_blanks("a\n  \n  \n  \nb"), "a\n\nb");
+    }
+}

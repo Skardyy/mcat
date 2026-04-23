@@ -698,7 +698,7 @@ mod tests {
     }
 
     #[test]
-    fn trim_ansi_string_trims() {
+    fn test_trim_ansi_string_trims() {
         assert_eq!(trim_ansi_string("  hello  ".into()), "hello");
         assert_eq!(trim_ansi_string("hello".into()), "hello");
         assert_eq!(trim_ansi_string("   ".into()), "");
@@ -709,14 +709,14 @@ mod tests {
     }
 
     #[test]
-    fn string_len_ignores_ansi() {
+    fn test_string_len_ignores_ansi() {
         assert_eq!(string_len("hello"), 5);
         assert_eq!(string_len("\x1b[31mhello\x1b[0m"), 5);
         assert_eq!(string_len(""), 0);
     }
 
     #[test]
-    fn find_last_format_tracks_state() {
+    fn test_find_last_format_tracks_state() {
         assert_eq!(find_last_format("hello"), None);
         assert_eq!(
             find_last_format("\x1b[31mhello\x1b[0m"),
@@ -734,7 +734,7 @@ mod tests {
     }
 
     #[test]
-    fn info_for_wrapping_basic() {
+    fn test_info_for_wrapping_basic() {
         let ctx = make_ctx();
         // sc_width=50, indent=2 -> space=50-(2*2)=46
         let (space, sub_space, indent, sub_indent) = info_for_wrapping(&ctx, 2, "", "");
@@ -758,7 +758,7 @@ mod tests {
     }
 
     #[test]
-    fn wrap_highlighted_line_basic() {
+    fn test_wrap_highlighted_line_basic() {
         let text = "the quick brown fox jumps over the lazy dog";
 
         // fits in width -> returned as-is
@@ -838,7 +838,7 @@ mod tests {
     }
 
     #[test]
-    fn wrap_lines_basic() {
+    fn test_wrap_lines_basic() {
         let ctx = make_ctx();
         let text = "the quick brown fox jumps over the lazy dog";
 
