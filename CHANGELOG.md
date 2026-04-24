@@ -11,6 +11,7 @@
 - improved the scraping logic, now does it based on width and height (not content-size) and now also doesn't download candidates (should make it way faster)
 - fixed an issue in the markdown_viewer, that certain images would get splitted
 - fixed an issue in the markdown_viewer, where images with links would be slightly misaligned on the first row on some terminals
+- fixed an issue in the markdown_viewer, where images with width/height containing px, wouldn't be respected
 
 ## V0.5.6
 

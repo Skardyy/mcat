@@ -319,7 +319,7 @@ struct ImageUrl {
 fn extract_image_urls<'a>(node: &'a AstNode<'a>, wininfo: &Wininfo, urls: &mut Vec<ImageUrl>) {
     let data = node.data.borrow();
     if let NodeValue::Image(image_node) = &data.value {
-        let regex = Regex::new(r"^([^#]+)(?:#([^x]+)?x(.+)?)?$").unwrap();
+        let regex = Regex::new(r"^([^#]+)(?:#(\d+[a-z%]*)?x(\d+[a-z%]*)?)?$").unwrap();
         if let Some(captures) = regex.captures(&image_node.url)
             && let Some(base_url) = captures.get(1)
         {
