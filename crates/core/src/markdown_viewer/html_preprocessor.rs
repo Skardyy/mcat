@@ -323,9 +323,6 @@ impl ProcessingContext {
 
     fn add_formatting_rules(&mut self) {
         self.rules
-            .insert("br".to_string(), |_element, _ctx| "  \n".to_string());
-
-        self.rules
             .insert("hr".to_string(), |_element, _ctx| "\n\n---\n\n".to_string());
 
         self.rules.insert("sup".to_string(), |element, ctx| {
