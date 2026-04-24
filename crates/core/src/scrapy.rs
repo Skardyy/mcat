@@ -3,21 +3,28 @@ use futures::StreamExt;
 use regex::Regex;
 use reqwest::{Client, Response};
 use scraper::Html;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, OnceLock};
 use std::time::Duration;
 
 use tracing::{debug, info, warn};
 
 use crate::{
     mcat_file::{McatFile, McatKind},
-    prompter::{MultiBar, RUNTIME},
+    prompter::MultiBar,
 };
 
 static GITHUB_BLOB_URL: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^.*github\.com.*[\\\/]blob[\\\/].*$").unwrap());
 
+pub static TIMEOUT: OnceLock<Duration> = OnceLock::new();
+
+fn timeout() -> Duration {
+    TIMEOUT.get().copied().unwrap_or(Duration::from_secs(5))
+}
+
 static HTTP_CLIENT: LazyLock<Client> = LazyLock::new(|| {
     Client::builder()
+        .connect_timeout(timeout())
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
         .build()
         .unwrap_or_default()
@@ -28,7 +35,7 @@ pub struct MediaScrapeOptions {
     pub max_content_length: Option<u64>,
 }
 
-pub fn scrape_biggest_media(
+pub async fn scrape_biggest_media(
     url: &str,
     options: &MediaScrapeOptions,
     bar: Option<&MultiBar>,
@@ -42,45 +49,57 @@ pub fn scrape_biggest_media(
         url.to_string()
     };
 
-    RUNTIME.block_on(async {
-        let response = get_response(client, &url, bar).await?;
-
-        let mime = get_mime(&response);
-        let format = mime.as_deref().and_then(|m| {
-            if m == "application/octet-stream" {
-                ext_from_url(&url).as_deref().and_then(McatKind::from_ext)
-            } else {
-                format_from_mime(m)
-            }
-        });
-
-        match format {
-            // html, try to scrape for something
-            Some(McatKind::Html) => {
-                let html = response.text().await?;
-                let result = scrape_html(client, &url, &html, options, bar).await;
-                match &result {
-                    Ok(file) => {
-                        info!(url = %url, kind = ?file.kind, size = file.bytes.len(), "scraped media")
-                    }
-                    Err(e) => warn!(url = %url, error = %e, "no media found on page"),
-                }
-                result
-            },
-            // known type, just download
-            Some(fmt) => {
-                let data = download(response, options, bar).await?;
-                let mut file = McatFile::from_bytes(data, None, ext_from_url(&url), Some(url), true)?;
-                if file.kind == McatKind::PreMarkdown {
-                    file.kind = fmt;
-                }
-                info!(url = %file.id.as_deref().unwrap_or_default(), kind = ?file.kind, size = file.bytes.len(), "downloaded media");
-                Ok(file)
-            },
-            None => anyhow::bail!("no media found at {}", url),
+    let response = match get_response(client, &url, bar).await {
+        Ok(r) => r,
+        Err(e) => {
+            warn!(url = %url, error = %e.root_cause(), "failed to fetch");
+            return Err(e);
         }
+    };
 
-    })
+    let mime = get_mime(&response);
+    let format = mime.as_deref().and_then(|m| {
+        if m == "application/octet-stream" {
+            ext_from_url(&url).as_deref().and_then(McatKind::from_ext)
+        } else {
+            format_from_mime(m)
+        }
+    });
+
+    match format {
+        // html, try to scrape for something
+        Some(McatKind::Html) => {
+            let html = response.text().await?;
+            let result = scrape_html(client, &url, &html, options, bar).await;
+            match &result {
+                Ok(file) => {
+                    info!(url = %url, kind = ?file.kind, size = file.bytes.len(), "scraped media")
+                }
+                Err(e) => warn!(url = %url, error = %e, "no media found on page"),
+            }
+            result
+        }
+        // known type, just download
+        Some(fmt) => {
+            let data = match download(response, options, bar).await {
+                Ok(d) => d,
+                Err(e) => {
+                    warn!(url = %url, error = ?e, "download failed");
+                    return Err(e);
+                }
+            };
+            let mut file = McatFile::from_bytes(data, None, ext_from_url(&url), Some(url), true)?;
+            if file.kind == McatKind::PreMarkdown {
+                file.kind = fmt;
+            }
+            info!(url = %file.id.as_deref().unwrap_or_default(), kind = ?file.kind, size = file.bytes.len(), "downloaded media");
+            Ok(file)
+        }
+        None => {
+            warn!(url = %url, "no media format detected");
+            anyhow::bail!("no media found at {}", url)
+        }
+    }
 }
 
 fn ext_from_url(url: &str) -> Option<String> {
@@ -112,6 +131,7 @@ async fn download(
     options: &MediaScrapeOptions,
     bar: Option<&MultiBar>,
 ) -> Result<Vec<u8>> {
+    let idle_timeout = timeout();
     let content_length = get_content_length(&response);
 
     if let (Some(max), Some(len)) = (options.max_content_length, content_length) {
@@ -122,8 +142,12 @@ async fn download(
 
     let mut data = Vec::new();
     let mut stream = response.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk?;
+    loop {
+        let chunk = match tokio::time::timeout(idle_timeout, stream.next()).await {
+            Ok(Some(chunk)) => chunk?,
+            Ok(None) => break,
+            Err(_) => anyhow::bail!("download stalled (no data for {}s)", idle_timeout.as_secs()),
+        };
         data.extend_from_slice(&chunk);
         if let Some(max) = options.max_content_length {
             anyhow::ensure!(

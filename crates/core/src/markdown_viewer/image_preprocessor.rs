@@ -4,6 +4,7 @@ use anyhow::Context;
 use anyhow::Result;
 use base64::Engine;
 use comrak::nodes::{AstNode, NodeValue};
+use futures::stream::{self, StreamExt};
 use image::GenericImageView;
 use itertools::Itertools;
 use rasteroid::Encoder;
@@ -14,14 +15,14 @@ use rasteroid::{
     image_extended::InlineImage,
     term_misc::{self},
 };
-use rayon::iter::IndexedParallelIterator;
-use rayon::iter::IntoParallelIterator;
+use rayon::iter::ParallelBridge;
 use rayon::iter::ParallelIterator;
 use regex::Regex;
 
 use tracing::{info, warn};
 
 use crate::mcat_file::McatFile;
+use crate::prompter::RUNTIME;
 use crate::{
     config::{McatConfig, MdImageMode},
     scrapy::{MediaScrapeOptions, scrape_biggest_media},
@@ -118,33 +119,62 @@ impl ImagePreprocessor {
             });
         }
 
-        let mapper: HashMap<String, ImageElement> = urls
-            .into_par_iter()
-            .enumerate()
-            .filter_map(|(i, url)| {
-                let tmp = if url.is_mermaid {
-                    McatFile::from_bytes(
-                        url.mermaid_content?.into_bytes(),
-                        None,
-                        Some("mermaid".to_owned()),
-                        None,
-                        true,
-                    )
-                    .ok()?
-                } else if url.base_url.starts_with("data:") {
-                    handle_data_uri(&url.base_url)?
-                } else if is_local_path(&url.base_url) {
-                    match handle_local_image(&url.base_url, markdown_dir) {
-                        Ok(f) => Some(f),
-                        Err(e) => {
-                            warn!(%e);
-                            None
-                        }
-                    }?
-                } else {
-                    scrape_biggest_media(&url.base_url, &scrape_opts, conf.bar.as_ref()).ok()?
-                };
+        let (tx, rx) = std::sync::mpsc::channel::<(usize, ImageUrl, McatFile)>();
 
+        let fetcher = {
+            let bar = conf.bar.clone();
+            let markdown_dir = markdown_dir.map(|p| p.to_path_buf());
+            std::thread::spawn(move || {
+                RUNTIME.block_on(async {
+                    stream::iter(urls.into_iter().enumerate())
+                        .for_each_concurrent(16, |(i, mut url)| {
+                            let tx = tx.clone();
+                            let scrape_opts = &scrape_opts;
+                            let bar = bar.as_ref();
+                            let markdown_dir = markdown_dir.as_deref();
+                            async move {
+                                let tmp = if url.is_mermaid {
+                                    match url.mermaid_content.take() {
+                                        Some(c) => McatFile::from_bytes(
+                                            c.into_bytes(),
+                                            None,
+                                            Some("mermaid".to_owned()),
+                                            None,
+                                            true,
+                                        )
+                                        .ok(),
+                                        None => None,
+                                    }
+                                } else if url.base_url.starts_with("data:") {
+                                    handle_data_uri(&url.base_url)
+                                } else if is_local_path(&url.base_url) {
+                                    match handle_local_image(&url.base_url, markdown_dir) {
+                                        Ok(f) => Some(f),
+                                        Err(e) => {
+                                            warn!(%e);
+                                            None
+                                        }
+                                    }
+                                } else {
+                                    scrape_biggest_media(&url.base_url, scrape_opts, bar)
+                                        .await
+                                        .ok()
+                                };
+
+                                if let Some(tmp) = tmp {
+                                    let _ = tx.send((i, url, tmp));
+                                }
+                            }
+                        })
+                        .await;
+                });
+            })
+        };
+
+        let mapper: HashMap<String, ImageElement> = rx
+            .into_iter()
+            .par_bridge()
+            .filter_map(|(i, url, tmp)| {
                 let img = match tmp.to_image(conf, false, false) {
                     Ok(img) => img,
                     Err(e) => {
@@ -204,6 +234,8 @@ impl ImagePreprocessor {
                 ))
             })
             .collect();
+
+        fetcher.join().expect("fetcher thread panicked");
 
         Ok(ImagePreprocessor { mapper })
     }

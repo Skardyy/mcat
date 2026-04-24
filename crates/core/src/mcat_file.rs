@@ -490,14 +490,14 @@ pub fn svg_to_image(
             true => wininfo.dim_to_cells(w, SizeDirection::Width)?,
             false => wininfo.dim_to_px(w, SizeDirection::Width)?,
         },
-        _ => src_width as u32,
+        _ => (src_width as u32).min(wininfo.spx_width as u32),
     };
     let height = match height {
         Some(h) if needs_resize => match is_ascii {
             true => wininfo.dim_to_cells(h, SizeDirection::Height)? * 2,
             false => wininfo.dim_to_px(h, SizeDirection::Height)?,
         },
-        _ => src_height as u32,
+        _ => (src_height as u32).min(wininfo.spx_height as u32),
     };
     let (target_width, target_height) =
         rasteroid::image_extended::calc_fit(src_width as u32, src_height as u32, width, height);

@@ -25,6 +25,7 @@ use std::{
 use tracing_subscriber::EnvFilter;
 
 use crate::mcat_file::McatFile;
+use crate::prompter::RUNTIME;
 
 fn print_completions<G: Generator>(gene: G, cmd: &mut Command) {
     generate(
@@ -123,7 +124,11 @@ fn main() -> Result<()> {
     let scraper_opts = MediaScrapeOptions::default();
     for i in config.input.iter() {
         if i.starts_with("https://") || i.starts_with("http://") {
-            match scrapy::scrape_biggest_media(i, &scraper_opts, config.bar.as_ref()) {
+            match RUNTIME.block_on(scrapy::scrape_biggest_media(
+                i,
+                &scraper_opts,
+                config.bar.as_ref(),
+            )) {
                 Ok(f) => files.push(f),
                 Err(e) => eprintln!("{i}: {}", e),
             }

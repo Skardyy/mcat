@@ -1,4 +1,4 @@
-use std::io::stderr;
+use std::{io::stderr, time::Duration};
 
 use clap::{
     Parser, ValueEnum,
@@ -15,7 +15,7 @@ use rasteroid::{
 };
 use tracing::debug;
 
-use crate::{prompter::MultiBar, themes::CustomTheme};
+use crate::{prompter::MultiBar, scrapy, themes::CustomTheme};
 
 #[derive(Parser)]
 #[command(
@@ -130,6 +130,15 @@ pub struct McatConfig {
     /// Shortcut for --md-image none
     #[arg(short = 'f', help_heading = "Markdown Viewing")]
     fast: bool,
+
+    /// timeout for fetching images from urls, the timeout applies on connection and per packet.
+    #[arg(
+        long,
+        help_heading = "Markdown Viewing",
+        default_value_t = 5,
+        env = "MCAT_TIMEOUT"
+    )]
+    timeout: u16,
 
     /// Embed images as base64 in markdown. Images inside archives lack file paths and are
     /// normally dropped. This embeds them as data URIs for a complete output, useful when
@@ -413,6 +422,10 @@ impl McatConfig {
         self.env_id = Some(env);
         self.wininfo = Some(wininfo);
         self.encoder = Some(encoder);
+
+        scrapy::TIMEOUT
+            .set(Duration::from_secs(self.timeout as u64))
+            .ok();
 
         Ok(())
     }
