@@ -315,12 +315,10 @@ struct ImageUrl {
     is_mermaid: bool,
     mermaid_content: Option<String>,
 }
+
 fn extract_image_urls<'a>(node: &'a AstNode<'a>, wininfo: &Wininfo, urls: &mut Vec<ImageUrl>) {
     let data = node.data.borrow();
-
     if let NodeValue::Image(image_node) = &data.value {
-        // regex for; <URL>#<Width>x<Height>
-        // width and height are optional.
         let regex = Regex::new(r"^([^#]+)(?:#([^x]+)?x(.+)?)?$").unwrap();
         if let Some(captures) = regex.captures(&image_node.url)
             && let Some(base_url) = captures.get(1)
@@ -331,6 +329,10 @@ fn extract_image_urls<'a>(node: &'a AstNode<'a>, wininfo: &Wininfo, urls: &mut V
             let height = captures
                 .get(3)
                 .and_then(|v| wininfo.dim_to_px(v.as_str(), SizeDirection::Height).ok());
+
+            // if no explicit width and we're in a table, cap to column share
+            let width = width.or_else(|| table_column_width(node, wininfo));
+
             urls.push(ImageUrl {
                 base_url: base_url.as_str().to_owned(),
                 original_url: image_node.url.clone(),
@@ -352,8 +354,24 @@ fn extract_image_urls<'a>(node: &'a AstNode<'a>, wininfo: &Wininfo, urls: &mut V
             mermaid_content: Some(cb.literal.clone()),
         });
     }
-
     for child in node.children() {
         extract_image_urls(child, wininfo, urls);
+    }
+}
+
+fn table_column_width<'a>(node: &'a AstNode<'a>, wininfo: &Wininfo) -> Option<u32> {
+    let mut current = node.parent()?;
+    loop {
+        let data = current.data.borrow();
+        if let NodeValue::Table(_) = &data.value {
+            let row = current.first_child()?;
+            let col_count = row.children().count().max(1);
+            drop(data);
+
+            let usable = (wininfo.spx_width as f32 * 0.9) as u32;
+            return Some(usable / col_count as u32);
+        }
+        drop(data);
+        current = current.parent()?;
     }
 }

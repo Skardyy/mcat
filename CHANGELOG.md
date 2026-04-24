@@ -5,6 +5,8 @@
 - improved the markdown_viewer, now html is parsed in a more correct way, fixing excessive new lines
 - improved the markdown_viewer, now supports description lists, shortcodes (e.g. `:thumbsup:`), and superscript
 - improved the markdown_viewer, now nested inline formatting (e.g. bold containing highlight) preserves outer styling
+- improved the markdown_viewer, images inside tables now have better logic for their sizing, fixing some images getting wrapped
+- improved the markdown_viewer, should be faster for some markdowns with images
 - improved the `ls` speed, now no longer auto decompressing
 - improved the scraping logic, now does it based on width and height (not content-size) and now also doesn't download candidates (should make it way faster)
 - fixed an issue in the markdown_viewer, that certain images would get splitted
