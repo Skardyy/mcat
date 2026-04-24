@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use regex::Regex;
 use scraper::{ElementRef, Html};
-use std::{collections::HashMap, sync::LazyLock};
+use std::{cell::Cell, collections::HashMap, sync::LazyLock};
 
 macro_rules! heading_processor {
     ($level:expr) => {
@@ -15,6 +15,7 @@ macro_rules! heading_processor {
 
 pub struct ProcessingContext {
     rules: HashMap<String, ProcessorFn>,
+    in_table: Cell<bool>,
 }
 
 type ProcessorFn = fn(ElementRef, &ProcessingContext) -> String;
@@ -47,6 +48,7 @@ impl ProcessingContext {
     fn new() -> Self {
         let mut ctx = Self {
             rules: HashMap::new(),
+            in_table: Cell::new(false),
         };
 
         ctx.add_div_rules();
@@ -67,6 +69,7 @@ impl ProcessingContext {
 
     fn add_table_rules(&mut self) {
         self.rules.insert("table".to_string(), |element, ctx| {
+            let prev = ctx.in_table.replace(true);
             let rows: Vec<Vec<String>> = element
                 .descendants()
                 .filter_map(ElementRef::wrap)
@@ -167,6 +170,7 @@ impl ProcessingContext {
                 out
             };
 
+            ctx.in_table.set(prev);
             format!("\n\n{}\n\n", out)
         });
 
@@ -199,6 +203,11 @@ impl ProcessingContext {
 
             format!("![{}]({})", alt, enhanced_src)
         });
+
+        // not really doing dark / light mode, so just ignore
+        self.rules.insert("picture".to_string(), collect);
+        self.rules
+            .insert("source".to_string(), |_, _| String::new());
     }
 
     fn add_code_rules(&mut self) {
@@ -400,7 +409,8 @@ impl ProcessingContext {
                     return String::new();
                 }
 
-                if let Some(align) = element.value().attr("align")
+                if !ctx.in_table.get()
+                    && let Some(align) = element.value().attr("align")
                     && align.trim().to_lowercase() == "center"
                 {
                     return format!("\n\n<!--CENTER_ON-->\n\n{content}\n\n<!--CENTER_OFF-->\n\n");
