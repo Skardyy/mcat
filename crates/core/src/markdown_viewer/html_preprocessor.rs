@@ -191,8 +191,14 @@ impl ProcessingContext {
         self.rules.insert("img".to_string(), |element, _ctx| {
             let src = element.value().attr("src").unwrap_or("");
             let alt = element.value().attr("alt").unwrap_or("IMG");
-            let width = element.value().attr("width");
-            let height = element.value().attr("height");
+
+            let clean = |s: &str| -> String {
+                s.chars()
+                    .take_while(|c| c.is_ascii_digit() || c.is_ascii_alphabetic() || *c == '%')
+                    .collect()
+            };
+            let width = element.value().attr("width").map(clean);
+            let height = element.value().attr("height").map(clean);
 
             let enhanced_src = match (width, height) {
                 (Some(w), Some(h)) => format!("{}#{}x{}", src, w, h),
@@ -525,6 +531,10 @@ mod tests {
             "![x](foo.png#x20)"
         );
         assert_eq!(process(r#"<img src="foo.png"/>"#), "![IMG](foo.png)");
+        assert_eq!(
+            process(r#"<img src="foo.png" alt="x" width="10px;" height="20px;"/>"#),
+            "![x](foo.png#10pxx20px)"
+        );
     }
 
     #[test]
