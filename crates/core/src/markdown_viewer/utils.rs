@@ -154,37 +154,54 @@ pub fn get_lang_icon_and_color(lang: &str) -> Option<(&'static str, &'static str
 }
 
 pub fn trim_ansi_string(mut str: String) -> String {
-    let stripped = strip_str(&str);
-    let mut leading = stripped.chars().take_while(|c| c.is_whitespace()).count();
-    let mut trailing = stripped
+    // strip str for some reason strips tabs too..
+    let stripped = if str.contains('\t') {
+        strip_str(str.replace('\t', " "))
+    } else {
+        strip_str(&str)
+    };
+
+    let mut leading = stripped
+        .chars()
+        .take_while(|c| c.is_ascii_whitespace())
+        .count();
+    let trailing = stripped
         .chars()
         .rev()
-        .take_while(|c| c.is_whitespace())
+        .take_while(|c| c.is_ascii_whitespace())
         .count();
 
     if leading == 0 && trailing == 0 {
         return str;
     }
 
-    // Remove first N spaces
-    str.retain(|c| {
-        if c == ' ' && leading > 0 {
-            leading -= 1;
-            false
-        } else {
-            true
-        }
-    });
-
-    // Remove last N spaces
-    let mut i = str.len();
-    while i > 0 && trailing > 0 {
-        i -= 1;
-        if str.as_bytes()[i] == b' ' {
-            str.remove(i);
-            trailing -= 1;
+    // find where trailing begins
+    let mut trailing_start = str.len();
+    let mut found = 0;
+    let bytes = str.as_bytes();
+    while found < trailing && trailing_start > 0 {
+        trailing_start -= 1;
+        if bytes[trailing_start].is_ascii_whitespace() {
+            found += 1;
         }
     }
+
+    // strip both ends
+    let mut idx = 0;
+    str.retain(|c| {
+        let i = idx;
+        idx += c.len_utf8();
+        if c.is_ascii_whitespace() {
+            if leading > 0 {
+                leading -= 1;
+                return false;
+            }
+            if i >= trailing_start {
+                return false;
+            }
+        }
+        true
+    });
 
     str
 }
@@ -734,6 +751,15 @@ mod tests {
             trim_ansi_string("\x1b[31m red text \x1b[0m".into()),
             "\x1b[31mred text\x1b[0m"
         );
+        // we use nbsp for logic, so it must not be stripped.
+        assert_eq!(
+            trim_ansi_string("\u{00A0}hello world".into()),
+            "\u{00A0}hello world"
+        );
+        // regression, strip_str strips tabs too, we fixed that with replace
+        assert_eq!(trim_ansi_string("\t\nhello\t\n".into()), "hello");
+        // from the above, make sure the replace stay 1 len
+        assert_eq!(trim_ansi_string("\thello world".into()), "hello world");
     }
 
     #[test]

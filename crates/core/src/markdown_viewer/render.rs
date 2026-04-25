@@ -294,7 +294,7 @@ fn render_item<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
 
     let yellow = ctx.theme.yellow.fg.clone();
     let content = collect(node, ctx, "\n");
-    let content = content.trim();
+    let content = trim_ansi_string(content);
     let depth = ctx.list_depth - 1;
 
     let bullets = ["●", "○", "◆", "◇"];
@@ -461,7 +461,7 @@ fn render_heading<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
 
     ctx.under_header = true;
     let content = collect(node, ctx, "");
-    let content = content.trim();
+    let content = trim_ansi_string(content);
     let content = match level {
         1 => format!(" 󰎤 {content}"),
         2 => format!(" 󰎧 {content}"),
@@ -520,8 +520,10 @@ fn render_table<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
 
         for cell_node in child.children() {
             let cell_content = collect(cell_node, ctx, "");
-            let cell_lines: Vec<String> =
-                cell_content.lines().map(|s| s.trim().to_string()).collect();
+            let cell_lines: Vec<String> = cell_content
+                .lines()
+                .map(|s| trim_ansi_string(s.to_string()))
+                .collect();
             max_lines_in_row = max_lines_in_row.max(cell_lines.len());
             row_cells.push(cell_lines);
         }
