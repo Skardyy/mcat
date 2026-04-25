@@ -2,6 +2,7 @@
 
 - added `mermaid` support to the `ls` command
 - added `--timeout` flag, timeout for fetching images from urls, the timeout applies to on connection and per packet, the default is 5s
+- added `rpm` and `deb` packaging for the release!
 - improved the markdown_viewer, now also renders html tables, span with colors and `<u>` `<ins>` `<mark>` `<kbd>` `<ul>` `<ol>` `<li>` `<sup>` tags
 - improved the markdown_viewer, now html is parsed in a more correct way, fixing excessive new lines
 - improved the markdown_viewer, now supports description lists, shortcodes (e.g. `:thumbsup:`), and superscript

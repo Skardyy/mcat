@@ -17,6 +17,38 @@ license = "MIT"
 readme = "../../README.md"
 edition = "2024"
 
+[package.metadata.deb]
+maintainer = "Meron Bossin <Meronbssn@gmail.com>"
+copyright = "2025, Meron Bossin <Meronbssn@gmail.com>"
+license-file = ["../../LICENSE", "0"]
+extended-description = """
+mcat is a terminal viewer for images, videos, directories, and Markdown files.
+It supports inline image protocols (Kitty, iTerm2, Sixel), interactive viewing,
+and converting between formats (PDF, DOCX, HTML, Markdown, images, and more).
+"""
+depends = "$auto"
+section = "utils"
+priority = "optional"
+assets = [
+    ["../../target/release/mcat", "usr/bin/", "755"],
+    ["../../README.md", "usr/share/doc/mcat/README", "644"],
+    ["../../CHANGELOG.md", "usr/share/doc/mcat/CHANGELOG", "644"],
+    ["../../completions/mcat.bash", "usr/share/bash-completion/completions/mcat", "644"],
+    ["../../completions/_mcat", "usr/share/zsh/site-functions/_mcat", "644"],
+    ["../../completions/mcat.fish", "usr/share/fish/vendor_completions.d/mcat.fish", "644"],
+]
+
+[package.metadata.generate-rpm]
+assets = [
+    { source = "../../target/release/mcat", dest = "/usr/bin/mcat", mode = "755" },
+    { source = "../../LICENSE", dest = "/usr/share/licenses/mcat/LICENSE", mode = "644", doc = true },
+    { source = "../../README.md", dest = "/usr/share/doc/mcat/README", mode = "644", doc = true },
+    { source = "../../CHANGELOG.md", dest = "/usr/share/doc/mcat/CHANGELOG", mode = "644", doc = true },
+    { source = "../../completions/mcat.bash", dest = "/usr/share/bash-completion/completions/mcat", mode = "644" },
+    { source = "../../completions/_mcat", dest = "/usr/share/zsh/site-functions/_mcat", mode = "644" },
+    { source = "../../completions/mcat.fish", dest = "/usr/share/fish/vendor_completions.d/mcat.fish", mode = "644" },
+]
+
 [dependencies]
 markdownify.workspace = true
 rasteroid.workspace = true
