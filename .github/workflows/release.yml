@@ -54,9 +54,13 @@ jobs:
           - target: x86_64-unknown-linux-musl
             os: ubuntu-24.04
             use_zigbuild: true
+            linux_packages: true
+            musl_variant: true
           - target: aarch64-unknown-linux-musl
             os: ubuntu-24.04-arm
             use_zigbuild: true
+            linux_packages: true
+            musl_variant: true
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             archive: zip
@@ -137,17 +141,19 @@ jobs:
           mkdir -p target/release
           cp target/${{ matrix.target }}/dist/mcat target/release/mcat
 
-          # Build .deb (cargo-deb uses cargo-style -p with package name)
-          cargo deb -p mcat --no-build --no-strip --target ${{ matrix.target }}
-
-          # Build .rpm (cargo-generate-rpm uses -p as path to project)
-          cargo generate-rpm -p crates/core --target ${{ matrix.target }}
+          if [[ "${{ matrix.musl_variant }}" == "true" ]]; then
+            cargo deb -p mcat --variant musl --no-build --no-strip --target ${{ matrix.target }}
+            cargo generate-rpm -p crates/core --variant musl --target ${{ matrix.target }}
+          else
+            cargo deb -p mcat --no-build --no-strip --target ${{ matrix.target }}
+            cargo generate-rpm -p crates/core --target ${{ matrix.target }}
+          fi
 
           # Copy to workspace root with default conventional names + sha256
-          cp target/${{ matrix.target }}/debian/mcat_*.deb .
-          cp target/${{ matrix.target }}/generate-rpm/mcat-*.rpm .
+          cp target/${{ matrix.target }}/debian/mcat*.deb .
+          cp target/${{ matrix.target }}/generate-rpm/mcat*.rpm .
 
-          for f in mcat_*.deb mcat-*.rpm; do
+          for f in mcat*.deb mcat*.rpm; do
             sha256sum "$f" > "$f.sha256"
           done
 
@@ -158,10 +164,10 @@ jobs:
           path: |
             mcat-${{ github.ref_name }}-${{ matrix.target }}.${{ matrix.archive != 'zip' && 'tar.xz' || 'zip' }}
             mcat-${{ github.ref_name }}-${{ matrix.target }}.${{ matrix.archive != 'zip' && 'tar.xz' || 'zip' }}.sha256
-            mcat_*.deb
-            mcat_*.deb.sha256
-            mcat-*.rpm
-            mcat-*.rpm.sha256
+            mcat*.deb
+            mcat*.deb.sha256
+            mcat*.rpm
+            mcat*.rpm.sha256
 
   release:
     needs: build
@@ -217,6 +223,7 @@ jobs:
           BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
           # Strip leading 'v' from tag for .deb/.rpm names
           VERSION="${TAG#v}"
+          VERSION="${VERSION%%-*}"
 
           {
             echo "## Changelog"
@@ -238,13 +245,22 @@ jobs:
 
           **Debian / Ubuntu (.deb)**
           \`\`\`bash
-          curl -LO ${BASE_URL}/mcat_${VERSION}-1_amd64.deb
-          sudo dpkg -i mcat_${VERSION}-1_amd64.deb
+          # glibc
+          curl -LO ${BASE_URL}/mcat_${VERSION}_amd64.deb
+          sudo dpkg -i mcat_${VERSION}_amd64.deb
+
+          # musl
+          curl -LO ${BASE_URL}/mcat-musl_${VERSION}_amd64.deb
+          sudo dpkg -i mcat-musl_${VERSION}_amd64.deb
           \`\`\`
 
           **Fedora / RHEL (.rpm)**
           \`\`\`bash
+          # glibc
           sudo dnf install ${BASE_URL}/mcat-${VERSION}-1.x86_64.rpm
+
+          # musl
+          sudo dnf install ${BASE_URL}/mcat-musl-${VERSION}-1.x86_64.rpm
           \`\`\`
 
           ## Download
@@ -258,10 +274,14 @@ jobs:
           | [mcat-${TAG}-x86_64-unknown-linux-musl.tar.xz](${BASE_URL}/mcat-${TAG}-x86_64-unknown-linux-musl.tar.xz) | x64 Linux (musl) | [checksum](${BASE_URL}/mcat-${TAG}-x86_64-unknown-linux-musl.tar.xz.sha256) |
           | [mcat-${TAG}-aarch64-unknown-linux-musl.tar.xz](${BASE_URL}/mcat-${TAG}-aarch64-unknown-linux-musl.tar.xz) | ARM64 Linux (musl) | [checksum](${BASE_URL}/mcat-${TAG}-aarch64-unknown-linux-musl.tar.xz.sha256) |
           | [mcat-${TAG}-x86_64-pc-windows-msvc.zip](${BASE_URL}/mcat-${TAG}-x86_64-pc-windows-msvc.zip) | x64 Windows | [checksum](${BASE_URL}/mcat-${TAG}-x86_64-pc-windows-msvc.zip.sha256) |
-          | [mcat_${VERSION}-1_amd64.deb](${BASE_URL}/mcat_${VERSION}-1_amd64.deb) | x64 Debian/Ubuntu | [checksum](${BASE_URL}/mcat_${VERSION}-1_amd64.deb.sha256) |
-          | [mcat_${VERSION}-1_arm64.deb](${BASE_URL}/mcat_${VERSION}-1_arm64.deb) | ARM64 Debian/Ubuntu | [checksum](${BASE_URL}/mcat_${VERSION}-1_arm64.deb.sha256) |
-          | [mcat-${VERSION}-1.x86_64.rpm](${BASE_URL}/mcat-${VERSION}-1.x86_64.rpm) | x64 Fedora/RHEL | [checksum](${BASE_URL}/mcat-${VERSION}-1.x86_64.rpm.sha256) |
-          | [mcat-${VERSION}-1.aarch64.rpm](${BASE_URL}/mcat-${VERSION}-1.aarch64.rpm) | ARM64 Fedora/RHEL | [checksum](${BASE_URL}/mcat-${VERSION}-1.aarch64.rpm.sha256) |
+          | [mcat_${VERSION}_amd64.deb](${BASE_URL}/mcat_${VERSION}_amd64.deb) | x64 Debian/Ubuntu (gnu) | [checksum](${BASE_URL}/mcat_${VERSION}_amd64.deb.sha256) |
+          | [mcat_${VERSION}_arm64.deb](${BASE_URL}/mcat_${VERSION}_arm64.deb) | ARM64 Debian/Ubuntu (gnu) | [checksum](${BASE_URL}/mcat_${VERSION}_arm64.deb.sha256) |
+          | [mcat-musl_${VERSION}_amd64.deb](${BASE_URL}/mcat-musl_${VERSION}_amd64.deb) | x64 Debian/Ubuntu (musl) | [checksum](${BASE_URL}/mcat-musl_${VERSION}_amd64.deb.sha256) |
+          | [mcat-musl_${VERSION}_arm64.deb](${BASE_URL}/mcat-musl_${VERSION}_arm64.deb) | ARM64 Debian/Ubuntu (musl) | [checksum](${BASE_URL}/mcat-musl_${VERSION}_arm64.deb.sha256) |
+          | [mcat-${VERSION}-1.x86_64.rpm](${BASE_URL}/mcat-${VERSION}-1.x86_64.rpm) | x64 Fedora/RHEL (gnu) | [checksum](${BASE_URL}/mcat-${VERSION}-1.x86_64.rpm.sha256) |
+          | [mcat-${VERSION}-1.aarch64.rpm](${BASE_URL}/mcat-${VERSION}-1.aarch64.rpm) | ARM64 Fedora/RHEL (gnu) | [checksum](${BASE_URL}/mcat-${VERSION}-1.aarch64.rpm.sha256) |
+          | [mcat-musl-${VERSION}-1.x86_64.rpm](${BASE_URL}/mcat-musl-${VERSION}-1.x86_64.rpm) | x64 Fedora/RHEL (musl) | [checksum](${BASE_URL}/mcat-musl-${VERSION}-1.x86_64.rpm.sha256) |
+          | [mcat-musl-${VERSION}-1.aarch64.rpm](${BASE_URL}/mcat-musl-${VERSION}-1.aarch64.rpm) | ARM64 Fedora/RHEL (musl) | [checksum](${BASE_URL}/mcat-musl-${VERSION}-1.aarch64.rpm.sha256) |
           EOF
           } > notes.md
 

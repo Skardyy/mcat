@@ -29,6 +29,7 @@ and converting between formats (PDF, DOCX, HTML, Markdown, images, and more).
 depends = "$auto"
 section = "utils"
 priority = "optional"
+revision = ""
 assets = [
     ["../../target/release/mcat", "usr/bin/", "755"],
     ["../../README.md", "usr/share/doc/mcat/README", "644"],
@@ -48,6 +49,13 @@ assets = [
     { source = "../../completions/_mcat", dest = "/usr/share/zsh/site-functions/_mcat", mode = "644" },
     { source = "../../completions/mcat.fish", dest = "/usr/share/fish/vendor_completions.d/mcat.fish", mode = "644" },
 ]
+
+[package.metadata.deb.variants.musl]
+name = "mcat-musl"
+revision = ""
+
+[package.metadata.generate-rpm.variants.musl]
+name = "mcat-musl"
 
 [dependencies]
 markdownify.workspace = true
