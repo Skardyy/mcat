@@ -12,7 +12,7 @@ codegen-units = 1
 lto = "fat"
 
 [workspace.dependencies]
-markdownify = { version = "0.3.4", path = "crates/markdownify" }
+markdownify = { version = "0.3.5", path = "crates/markdownify" }
 rasteroid = { version = "0.3.1", path = "crates/rasteroid" }
 
 anyhow = "1.0.102"

@@ -2229,7 +2229,7 @@ dependencies = [
 
 [[package]]
 name = "markdownify"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "base64",
  "calamine",
@@ -2266,7 +2266,7 @@ dependencies = [
 
 [[package]]
 name = "mcat"
-version = "0.5.6"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "assert_cmd",

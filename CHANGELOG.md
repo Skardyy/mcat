@@ -1,4 +1,4 @@
-## Src
+## V0.6.0
 
 - added `mermaid` support to the `ls` command
 - added `--timeout` flag, timeout for fetching images from urls, the timeout applies to on connection and per packet, the default is 5s
