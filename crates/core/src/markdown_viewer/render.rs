@@ -831,10 +831,11 @@ fn render_html_inline<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> Strin
     };
     let string_color = ctx.theme.string.fg.clone();
 
-    if literal.starts_with("<span")
-        && let Some(color) = extract_span_color(literal, ctx)
-    {
-        return color.into_owned();
+    if literal.starts_with("<span") {
+        if let Some(color) = extract_span_color(literal, ctx) {
+            return color.into_owned();
+        }
+        return String::new();
     }
 
     match literal.to_lowercase().as_str() {
