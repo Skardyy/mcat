@@ -6,7 +6,7 @@ permissions:
 on:
   push:
     tags:
-      - '**[0-9]+.[0-9]+.[0-9]+*'
+      - "**[0-9]+.[0-9]+.[0-9]+*"
 
 jobs:
   completions:
@@ -95,7 +95,7 @@ jobs:
         if: matrix.archive != 'zip'
         shell: bash
         run: |
-          PKG=mcat-${{ matrix.target }}
+          PKG=mcat-${{ github.ref_name }}-${{ matrix.target }}
           mkdir -p $PKG
           cp target/${{ matrix.target }}/dist/mcat $PKG/
           cp LICENSE $PKG/
@@ -110,7 +110,7 @@ jobs:
         if: matrix.archive == 'zip'
         shell: bash
         run: |
-          PKG=mcat-${{ matrix.target }}
+          PKG=mcat-${{ github.ref_name }}-${{ matrix.target }}
           mkdir -p $PKG
           cp target/${{ matrix.target }}/dist/mcat.exe $PKG/
           cp LICENSE $PKG/
@@ -126,8 +126,8 @@ jobs:
         with:
           name: artifact-${{ matrix.target }}
           path: |
-            mcat-${{ matrix.target }}.${{ matrix.archive != 'zip' && 'tar.xz' || 'zip' }}
-            mcat-${{ matrix.target }}.${{ matrix.archive != 'zip' && 'tar.xz' || 'zip' }}.sha256
+            mcat-${{ github.ref_name }}-${{ matrix.target }}.${{ matrix.archive != 'zip' && 'tar.xz' || 'zip' }}
+            mcat-${{ github.ref_name }}-${{ matrix.target }}.${{ matrix.archive != 'zip' && 'tar.xz' || 'zip' }}.sha256
 
   release:
     needs: build
@@ -166,13 +166,13 @@ jobs:
 
           | File | Platform | Checksum |
           |------|----------|----------|
-          | [mcat-x86_64-apple-darwin.tar.xz](${BASE_URL}/mcat-x86_64-apple-darwin.tar.xz) | Intel macOS | [checksum](${BASE_URL}/mcat-x86_64-apple-darwin.tar.xz.sha256) |
-          | [mcat-aarch64-apple-darwin.tar.xz](${BASE_URL}/mcat-aarch64-apple-darwin.tar.xz) | Apple Silicon macOS | [checksum](${BASE_URL}/mcat-aarch64-apple-darwin.tar.xz.sha256) |
-          | [mcat-x86_64-unknown-linux-gnu.tar.xz](${BASE_URL}/mcat-x86_64-unknown-linux-gnu.tar.xz) | x64 Linux (gnu) | [checksum](${BASE_URL}/mcat-x86_64-unknown-linux-gnu.tar.xz.sha256) |
-          | [mcat-aarch64-unknown-linux-gnu.tar.xz](${BASE_URL}/mcat-aarch64-unknown-linux-gnu.tar.xz) | ARM64 Linux (gnu) | [checksum](${BASE_URL}/mcat-aarch64-unknown-linux-gnu.tar.xz.sha256) |
-          | [mcat-x86_64-unknown-linux-musl.tar.xz](${BASE_URL}/mcat-x86_64-unknown-linux-musl.tar.xz) | x64 Linux (musl) | [checksum](${BASE_URL}/mcat-x86_64-unknown-linux-musl.tar.xz.sha256) |
-          | [mcat-aarch64-unknown-linux-musl.tar.xz](${BASE_URL}/mcat-aarch64-unknown-linux-musl.tar.xz) | ARM64 Linux (musl) | [checksum](${BASE_URL}/mcat-aarch64-unknown-linux-musl.tar.xz.sha256) |
-          | [mcat-x86_64-pc-windows-msvc.zip](${BASE_URL}/mcat-x86_64-pc-windows-msvc.zip) | x64 Windows | [checksum](${BASE_URL}/mcat-x86_64-pc-windows-msvc.zip.sha256) |
+          | [mcat-${TAG}-x86_64-apple-darwin.tar.xz](${BASE_URL}/mcat-${TAG}-x86_64-apple-darwin.tar.xz) | Intel macOS | [checksum](${BASE_URL}/mcat-${TAG}-x86_64-apple-darwin.tar.xz.sha256) |
+          | [mcat-${TAG}-aarch64-apple-darwin.tar.xz](${BASE_URL}/mcat-${TAG}-aarch64-apple-darwin.tar.xz) | Apple Silicon macOS | [checksum](${BASE_URL}/mcat-${TAG}-aarch64-apple-darwin.tar.xz.sha256) |
+          | [mcat-${TAG}-x86_64-unknown-linux-gnu.tar.xz](${BASE_URL}/mcat-${TAG}-x86_64-unknown-linux-gnu.tar.xz) | x64 Linux (gnu) | [checksum](${BASE_URL}/mcat-${TAG}-x86_64-unknown-linux-gnu.tar.xz.sha256) |
+          | [mcat-${TAG}-aarch64-unknown-linux-gnu.tar.xz](${BASE_URL}/mcat-${TAG}-aarch64-unknown-linux-gnu.tar.xz) | ARM64 Linux (gnu) | [checksum](${BASE_URL}/mcat-${TAG}-aarch64-unknown-linux-gnu.tar.xz.sha256) |
+          | [mcat-${TAG}-x86_64-unknown-linux-musl.tar.xz](${BASE_URL}/mcat-${TAG}-x86_64-unknown-linux-musl.tar.xz) | x64 Linux (musl) | [checksum](${BASE_URL}/mcat-${TAG}-x86_64-unknown-linux-musl.tar.xz.sha256) |
+          | [mcat-${TAG}-aarch64-unknown-linux-musl.tar.xz](${BASE_URL}/mcat-${TAG}-aarch64-unknown-linux-musl.tar.xz) | ARM64 Linux (musl) | [checksum](${BASE_URL}/mcat-${TAG}-aarch64-unknown-linux-musl.tar.xz.sha256) |
+          | [mcat-${TAG}-x86_64-pc-windows-msvc.zip](${BASE_URL}/mcat-${TAG}-x86_64-pc-windows-msvc.zip) | x64 Windows | [checksum](${BASE_URL}/mcat-${TAG}-x86_64-pc-windows-msvc.zip.sha256) |
           EOF
 
       - name: Generate install scripts
@@ -187,6 +187,7 @@ jobs:
           set -e
 
           BASE_URL="${BASE_URL}"
+          TAG="${TAG}"
           BIN_DIR="\$HOME/.local/bin"
           mkdir -p "\$BIN_DIR"
 
@@ -211,7 +212,7 @@ jobs:
             *) echo "Unsupported OS: \$OS"; exit 1 ;;
           esac
 
-          URL="\${BASE_URL}/mcat-\${TARGET}.tar.xz"
+          URL="\${BASE_URL}/mcat-\${TAG}-\${TARGET}.tar.xz"
           echo "Downloading mcat for \${TARGET}..."
           curl -fsSL "\$URL" | tar -xJ --strip-components=1 -C "\$BIN_DIR" --wildcards "*/mcat"
           chmod +x "\$BIN_DIR/mcat"
@@ -224,15 +225,16 @@ jobs:
           \$ErrorActionPreference = "Stop"
 
           \$BaseUrl = "${BASE_URL}"
+          \$Tag = "${TAG}"
           \$BinDir = "\$env:USERPROFILE\.local\bin"
           New-Item -ItemType Directory -Force -Path \$BinDir | Out-Null
 
-          \$Url = "\$BaseUrl/mcat-x86_64-pc-windows-msvc.zip"
+          \$Url = "\$BaseUrl/mcat-\$Tag-x86_64-pc-windows-msvc.zip"
           \$Tmp = "\$env:TEMP\mcat.zip"
           Write-Host "Downloading mcat..."
           Invoke-WebRequest -Uri \$Url -OutFile \$Tmp
           Expand-Archive -Path \$Tmp -DestinationPath "\$env:TEMP\mcat-extracted" -Force
-          Copy-Item "\$env:TEMP\mcat-extracted\mcat-x86_64-pc-windows-msvc\mcat.exe" "\$BinDir\mcat.exe" -Force
+          Copy-Item "\$env:TEMP\mcat-extracted\mcat-\$Tag-x86_64-pc-windows-msvc\mcat.exe" "\$BinDir\mcat.exe" -Force
           Remove-Item \$Tmp
           Remove-Item "\$env:TEMP\mcat-extracted" -Recurse
           Write-Host "Installed mcat to \$BinDir\mcat.exe"
