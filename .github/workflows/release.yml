@@ -142,6 +142,39 @@ jobs:
           path: artifacts/
           merge-multiple: true
 
+      - name: Extract changelog
+        run: |
+          awk '
+            /^## / {
+              if (found) exit
+              found = 1
+              next
+            }
+            found { print }
+          ' CHANGELOG.md | awk '
+            /./ { found = 1 }
+            found { lines[NR] = $0; last = NR }
+            END {
+              for (i = last; i >= 1; i--) {
+                if (lines[i] ~ /./) { last = i; break }
+              }
+              started = 0
+              for (i = 1; i <= last; i++) {
+                if (!started && lines[i] !~ /./) continue
+                started = 1
+                print lines[i]
+              }
+            }
+          ' > changelog_section.md
+
+          if [ ! -s changelog_section.md ]; then
+            echo "_No changelog entry for this release._" > changelog_section.md
+          fi
+
+          echo "--- Extracted changelog ---"
+          cat changelog_section.md
+          echo "---"
+
       - name: Generate release notes
         env:
           TAG: ${{ github.ref_name }}
@@ -149,7 +182,12 @@ jobs:
         run: |
           BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
 
-          cat > notes.md << EOF
+          {
+            echo "## Changelog"
+            echo ""
+            cat changelog_section.md
+            echo ""
+            cat << EOF
           ## Install
 
           **Linux / macOS**
@@ -174,6 +212,7 @@ jobs:
           | [mcat-${TAG}-aarch64-unknown-linux-musl.tar.xz](${BASE_URL}/mcat-${TAG}-aarch64-unknown-linux-musl.tar.xz) | ARM64 Linux (musl) | [checksum](${BASE_URL}/mcat-${TAG}-aarch64-unknown-linux-musl.tar.xz.sha256) |
           | [mcat-${TAG}-x86_64-pc-windows-msvc.zip](${BASE_URL}/mcat-${TAG}-x86_64-pc-windows-msvc.zip) | x64 Windows | [checksum](${BASE_URL}/mcat-${TAG}-x86_64-pc-windows-msvc.zip.sha256) |
           EOF
+          } > notes.md
 
       - name: Generate install scripts
         env:
