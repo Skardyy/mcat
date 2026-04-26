@@ -44,8 +44,6 @@ pub struct AnsiContext {
     pub image_preprocessor: ImagePreprocessor,
 
     pub blockquote_fenced_offset: Option<usize>,
-    pub is_multi_block_quote: bool,
-    pub paragraph_collecting_line: Option<usize>,
     pub collecting_depth: usize,
     pub under_header: bool,
     pub force_simple_code_block: usize,
@@ -222,9 +220,12 @@ fn render_footnote_ref<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> Stri
 fn render_block_quote<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     let guide = ctx.theme.guide.fg.clone();
     let comment = ctx.theme.comment.fg.clone();
+    let offset = 4 + ctx.indent() as u16 * 2;
 
     ctx.force_simple_code_block += 1;
+    ctx.wininfo.sc_width -= offset;
     let content = collect(node, ctx, "\n\n").replace(RESET, &format!("{RESET}{comment}"));
+    ctx.wininfo.sc_width += offset;
     ctx.force_simple_code_block -= 1;
     let fence_offset = ctx.blockquote_fenced_offset.unwrap_or_default();
 
@@ -268,32 +269,19 @@ fn render_list<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     let sub_prefix = " ".repeat(sub_prefix);
 
     let indent = ctx.indent();
-    if ctx.should_wrap() {
-        wrap_lines(ctx, &content, true, indent, "", &sub_prefix, true)
-    } else {
-        // this part only gets called inside other blocky elements. e.g. blockquote and alert
-        let indent_width = indent * 2;
-        let blockquote_prefix =
-            2 * ctx.force_simple_code_block + ctx.blockquote_fenced_offset.unwrap_or(0);
-        let bullet_width = 2;
-        let sub_prefix_width = 2;
-        let prefix_width =
-            (indent_width + blockquote_prefix + bullet_width + sub_prefix_width) as u16;
-
-        ctx.wininfo.sc_width = ctx.wininfo.sc_width.saturating_sub(prefix_width);
-        let result = wrap_lines(ctx, &content, true, 0, "", &sub_prefix, true);
-        ctx.wininfo.sc_width += prefix_width;
-        result
-    }
+    wrap_lines(ctx, &content, true, indent, "", &sub_prefix, true)
 }
 
 fn render_item<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     let NodeValue::Item(ref item) = node.data.borrow().value else {
         panic!()
     };
+    let offset = 4 + ctx.indent() as u16 * 2;
 
     let yellow = ctx.theme.yellow.fg.clone();
+    ctx.wininfo.sc_width -= offset;
     let content = collect(node, ctx, "\n");
+    ctx.wininfo.sc_width += offset;
     let content = trim_ansi_string(content);
     let depth = ctx.list_depth - 1;
 
@@ -433,9 +421,7 @@ fn render_html_block<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String
 
 fn render_paragraph<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     let sps = node.data.borrow().sourcepos;
-    ctx.paragraph_collecting_line = Some(sps.start.line);
     let lines = collect(node, ctx, "");
-    ctx.paragraph_collecting_line = None;
 
     if ctx.center {
         center_lines(&lines, sps.start.column, ctx.wininfo.sc_width)
@@ -497,11 +483,8 @@ fn render_heading<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     }
 }
 
-fn render_thematic_break<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
-    let offset = node.data.borrow().sourcepos.start.column;
-    // each level of blockquote adds 4 char prefix..
-    let extra_offset = ctx.force_simple_code_block * 4;
-    format_tb(ctx, offset + extra_offset + ctx.indent())
+fn render_thematic_break<'a>(_node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
+    format_tb(ctx, 0)
 }
 
 fn render_table<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
@@ -869,11 +852,9 @@ fn render_multiline_block_quote<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext
     };
     let fenced_offset = multiline_block_quote.fence_offset;
     ctx.blockquote_fenced_offset = Some(fenced_offset);
-    ctx.is_multi_block_quote = true;
 
     let res = render_block_quote(node, ctx);
     ctx.blockquote_fenced_offset = None;
-    ctx.is_multi_block_quote = false;
 
     res
 }
@@ -902,8 +883,12 @@ fn render_alert<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         panic!()
     };
 
+    let offset = 4 + ctx.indent() as u16 * 2;
+
     ctx.force_simple_code_block += 1;
+    ctx.wininfo.sc_width -= offset;
     let alert_content = collect(node, ctx, "\n");
+    ctx.wininfo.sc_width += offset;
     ctx.force_simple_code_block -= 1;
 
     let alert_type = &node_alert.alert_type;

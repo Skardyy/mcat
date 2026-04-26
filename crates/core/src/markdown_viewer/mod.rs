@@ -50,8 +50,6 @@ pub fn md_to_ansi(
         show_frontmatter: config.header,
 
         blockquote_fenced_offset: None,
-        is_multi_block_quote: false,
-        paragraph_collecting_line: None,
         collecting_depth: 0,
         under_header: false,
         force_simple_code_block: 0,

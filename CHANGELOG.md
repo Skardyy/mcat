@@ -1,3 +1,7 @@
+## Src
+
+- improved the markdown_viewer wrapping logic
+
 ## V0.6.0
 
 - added `mermaid` support to the `ls` command

@@ -298,7 +298,7 @@ impl ProcessingContext {
 
     fn add_link_rules(&mut self) {
         self.rules.insert("a".to_string(), |element, ctx| {
-            let content = collect(element, ctx);
+            let content = collect(element, ctx).trim().to_owned();
             if content.contains('\n') {
                 return content;
             }
