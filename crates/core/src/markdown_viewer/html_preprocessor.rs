@@ -299,6 +299,9 @@ impl ProcessingContext {
     fn add_link_rules(&mut self) {
         self.rules.insert("a".to_string(), |element, ctx| {
             let content = collect(element, ctx);
+            if content.contains('\n') {
+                return content;
+            }
             if let Some(href) = element.value().attr("href") {
                 format!("[{}]({})", content.trim(), href.trim())
             } else {
@@ -552,6 +555,24 @@ mod tests {
     #[test]
     fn test_link_without_href_returns_content() {
         assert_eq!(process("<a>text</a>"), "text");
+    }
+
+    #[test]
+    fn link_with_block_content_drops_wrapper() {
+        let input = indoc! {r#"
+            <a href="http://e.com">
+                <table>
+                    <tr><td>cell</td></tr>
+                </table>
+            </a>
+        "#};
+
+        let expected = indoc! {"
+            | cell |
+            | --- |
+        "};
+
+        assert_eq!(process(input), expected.trim_end());
     }
 
     #[test]
