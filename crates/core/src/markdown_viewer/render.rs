@@ -132,8 +132,6 @@ pub fn parse_node<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         NodeValue::EscapedTag(_) => String::new(), // i think its only html
         NodeValue::Underline => String::new(),   // feature not enabled
         NodeValue::Subscript => String::new(),   // feature not enabled (can't render them)
-        NodeValue::HeexBlock(_) => String::new(), // feature not enabled
-        NodeValue::HeexInline(_) => String::new(), // feature not enabled
         NodeValue::Subtext => String::new(),     // feature not enabled (can't render this)
         NodeValue::Insert => String::new(),      // too niche, not enabled
         NodeValue::BlockDirective(_) => String::new(), // too niche, not enabled

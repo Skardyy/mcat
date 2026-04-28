@@ -36,8 +36,8 @@ inquire = "0.9.3"
 shell-words = "1.1.1"
 ignore = "0.4.25"
 textwrap = "0.16.2"
-comrak = "0.52.0"
-crossterm = "0.29.0"
+comrak = { version = "0.52.0", features = ["shortcodes", "syntect"], default-features = false }
+crossterm = { version = "0.29.0", features = ["events", "windows"], default-features = false }
 pelite = { version = "0.10.0", default-features = false, features = ["std"] }
 image = { version = "0.25.9", default-features = false, features = ["bmp", "dds", "exr", "ff", "gif", "hdr", "ico", "jpeg", "png", "pnm", "qoi", "tga", "tiff", "webp"] }
 jxl-oxide = { version = "0.12.5", features = ["image"] }
