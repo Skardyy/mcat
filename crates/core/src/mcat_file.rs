@@ -166,7 +166,7 @@ impl McatFile {
             (is_video, "", McatKind::Video),
             (is_exe, "", McatKind::Exe),
             (is_jxl, "", McatKind::JpegXL),
-            (|_| false, "svg", McatKind::Svg),
+            (is_svg, "svg", McatKind::Svg),
             (|_| false, "mermaid", McatKind::Mermaid), // mmd can mean mathpix markdown
             (|_| false, "html", McatKind::Html),
             (|_| false, "htm", McatKind::Html),
@@ -717,4 +717,13 @@ pub fn html_to_image(source: &McatFile) -> Result<DynamicImage> {
     })?;
 
     Ok(image::load_from_memory(&img_bytes)?)
+}
+
+fn is_svg(b: &[u8]) -> bool {
+    let head = &b[..b.len().min(512)];
+    let s = match std::str::from_utf8(head) {
+        Ok(s) => s.trim_start(),
+        Err(_) => return false,
+    };
+    s.starts_with("<svg") || (s.starts_with("<?xml") && s.contains("<svg"))
 }
