@@ -1,6 +1,7 @@
 ## Src
 
 - improved the markdown_viewer wrapping logic
+- fixed markdown_viewer not appending "\n"
 
 ## V0.6.0
 

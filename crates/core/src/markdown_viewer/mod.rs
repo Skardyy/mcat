@@ -73,6 +73,10 @@ pub fn md_to_ansi(
         res = res.lines().map(|line| format!("{pad}{line}")).join("\n");
     }
 
+    if !res.ends_with('\n') {
+        res.push('\n');
+    }
+
     Ok(res)
 }
 

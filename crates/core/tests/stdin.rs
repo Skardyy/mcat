@@ -82,3 +82,15 @@ fn stdin_webm_detected_as_video() {
         .success()
         .stdout(predicate::str::contains("kind: Video"));
 }
+
+#[test]
+fn stdout_ends_with_newline() {
+    let output = Command::cargo_bin("mcat")
+        .unwrap()
+        .arg("-c")
+        .write_stdin("# Foo")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert!(output.stdout.ends_with(b"\n"));
+}
