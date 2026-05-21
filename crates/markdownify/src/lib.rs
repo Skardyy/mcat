@@ -163,7 +163,7 @@ impl MarkdownifyInput {
                 let md = format!("```html\n{html}\n```");
                 Ok(md)
             }),
-            (|_| false, &["md"], &|| parse_text(bytes)),
+            (|_| false, &["md", "qmd"], &|| parse_text(bytes)),
         ];
         let ext = self.ext.clone().unwrap_or_default();
         let result = handlers

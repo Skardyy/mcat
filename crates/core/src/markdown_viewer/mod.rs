@@ -135,10 +135,12 @@ fn comrak_options<'a>() -> options::Options<'a> {
     options.extension.tasklist = true;
     options.extension.description_lists = true;
     options.extension.math_code = true;
+    options.extension.math_dollars = true;
     options.extension.alerts = true;
     options.extension.wikilinks_title_after_pipe = true;
     options.extension.spoiler = true;
     options.extension.multiline_block_quotes = true;
+    options.extension.block_directive = true;
     options.extension.highlight = true;
     options.parse.smart = true;
     options.parse.relaxed_tasklist_matching = true;

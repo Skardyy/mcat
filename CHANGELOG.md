@@ -1,3 +1,9 @@
+## Src
+
+- added math dollars support for the markdown_viewer, just highlights
+- added callout blocks support for the markdown_viewer
+- added better support for qmd files, now treated as markdown
+
 ## V0.6.1
 
 - improved the markdown_viewer wrapping logic

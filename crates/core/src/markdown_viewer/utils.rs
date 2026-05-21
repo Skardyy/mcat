@@ -529,10 +529,9 @@ pub fn format_code_full(code: &str, lang: &str, ctx: &AnsiContext) -> String {
     );
     buffer.push_str(&format!("{top_header}\n{middle_header}\n{bottom_header}\n"));
 
-    let mut num = 1;
     let prefix = format!("{}{color}│{RESET}     ", " ".repeat(num_width));
     let sub_text_size = text_size.saturating_sub(4); // 4 extra space for visual indent.
-    for line in LinesWithEndings::from(code) {
+    for (num, line) in (1..).zip(LinesWithEndings::from(code)) {
         let left_space = num_width - num.to_string().chars().count();
         let left_offset = left_space / 2;
         let right_offset = left_space - left_offset;
@@ -546,7 +545,6 @@ pub fn format_code_full(code: &str, lang: &str, ctx: &AnsiContext) -> String {
             " ".repeat(right_offset),
             highlighted
         ));
-        num += 1;
     }
 
     let last_border = format!(
@@ -697,6 +695,71 @@ pub fn extract_span_color<'a>(lit: &str, ctx: &'a AnsiContext) -> Option<Cow<'a,
         _ => return None,
     };
     Some(Cow::Borrowed(name))
+}
+
+pub fn prettify_latex(src: &str, ctx: &AnsiContext) -> String {
+    let cmd = &ctx.theme.keyword.fg;
+    let number = &ctx.theme.string.fg;
+    let op = &ctx.theme.yellow.fg;
+    let script = &ctx.theme.magenta.fg;
+    let brace = &ctx.theme.comment.fg;
+    let default = &ctx.theme.cyan.fg;
+
+    let mut out = String::with_capacity(src.len() * 2);
+    let mut chars = src.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => {
+                out.push_str(cmd);
+                out.push(c);
+                if let Some(&next) = chars.peek() {
+                    if next.is_ascii_alphabetic() {
+                        while let Some(&ch) = chars.peek() {
+                            if ch.is_ascii_alphabetic() {
+                                out.push(ch);
+                                chars.next();
+                            } else {
+                                break;
+                            }
+                        }
+                    } else {
+                        out.push(next);
+                        chars.next();
+                    }
+                }
+                out.push_str(RESET);
+            }
+            '{' | '}' => {
+                out.push_str(brace);
+                out.push(c);
+                out.push_str(RESET);
+            }
+            '^' | '_' => {
+                out.push_str(script);
+                out.push(c);
+                out.push_str(RESET);
+            }
+            '0'..='9' => {
+                out.push_str(number);
+                out.push(c);
+                out.push_str(RESET);
+            }
+            '+' | '-' | '=' | '*' | '/' | '<' | '>' | '|' | '!' => {
+                out.push_str(op);
+                out.push(c);
+                out.push_str(RESET);
+            }
+            ' ' | '\t' | '\n' => out.push(c),
+            _ => {
+                out.push_str(default);
+                out.push(c);
+                out.push_str(RESET);
+            }
+        }
+    }
+
+    out
 }
 
 // we only test core wrapping logic..

@@ -9,7 +9,8 @@ use syntect::parsing::SyntaxSet;
 
 use crate::{
     markdown_viewer::utils::{
-        extract_span_color, string_len, to_superscript, trim_ansi_string, wrap_lines,
+        extract_span_color, prettify_latex, string_len, to_superscript, trim_ansi_string,
+        wrap_lines,
     },
     themes::CustomTheme,
 };
@@ -113,6 +114,7 @@ pub fn parse_node<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         NodeValue::WikiLink(_) => render_wiki_link(node, ctx),
         NodeValue::SpoileredText => render_spoilered_text(node, ctx),
         NodeValue::Alert(_) => render_alert(node, ctx),
+        NodeValue::BlockDirective(_) => render_block_directive(node, ctx),
         NodeValue::FootnoteDefinition(_) => render_footnote_def(node, ctx),
         NodeValue::FootnoteReference(_) => render_footnote_ref(node, ctx),
         NodeValue::Highlight => render_highlight(node, ctx),
@@ -120,9 +122,9 @@ pub fn parse_node<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         NodeValue::DescriptionItem(_) => render_description_item(node, ctx),
         NodeValue::DescriptionTerm => render_description_term(node, ctx),
         NodeValue::DescriptionDetails => render_description_details(node, ctx),
+        NodeValue::Math(_) => render_math(node, ctx),
         NodeValue::Text(literal) => literal.to_string(),
         NodeValue::Raw(literal) => literal.to_owned(),
-        NodeValue::Math(NodeMath { literal, .. }) => literal.to_owned(),
         NodeValue::ShortCode(sc) => sc.emoji.to_string(),
         NodeValue::SoftBreak => " ".to_owned(),
         NodeValue::LineBreak => "\n".to_owned(),
@@ -130,11 +132,10 @@ pub fn parse_node<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         NodeValue::TableCell => String::new(),   // handled in table
         NodeValue::Escaped => String::new(),     // feature not enabled per char
         NodeValue::EscapedTag(_) => String::new(), // i think its only html
-        NodeValue::Underline => String::new(),   // feature not enabled
-        NodeValue::Subscript => String::new(),   // feature not enabled (can't render them)
-        NodeValue::Subtext => String::new(),     // feature not enabled (can't render this)
+        NodeValue::Underline => String::new(),   // feature not enabled, collison
+        NodeValue::Subscript => String::new(),   // feature not enabled, collison
+        NodeValue::Subtext => String::new(),     // too niche, not enabled
         NodeValue::Insert => String::new(),      // too niche, not enabled
-        NodeValue::BlockDirective(_) => String::new(), // too niche, not enabled
     }
 }
 
@@ -143,6 +144,33 @@ fn render_document<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         .map(|child| parse_node(child, ctx))
         .filter(|s| !s.is_empty())
         .join("\n\n")
+}
+
+fn render_math<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
+    let NodeValue::Math(NodeMath {
+        ref literal,
+        display_math,
+        ..
+    }) = node.data.borrow().value
+    else {
+        panic!()
+    };
+
+    let out = prettify_latex(literal.trim(), ctx);
+
+    if !display_math {
+        return out;
+    }
+
+    if ctx.center {
+        let sps = node.data.borrow().sourcepos;
+        center_lines(&out, sps.start.column, ctx.wininfo.sc_width)
+    } else if ctx.should_wrap() {
+        let pad = " ".repeat(ctx.indent());
+        out.lines().map(|l| format!("{pad}{l}")).join("\n")
+    } else {
+        out
+    }
 }
 
 fn render_description_list<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
@@ -321,7 +349,17 @@ fn render_code_block<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String
     let literal = &node_code_block.literal;
     let info = &node_code_block.info;
 
-    let info = if info.trim().is_empty() { "text" } else { info };
+    let info = if info.trim().is_empty() {
+        "text"
+    } else if let Some(inner) = info.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
+        inner
+            .split(|c: char| c == ',' || c.is_whitespace())
+            .next()
+            .filter(|s| !s.is_empty())
+            .unwrap_or("text")
+    } else {
+        info
+    };
 
     if matches!(info, "mermaid" | "mmd")
         && let Some(img) = ctx.image_preprocessor.mapper.get(literal)
@@ -556,10 +594,9 @@ fn render_table<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         let mut remaining_cols = column_widths.len();
 
         for &i in &indices {
-            let fair_share = if remaining_cols > 0 {
-                remaining_budget / remaining_cols
-            } else {
-                0
+            let fair_share = match remaining_cols > 0 {
+                true => remaining_budget / remaining_cols,
+                false => 0,
             };
             if column_widths[i] <= fair_share {
                 // This column fits within its share; keep natural width
@@ -876,43 +913,27 @@ fn render_spoilered_text<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> St
     format!("{start}{content}{RESET}")
 }
 
-fn render_alert<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
-    let NodeValue::Alert(ref node_alert) = node.data.borrow().value else {
-        panic!()
-    };
-
+fn render_alert_like<'a>(
+    node: &'a AstNode<'a>,
+    ctx: &mut AnsiContext,
+    prefix: &str,
+    color: &str,
+) -> String {
     let offset = 4 + ctx.indent() as u16 * 2;
 
     ctx.force_simple_code_block += 1;
     ctx.wininfo.sc_width -= offset;
-    let alert_content = collect(node, ctx, "\n");
+    let content = collect(node, ctx, "\n");
     ctx.wininfo.sc_width += offset;
     ctx.force_simple_code_block -= 1;
 
-    let alert_type = &node_alert.alert_type;
-    let kind = alert_type;
-    let blue = &ctx.theme.blue.fg;
-    let red = &ctx.theme.red.fg;
-    let green = &ctx.theme.green.fg;
-    let cyan = &ctx.theme.cyan.fg;
-    let yellow = &ctx.theme.yellow.fg;
-
-    let (prefix, color) = match kind {
-        comrak::nodes::AlertType::Note => ("\u{f05d6} NOTE", blue),
-        comrak::nodes::AlertType::Tip => ("\u{f400} TIP", green),
-        comrak::nodes::AlertType::Important => ("\u{f017e} INFO", cyan),
-        comrak::nodes::AlertType::Warning => ("\u{ea6c} WARNING", yellow),
-        comrak::nodes::AlertType::Caution => ("\u{f0ce6} DANGER", red),
-    };
-
-    let mut result = format!("{}▌ {BOLD}{}{RESET}", color, prefix);
-
+    let mut result = format!("{color}▌ {BOLD}{prefix}{RESET}");
     result.push('\n');
-    let alert_content = alert_content
+    let body = content
         .lines()
         .map(|line| format!("{color}▌{RESET} {line}"))
         .join("\n");
-    result.push_str(&alert_content);
+    result.push_str(&body);
 
     let indent = ctx.indent();
     if ctx.should_wrap() {
@@ -920,4 +941,56 @@ fn render_alert<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     } else {
         result
     }
+}
+
+fn render_alert<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
+    let NodeValue::Alert(ref node_alert) = node.data.borrow().value else {
+        panic!()
+    };
+
+    let (prefix, color) = match node_alert.alert_type {
+        comrak::nodes::AlertType::Note => ("\u{f05d6} NOTE", ctx.theme.blue.fg.clone()),
+        comrak::nodes::AlertType::Tip => ("\u{f400} TIP", ctx.theme.green.fg.clone()),
+        comrak::nodes::AlertType::Important => ("\u{f017e} INFO", ctx.theme.cyan.fg.clone()),
+        comrak::nodes::AlertType::Warning => ("\u{ea6c} WARNING", ctx.theme.yellow.fg.clone()),
+        comrak::nodes::AlertType::Caution => ("\u{f0ce6} DANGER", ctx.theme.red.fg.clone()),
+    };
+
+    render_alert_like(node, ctx, prefix, &color)
+}
+
+fn render_block_directive<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
+    let NodeValue::BlockDirective(ref bd) = node.data.borrow().value else {
+        panic!()
+    };
+
+    let raw = bd.info.trim();
+    let inner = raw
+        .strip_prefix('{')
+        .and_then(|s| s.strip_suffix('}'))
+        .unwrap_or(raw)
+        .trim();
+    let name = inner
+        .split(|c: char| c.is_whitespace())
+        .next()
+        .unwrap_or("")
+        .trim_start_matches('.')
+        .to_lowercase();
+
+    let (prefix, color) = match name.as_str() {
+        "callout-note" | "note" => ("\u{f05d6} NOTE", ctx.theme.blue.fg.clone()),
+        "callout-tip" | "tip" => ("\u{f400} TIP", ctx.theme.green.fg.clone()),
+        "callout-important" | "important" => ("\u{f017e} INFO", ctx.theme.cyan.fg.clone()),
+        "callout-warning" | "warning" => ("\u{ea6c} WARNING", ctx.theme.yellow.fg.clone()),
+        "callout-caution" | "caution" => ("\u{f0ce6} DANGER", ctx.theme.red.fg.clone()),
+        other => (
+            &*format!(
+                "\u{f0238} {}",
+                if other.is_empty() { "DIRECTIVE" } else { other }
+            ),
+            ctx.theme.comment.fg.clone(),
+        ),
+    };
+
+    render_alert_like(node, ctx, prefix, &color)
 }
