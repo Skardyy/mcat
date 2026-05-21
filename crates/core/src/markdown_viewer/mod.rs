@@ -3,7 +3,7 @@ pub mod image_preprocessor;
 pub mod render;
 pub mod utils;
 
-use crate::themes::CustomTheme;
+use crate::{markdown_viewer::render::build_toc, themes::CustomTheme};
 use comrak::{
     Arena, markdown_to_html_with_plugins, options, plugins::syntect::SyntectAdapterBuilder,
 };
@@ -56,7 +56,17 @@ pub fn md_to_ansi(
         list_depth: 0,
     };
 
+    let toc = if config.toc {
+        build_toc(root, &mut ctx)
+    } else {
+        String::new()
+    };
+
     let mut output = String::new();
+    if !toc.is_empty() {
+        output.push_str(&toc);
+        output.push_str("\n\n");
+    }
     output.push_str(&ctx.theme.foreground.fg);
     output.push_str(&parse_node(root, &mut ctx));
 

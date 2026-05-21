@@ -3,6 +3,7 @@
 - added math dollars support for the markdown_viewer, just highlights
 - added callout blocks support for the markdown_viewer
 - added better support for qmd files, now treated as markdown
+- added `--toc` flag, for adding a simple table of content in the markdown_viewer
 
 ## V0.6.1
 

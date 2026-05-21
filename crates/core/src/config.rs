@@ -116,6 +116,10 @@ pub struct McatConfig {
     pub scaley: f32,
 
     // ## Markdown Viewing ##
+    /// Enable Table of content for markdown
+    #[arg(long, help_heading = "Markdown Viewing")]
+    pub toc: bool,
+
     /// Disable line numbers in code blocks
     #[arg(long, help_heading = "Markdown Viewing")]
     pub no_linenumbers: bool,

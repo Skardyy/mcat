@@ -994,3 +994,90 @@ fn render_block_directive<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> S
 
     render_alert_like(node, ctx, prefix, &color)
 }
+
+pub fn build_toc<'a>(root: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
+    let mut headings: Vec<(u8, String)> = Vec::new();
+    collect_headings(root, ctx, &mut headings);
+
+    if headings.is_empty() {
+        return String::new();
+    }
+
+    let min_level = headings.iter().map(|(l, _)| *l).min().unwrap_or(1);
+    let entries: Vec<(usize, String)> = headings
+        .into_iter()
+        .map(|(l, t)| ((l - min_level) as usize, t))
+        .collect();
+
+    let bg = &ctx.theme.keyword_bg.bg;
+    let main = &ctx.theme.keyword.fg;
+    let title = " 󰠶 Table of Contents";
+    let title_len = string_len(title);
+    let padding = (ctx.wininfo.sc_width as usize).saturating_sub(title_len);
+    let title_line = format!("{main}{bg}{title}{}{RESET}", " ".repeat(padding));
+
+    let tree_color = &ctx.theme.guide.fg;
+    let fg = &ctx.theme.foreground.fg;
+
+    let mut out = String::new();
+    out.push_str(&title_line);
+    out.push('\n');
+    out.push('\n');
+
+    for i in 0..entries.len() {
+        let (depth, ref text) = entries[i];
+
+        if depth == 0 {
+            let prev_had_children = i > 0 && entries[i - 1].0 > 0;
+            if prev_had_children {
+                out.push('\n');
+            }
+            out.push_str(&format!("{BOLD}{fg}{text}{RESET}\n"));
+            continue;
+        }
+
+        let mut prefix = String::new();
+        for col in 1..depth {
+            let has_later_sibling = entries[i + 1..]
+                .iter()
+                .take_while(|(d, _)| *d >= col)
+                .any(|(d, _)| *d == col);
+            if has_later_sibling {
+                prefix.push_str(&format!("{tree_color}│ {RESET}"));
+            } else {
+                prefix.push_str("  ");
+            }
+        }
+
+        let has_sibling_at_depth = entries[i + 1..]
+            .iter()
+            .take_while(|(d, _)| *d >= depth)
+            .any(|(d, _)| *d == depth);
+        let connector = if has_sibling_at_depth {
+            "├─"
+        } else {
+            "└─"
+        };
+
+        out.push_str(&format!(
+            "{prefix}{tree_color}{connector}{RESET} {fg}{text}{RESET}\n"
+        ));
+    }
+
+    out.trim_end().to_owned()
+}
+
+fn collect_headings<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext, out: &mut Vec<(u8, String)>) {
+    if let NodeValue::Heading(NodeHeading { level, .. }) = node.data.borrow().value {
+        let text = collect(node, ctx, "");
+        let text = trim_ansi_string(strip_str(&text).to_string());
+        if !text.is_empty() {
+            out.push((level, text));
+        }
+        return;
+    }
+
+    for child in node.children() {
+        collect_headings(child, ctx, out);
+    }
+}
