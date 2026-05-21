@@ -162,10 +162,7 @@ fn render_math<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
         return out;
     }
 
-    if ctx.center {
-        let sps = node.data.borrow().sourcepos;
-        center_lines(&out, sps.start.column, ctx.wininfo.sc_width)
-    } else if ctx.should_wrap() {
+    if ctx.should_wrap() {
         let pad = " ".repeat(ctx.indent());
         out.lines().map(|l| format!("{pad}{l}")).join("\n")
     } else {
