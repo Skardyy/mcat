@@ -4,6 +4,7 @@
 - added callout blocks support for the markdown_viewer
 - added better support for qmd files, now treated as markdown
 - added `--toc` flag, for adding a simple table of content in the markdown_viewer
+- fixed an issue in the markdown_viewer where ordered lists weren't auto numbered, now follows CommonMark spec
 
 ## V0.6.1
 

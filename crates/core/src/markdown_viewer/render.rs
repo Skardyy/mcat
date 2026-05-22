@@ -311,7 +311,20 @@ fn render_item<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
     let bullets = ["●", "○", "◆", "◇"];
     let bullet = match item.list_type {
         comrak::nodes::ListType::Bullet => bullets[depth % 4],
-        comrak::nodes::ListType::Ordered => &format!("{}.", item.start),
+        comrak::nodes::ListType::Ordered => {
+            let base = node
+                .parent()
+                .and_then(|p| match p.data.borrow().value {
+                    NodeValue::List(ref l) => Some(l.start),
+                    _ => None,
+                })
+                .unwrap_or(item.start);
+            let index = node
+                .parent()
+                .map(|p| p.children().take_while(|c| !std::ptr::eq(*c, node)).count())
+                .unwrap_or(0);
+            &format!("{}.", base + index)
+        }
     };
 
     // indent new lines to allign with the first line
