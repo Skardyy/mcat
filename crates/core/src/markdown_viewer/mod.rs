@@ -93,6 +93,8 @@ pub fn md_to_ansi(
 pub fn md_to_html(markdown: &str, theme: &Theme, style: bool) -> String {
     let options = comrak_options();
 
+    let markdown = preprocess_mermaid_fences(markdown, theme);
+
     let theme = CustomTheme::from(theme);
     let mut theme_set = ThemeSet::load_defaults();
     let mut plugins = options::Plugins::default();
@@ -112,7 +114,7 @@ pub fn md_to_html(markdown: &str, theme: &Theme, style: bool) -> String {
         false => None,
     };
 
-    let html = markdown_to_html_with_plugins(markdown, &options, &plugins);
+    let html = markdown_to_html_with_plugins(&markdown, &options, &plugins);
     match full_css {
         Some(css) => format!(
             r#"
@@ -131,6 +133,85 @@ pub fn md_to_html(markdown: &str, theme: &Theme, style: bool) -> String {
         ),
         None => html,
     }
+}
+
+fn preprocess_mermaid_fences(markdown: &str, theme: &Theme) -> String {
+    let mut out = Vec::new();
+    let mut iter = markdown.lines();
+
+    while let Some(line) = iter.next() {
+        if let Some((fence_char, fence_len, lang)) = parse_fence_open(line)
+            && matches!(lang, "mermaid" | "mmd")
+        {
+            let mut body = Vec::new();
+            let mut closed = false;
+
+            for next_line in iter.by_ref() {
+                if is_fence_close(next_line, fence_char, fence_len) {
+                    closed = true;
+                    break;
+                }
+                body.push(next_line);
+            }
+
+            if closed {
+                let source = body.join("\n");
+                if let Some(svg) = render_mermaid_svg(&source, theme) {
+                    out.push("<div class=\"mcat-mermaid\">".to_owned());
+                    out.push(svg);
+                    out.push("</div>".to_owned());
+                    continue;
+                }
+            }
+
+            out.push(line.to_owned());
+            out.extend(body.into_iter().map(ToOwned::to_owned));
+            if closed {
+                out.push(std::iter::repeat_n(fence_char, fence_len).collect());
+            }
+            continue;
+        }
+
+        out.push(line.to_owned());
+    }
+
+    out.join("\n")
+}
+
+fn render_mermaid_svg(source: &str, theme: &Theme) -> Option<String> {
+    let mut opts = mermaid_rs_renderer::RenderOptions::modern();
+    opts.theme = theme.to_custom().to_mermaid_theme();
+    mermaid_rs_renderer::render_with_options(source, opts).ok()
+}
+
+fn parse_fence_open(line: &str) -> Option<(char, usize, &str)> {
+    let trimmed = line.trim_start();
+    let first = trimmed.chars().next()?;
+    if first != '`' && first != '~' {
+        return None;
+    }
+
+    let fence_len = trimmed.chars().take_while(|ch| *ch == first).count();
+    if fence_len < 3 {
+        return None;
+    }
+
+    let info = trimmed[fence_len..].trim();
+    let lang = info
+        .strip_prefix('{')
+        .and_then(|inner| inner.strip_suffix('}'))
+        .unwrap_or(info)
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .find(|part| !part.is_empty())
+        .unwrap_or_default();
+
+    Some((first, fence_len, lang))
+}
+
+fn is_fence_close(line: &str, fence_char: char, fence_len: usize) -> bool {
+    let trimmed = line.trim();
+    let run = trimmed.chars().take_while(|ch| *ch == fence_char).count();
+    run >= fence_len && trimmed.chars().skip(run).all(char::is_whitespace)
 }
 
 fn comrak_options<'a>() -> options::Options<'a> {
@@ -160,4 +241,28 @@ fn comrak_options<'a>() -> options::Options<'a> {
     options.render.r#unsafe = true;
 
     options
+}
+
+#[cfg(test)]
+mod tests {
+    use super::md_to_html;
+    use crate::config::Theme;
+
+    #[test]
+    fn md_to_html_renders_mermaid_fence_as_svg() {
+        let md = "```mermaid\ngraph TD\nA-->B\n```";
+        let html = md_to_html(md, &Theme::Github, false);
+
+        assert!(html.contains("<svg"));
+        assert!(!html.contains("language-mermaid"));
+    }
+
+    #[test]
+    fn md_to_html_keeps_non_mermaid_fence_untouched() {
+        let md = "```rust\nfn main() {}\n```";
+        let html = md_to_html(md, &Theme::Github, false);
+
+        assert!(html.contains("language-rust"));
+        assert!(!html.contains("<div class=\"mcat-mermaid\">"));
+    }
 }
