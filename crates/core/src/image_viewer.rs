@@ -85,7 +85,8 @@ pub fn run_interactive_viewer(
     // Initial callback
     let mut should_quit = callback(&mut viewport, current_image);
     let mut last_callback_time = std::time::Instant::now();
-    let callback_throttle = std::time::Duration::from_millis(50);
+    let callback_throttle = std::time::Duration::from_millis(16);
+    let mut needs_redraw = false;
 
     while should_quit.is_some() {
         if event::poll(Duration::from_millis(16))? {
@@ -277,14 +278,19 @@ pub fn run_interactive_viewer(
                     _ => {}
                 }
 
-                // Callback after each key press, but throttled
+                // Mark redraw as needed and let the render scheduler handle throttling.
                 if clicked_correct_key {
-                    let now = std::time::Instant::now();
-                    if now.duration_since(last_callback_time) >= callback_throttle {
-                        should_quit = callback(&mut viewport, current_image);
-                        last_callback_time = now;
-                    }
+                    needs_redraw = true;
                 }
+            }
+        }
+
+        if needs_redraw {
+            let now = std::time::Instant::now();
+            if now.duration_since(last_callback_time) >= callback_throttle {
+                should_quit = callback(&mut viewport, current_image);
+                last_callback_time = now;
+                needs_redraw = false;
             }
         }
     }
