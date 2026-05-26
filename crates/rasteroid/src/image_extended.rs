@@ -266,28 +266,9 @@ impl ZoomPanViewport {
     }
 
     fn clamp_pan(&mut self) {
-        let scale_x = self.container_width as f32 / self.image_width as f32;
-        let scale_y = self.container_height as f32 / self.image_height as f32;
-        let base_scale = scale_x.min(scale_y);
-        let scale_factor = base_scale * self.zoom as f32;
-
-        let viewport_width = (self.container_width as f32 / scale_factor) as u32;
-        let viewport_height = (self.container_height as f32 / scale_factor) as u32;
-
-        let max_pan_x = (self.image_width - viewport_width) as f32 / 2.0;
-        let max_pan_y = (self.image_height - viewport_height) as f32 / 2.0;
-
-        if viewport_width >= self.image_width {
-            self.pan_x = 0;
-        } else {
-            self.pan_x = self.pan_x.max(-(max_pan_x as i32)).min(max_pan_x as i32);
-        }
-
-        if viewport_height >= self.image_height {
-            self.pan_y = 0;
-        } else {
-            self.pan_y = self.pan_y.max(-(max_pan_y as i32)).min(max_pan_y as i32);
-        }
+        let (min_pan_x, max_pan_x, min_pan_y, max_pan_y) = self.get_pan_limits();
+        self.pan_x = self.pan_x.clamp(min_pan_x, max_pan_x);
+        self.pan_y = self.pan_y.clamp(min_pan_y, max_pan_y);
     }
 
     /// get the current zoom level
@@ -358,5 +339,31 @@ pub fn calc_fit(src_width: u32, src_height: u32, dst_width: u32, dst_height: u32
         // Image is taller than target: scale by height
         let scaled_width = (dst_height as f32 * src_ar).round() as u32;
         (scaled_width, dst_height)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ZoomPanViewport;
+
+    #[test]
+    fn clamp_pan_handles_container_larger_than_image() {
+        let mut vp = ZoomPanViewport::new(320, 160, 100, 50);
+        vp.set_pan(999, -999);
+
+        assert_eq!(vp.pan_x(), 0);
+        assert_eq!(vp.pan_y(), 0);
+    }
+
+    #[test]
+    fn set_zoom_is_safe_at_min_zoom_with_large_viewport() {
+        let mut vp = ZoomPanViewport::new(320, 160, 100, 50);
+        vp.set_zoom(1);
+
+        let view = vp.get_viewport();
+        assert_eq!(view.width, 100);
+        assert_eq!(view.height, 50);
+        assert_eq!(view.x, 0);
+        assert_eq!(view.y, 0);
     }
 }
