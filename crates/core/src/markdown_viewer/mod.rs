@@ -5,7 +5,10 @@ pub mod utils;
 
 use crate::{markdown_viewer::render::build_toc, themes::CustomTheme};
 use comrak::{
-    Arena, markdown_to_html_with_plugins, options, plugins::syntect::SyntectAdapterBuilder,
+    Arena, format_html_with_plugins,
+    nodes::{AstNode, NodeHtmlBlock, NodeValue},
+    options,
+    plugins::syntect::SyntectAdapterBuilder,
 };
 use image_preprocessor::ImagePreprocessor;
 use itertools::Itertools;
@@ -93,7 +96,9 @@ pub fn md_to_ansi(
 pub fn md_to_html(markdown: &str, theme: &Theme, style: bool) -> String {
     let options = comrak_options();
 
-    let markdown = preprocess_mermaid_fences(markdown, theme);
+    let arena = Arena::new();
+    let root = comrak::parse_document(&arena, markdown, &options);
+    mutate_mermaid_blocks(root, theme);
 
     let theme = CustomTheme::from(theme);
     let mut theme_set = ThemeSet::load_defaults();
@@ -114,7 +119,8 @@ pub fn md_to_html(markdown: &str, theme: &Theme, style: bool) -> String {
         false => None,
     };
 
-    let html = markdown_to_html_with_plugins(&markdown, &options, &plugins);
+    let mut html = String::new();
+    format_html_with_plugins(root, &options, &mut html, &plugins).unwrap();
     match full_css {
         Some(css) => format!(
             r#"
@@ -135,83 +141,37 @@ pub fn md_to_html(markdown: &str, theme: &Theme, style: bool) -> String {
     }
 }
 
-fn preprocess_mermaid_fences(markdown: &str, theme: &Theme) -> String {
-    let mut out = Vec::new();
-    let mut iter = markdown.lines();
-
-    while let Some(line) = iter.next() {
-        if let Some((fence_char, fence_len, lang)) = parse_fence_open(line)
-            && matches!(lang, "mermaid" | "mmd")
-        {
-            let mut body = Vec::new();
-            let mut closed = false;
-
-            for next_line in iter.by_ref() {
-                if is_fence_close(next_line, fence_char, fence_len) {
-                    closed = true;
-                    break;
+fn mutate_mermaid_blocks<'a>(root: &'a AstNode<'a>, theme: &Theme) {
+    for node in root.descendants() {
+        let literal = {
+            let data = node.data.borrow();
+            if let NodeValue::CodeBlock(ref block) = data.value {
+                if matches!(block.info.as_str(), "mermaid" | "mmd") {
+                    Some(block.literal.clone())
+                } else {
+                    None
                 }
-                body.push(next_line);
+            } else {
+                None
             }
+        };
 
-            if closed {
-                let source = body.join("\n");
-                if let Some(svg) = render_mermaid_svg(&source, theme) {
-                    out.push("<div class=\"mcat-mermaid\">".to_owned());
-                    out.push(svg);
-                    out.push("</div>".to_owned());
-                    continue;
-                }
+        if let Some(source) = literal {
+            if let Some(svg) = render_mermaid_svg(&source, theme) {
+                let html = format!("<div class=\"mcat-mermaid\">\n{}\n</div>\n", svg.trim_end());
+                node.data.borrow_mut().value = NodeValue::HtmlBlock(NodeHtmlBlock {
+                    block_type: 6, // `block_type` follows CommonMark HTML block type 6 semantics; comrak renderers ignore it here since we are mutating post-parse.
+                    literal: html,
+                });
             }
-
-            out.push(line.to_owned());
-            out.extend(body.into_iter().map(ToOwned::to_owned));
-            if closed {
-                out.push(std::iter::repeat_n(fence_char, fence_len).collect());
-            }
-            continue;
         }
-
-        out.push(line.to_owned());
     }
-
-    out.join("\n")
 }
 
 fn render_mermaid_svg(source: &str, theme: &Theme) -> Option<String> {
     let mut opts = mermaid_rs_renderer::RenderOptions::modern();
     opts.theme = theme.to_custom().to_mermaid_theme();
     mermaid_rs_renderer::render_with_options(source, opts).ok()
-}
-
-fn parse_fence_open(line: &str) -> Option<(char, usize, &str)> {
-    let trimmed = line.trim_start();
-    let first = trimmed.chars().next()?;
-    if first != '`' && first != '~' {
-        return None;
-    }
-
-    let fence_len = trimmed.chars().take_while(|ch| *ch == first).count();
-    if fence_len < 3 {
-        return None;
-    }
-
-    let info = trimmed[fence_len..].trim();
-    let lang = info
-        .strip_prefix('{')
-        .and_then(|inner| inner.strip_suffix('}'))
-        .unwrap_or(info)
-        .split(|c: char| c == ',' || c.is_whitespace())
-        .find(|part| !part.is_empty())
-        .unwrap_or_default();
-
-    Some((first, fence_len, lang))
-}
-
-fn is_fence_close(line: &str, fence_char: char, fence_len: usize) -> bool {
-    let trimmed = line.trim();
-    let run = trimmed.chars().take_while(|ch| *ch == fence_char).count();
-    run >= fence_len && trimmed.chars().skip(run).all(char::is_whitespace)
 }
 
 fn comrak_options<'a>() -> options::Options<'a> {
