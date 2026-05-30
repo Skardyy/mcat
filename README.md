@@ -18,7 +18,7 @@ Parse, Convert and Preview files
 ## Installation
 
 <details>
-   <summary>From Source</summary>
+<summary>From Source</summary>
 
 ```sh
 cargo install mcat
@@ -35,13 +35,13 @@ cargo install --path ./crates/core
 </details>
 
 <details>
-   <summary>Prebuilt</summary>
+<summary>Prebuilt</summary>
 
 follow the instructions at the [latest release](https://github.com/Skardyy/mcat/releases/latest)
 
 </details>
 <details>
-   <summary>Homebrew (MacOS/Linux)</summary>
+<summary>Homebrew (macOS/Linux)</summary>
 
 ```sh
 brew install mcat
@@ -49,7 +49,7 @@ brew install mcat
 
 </details>
 <details>
-   <summary>AUR (Arch linux)</summary>
+<summary>AUR (Arch linux)</summary>
 
 ```sh
 yay -S mcat-bin
@@ -57,10 +57,18 @@ yay -S mcat-bin
 
 </details>
 <details>
-   <summary>Winget (Windows)</summary>
+<summary>Nix</summary>
+
+```nix
+environment.systemPackages = [ pkgs.mcat ];
+```
+
+</details>
+<details>
+<summary>Scoop (Windows)</summary>
 
 ```sh
-winget install skardyy.mcat
+scoop install mcat
 ```
 
 </details>
