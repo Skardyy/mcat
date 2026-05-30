@@ -1,5 +1,7 @@
 use std::{borrow::Cow, collections::HashMap, sync::LazyLock};
 
+use base64::Engine;
+use comrak::nodes::{AstNode, NodeLink, NodeValue};
 use itertools::Itertools;
 use regex::Regex;
 use strip_ansi_escapes::strip_str;
@@ -9,6 +11,8 @@ use syntect::{
     util::{LinesWithEndings, as_24_bit_terminal_escaped},
 };
 use unicode_width::UnicodeWidthStr;
+
+use crate::config::Theme;
 
 use super::render::{AnsiContext, BOLD, RESET};
 
@@ -762,6 +766,56 @@ pub fn prettify_latex(src: &str, ctx: &AnsiContext) -> String {
     out
 }
 
+pub fn preprocess_ast<'a>(root: &'a AstNode<'a>, theme: &Theme) {
+    for node in root.descendants() {
+        if !matches!(node.data.borrow().value, NodeValue::CodeBlock(_)) {
+            continue;
+        }
+
+        let new_info = {
+            let data = node.data.borrow();
+            let NodeValue::CodeBlock(ref cb) = data.value else {
+                unreachable!()
+            };
+            cb.info
+                .trim()
+                .strip_prefix('{')
+                .and_then(|s| s.strip_suffix('}'))
+                .map(|inner| {
+                    inner
+                        .split(|c: char| c == ',' || c.is_whitespace())
+                        .find(|s| !s.is_empty() && !s.contains('='))
+                        .unwrap_or("")
+                        .to_owned()
+                })
+        };
+        if let Some(info) = new_info
+            && let NodeValue::CodeBlock(ref mut cb) = node.data.borrow_mut().value
+        {
+            cb.info = info;
+        }
+
+        let mermaid_source = {
+            let data = node.data.borrow();
+            let NodeValue::CodeBlock(ref cb) = data.value else {
+                unreachable!()
+            };
+            matches!(cb.info.trim(), "mermaid" | "mmd").then(|| cb.literal.clone())
+        };
+        if let Some(source) = mermaid_source {
+            let mut opts = mermaid_rs_renderer::RenderOptions::modern();
+            opts.theme = theme.to_custom().to_mermaid_theme();
+            if let Ok(svg) = mermaid_rs_renderer::render_with_options(&source, opts) {
+                let b64 = base64::engine::general_purpose::STANDARD.encode(svg.as_bytes());
+                node.data.borrow_mut().value = NodeValue::Image(Box::new(NodeLink {
+                    url: format!("data:image/svg+xml;base64,{b64}"),
+                    title: String::new(),
+                }));
+            }
+        }
+    }
+}
+
 // we only test core wrapping logic..
 #[cfg(test)]
 mod tests {
@@ -979,5 +1033,58 @@ mod tests {
         let result = wrap_lines(&ctx, text, false, 2, "", "", false);
         let expected = wrap_highlighted_line(format!("  {text}"), 46, 46, "  ", false);
         assert_eq!(result, expected);
+    }
+}
+
+#[cfg(test)]
+mod preprocess_ast_tests {
+    use super::*;
+    use crate::config::Theme;
+    use comrak::{Arena, parse_document};
+
+    fn infos_and_images(md: &str) -> (Vec<String>, usize) {
+        let arena = Arena::new();
+        let root = parse_document(&arena, md, &comrak::Options::default());
+        preprocess_ast(root, &Theme::default());
+
+        let mut infos = Vec::new();
+        let mut images = 0;
+        for node in root.descendants() {
+            match &node.data.borrow().value {
+                NodeValue::CodeBlock(cb) => infos.push(cb.info.clone()),
+                NodeValue::Image(link) if link.url.starts_with("data:image/svg+xml") => images += 1,
+                _ => {}
+            }
+        }
+        (infos, images)
+    }
+
+    #[test]
+    fn quarto_fences_normalized() {
+        let (infos, _) = infos_and_images(
+            "```{r}\nx\n```\n\n```{python, echo=FALSE}\ny\n```\n\n```{ julia }\nz\n```\n",
+        );
+        assert_eq!(infos, vec!["r", "python", "julia"]);
+    }
+
+    #[test]
+    fn plain_fences_untouched() {
+        let (infos, _) = infos_and_images("```rust\nx\n```\n\n```\ny\n```\n");
+        assert_eq!(infos, vec!["rust", ""]);
+    }
+
+    #[test]
+    fn mermaid_variants_become_images() {
+        let (infos, images) = infos_and_images(
+            "```mermaid\nA-->B\n```\n\n```mmd\nA-->B\n```\n\n```{mermaid}\nA-->B\n```\n",
+        );
+        assert_eq!(infos, Vec::<String>::new());
+        assert_eq!(images, 3);
+    }
+
+    #[test]
+    fn non_codeblock_input_untouched() {
+        let (infos, images) = infos_and_images("# heading\n\nparagraph `inline`\n");
+        assert!(infos.is_empty() && images == 0);
     }
 }

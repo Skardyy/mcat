@@ -357,31 +357,13 @@ fn render_code_block<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String
         panic!()
     };
     let literal = &node_code_block.literal;
-    let info = &node_code_block.info;
-
-    let info = if info.trim().is_empty() {
+    let info = if node_code_block.info.trim().is_empty() {
         "text"
-    } else if let Some(inner) = info.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
-        inner
-            .split(|c: char| c == ',' || c.is_whitespace())
-            .next()
-            .filter(|s| !s.is_empty())
-            .unwrap_or("text")
     } else {
-        info
+        &node_code_block.info
     };
 
-    if matches!(info, "mermaid" | "mmd")
-        && let Some(img) = ctx.image_preprocessor.mapper.get(literal)
-        && img.is_ok
-    {
-        let placeholder = &img.placeholder;
-        if ctx.center {
-            let sps = node.data.borrow().sourcepos;
-            return center_lines(placeholder, sps.start.column, ctx.wininfo.sc_width);
-        }
-        placeholder.clone()
-    } else if info == "file-tree" {
+    if info == "file-tree" {
         render_file_tree(literal, ctx)
     } else if literal.lines().count() <= 10
         || ctx.force_simple_code_block > 0

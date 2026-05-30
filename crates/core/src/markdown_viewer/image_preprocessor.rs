@@ -127,25 +127,13 @@ impl ImagePreprocessor {
             std::thread::spawn(move || {
                 RUNTIME.block_on(async {
                     stream::iter(urls.into_iter().enumerate())
-                        .for_each_concurrent(16, |(i, mut url)| {
+                        .for_each_concurrent(16, |(i, url)| {
                             let tx = tx.clone();
                             let scrape_opts = &scrape_opts;
                             let bar = bar.as_ref();
                             let markdown_dir = markdown_dir.as_deref();
                             async move {
-                                let tmp = if url.is_mermaid {
-                                    match url.mermaid_content.take() {
-                                        Some(c) => McatFile::from_bytes(
-                                            c.into_bytes(),
-                                            None,
-                                            Some("mermaid".to_owned()),
-                                            None,
-                                            true,
-                                        )
-                                        .ok(),
-                                        None => None,
-                                    }
-                                } else if url.base_url.starts_with("data:") {
+                                let tmp = if url.base_url.starts_with("data:") {
                                     handle_data_uri(&url.base_url)
                                 } else if is_local_path(&url.base_url) {
                                     match handle_local_image(&url.base_url, markdown_dir) {
@@ -312,8 +300,6 @@ struct ImageUrl {
     original_url: String,
     width: Option<u32>,
     height: Option<u32>,
-    is_mermaid: bool,
-    mermaid_content: Option<String>,
 }
 
 fn extract_image_urls<'a>(node: &'a AstNode<'a>, wininfo: &Wininfo, urls: &mut Vec<ImageUrl>) {
@@ -338,22 +324,10 @@ fn extract_image_urls<'a>(node: &'a AstNode<'a>, wininfo: &Wininfo, urls: &mut V
                 original_url: image_node.url.clone(),
                 width,
                 height,
-                is_mermaid: false,
-                mermaid_content: None,
             });
         }
-    } else if let NodeValue::CodeBlock(cb) = &data.value
-        && matches!(cb.info.trim(), "mermaid" | "mmd")
-    {
-        urls.push(ImageUrl {
-            base_url: "".to_owned(),
-            original_url: cb.literal.clone(),
-            width: None,
-            height: None,
-            is_mermaid: true,
-            mermaid_content: Some(cb.literal.clone()),
-        });
     }
+
     for child in node.children() {
         extract_image_urls(child, wininfo, urls);
     }

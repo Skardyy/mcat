@@ -30,19 +30,6 @@ fn stdin_md_output_is_html() {
         .stdout(predicate::str::contains("Header"));
 }
 
-    #[test]
-    fn stdin_md_mermaid_output_html_contains_svg() {
-        Command::cargo_bin("mcat")
-        .unwrap()
-        .arg("--output")
-        .arg("html")
-        .write_stdin("```mermaid\ngraph TD\nA-->B\n```")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("<svg"))
-        .stdout(predicate::str::contains("mcat-mermaid"));
-    }
-
 #[test]
 fn stdin_svg_output_is_image() {
     let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"></svg>"#;

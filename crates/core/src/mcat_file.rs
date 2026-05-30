@@ -721,10 +721,29 @@ pub fn html_to_image(source: &McatFile) -> Result<DynamicImage> {
 }
 
 fn is_svg(b: &[u8]) -> bool {
-    let head = &b[..b.len().min(512)];
-    let s = match std::str::from_utf8(head) {
-        Ok(s) => s.trim_start(),
-        Err(_) => return false,
-    };
-    s.starts_with("<svg") || (s.starts_with("<?xml") && s.contains("<svg"))
+    let head = &b[..b.len().min(2048)];
+    let s = String::from_utf8_lossy(head);
+    let mut rest = s.as_ref();
+
+    loop {
+        rest = rest.trim_start();
+        let Some(after_lt) = rest.strip_prefix('<') else {
+            return false;
+        };
+        let Some(gt) = after_lt.find('>') else {
+            return false;
+        };
+        let tag = &after_lt[..gt];
+
+        if tag.starts_with('?') || tag.starts_with('!') {
+            rest = &after_lt[gt + 1..];
+            continue;
+        }
+
+        return tag.starts_with("svg")
+            && matches!(
+                tag.as_bytes().get(3),
+                None | Some(b' ' | b'\t' | b'\n' | b'\r' | b'/')
+            );
+    }
 }
