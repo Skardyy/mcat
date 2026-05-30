@@ -9,7 +9,7 @@ on:
       - "**[0-9]+.[0-9]+.[0-9]+*"
 
 jobs:
-  completions:
+  completions-and-tests:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -19,6 +19,9 @@ jobs:
 
       - name: Build native binary
         run: cargo build -p mcat
+
+      - name: Run tests
+        run: cargo test
 
       - name: Generate shell completions
         run: |
@@ -36,7 +39,7 @@ jobs:
 
   build:
     name: build (${{ matrix.target }})
-    needs: completions
+    needs: completions-and-tests
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
