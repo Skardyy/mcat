@@ -5,6 +5,8 @@
 - added better support for qmd files, now treated as markdown
 - added `--toc` flag, for adding a simple table of content in the markdown_viewer
 - fixed an issue in the markdown_viewer where ordered lists weren't auto numbered, now follows CommonMark spec
+- fixed an issue in the interactive_viewer where viewport panning underflowed when the container was larger than the image (#83 @Raina-Hardik)
+- fixed mermaid rendering in `md_to_html` and quarto style fenced code blocks (e.g. ` ```{r} `) not being highlighted (#81, #83 #84 @Raina-Hardik)
 
 ## V0.6.1
 
