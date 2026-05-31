@@ -167,11 +167,13 @@ impl McatFile {
             (is_exe, "", McatKind::Exe),
             (is_jxl, "", McatKind::JpegXL),
             (is_svg, "svg", McatKind::Svg),
-            (|_| false, "mermaid", McatKind::Mermaid), // mmd can mean mathpix markdown
+            (|_| false, "mermaid", McatKind::Mermaid),
+            (is_mermaid, "", McatKind::Mermaid),
             (|_| false, "html", McatKind::Html),
             (|_| false, "htm", McatKind::Html),
             (|_| false, "md", McatKind::Markdown),
             (|_| false, "qmd", McatKind::Markdown),
+            (|_| false, "mmd", McatKind::Markdown),
             (|_| false, "tex", McatKind::Tex),
             (|_| false, "typ", McatKind::Typst),
             (|_| false, "lnk", McatKind::Lnk),
@@ -746,4 +748,20 @@ fn is_svg(b: &[u8]) -> bool {
                 None | Some(b' ' | b'\t' | b'\n' | b'\r' | b'/')
             );
     }
+}
+
+#[rustfmt::skip]
+fn is_mermaid(b: &[u8]) -> bool {
+    let head = &b[..b.len().min(2048)];
+    let s = String::from_utf8_lossy(head);
+    let first = s.lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty() && !l.starts_with("%%") && !l.starts_with("---"));
+    let Some(first) = first else { return false };
+    matches!(first.split_whitespace().next(),
+        Some("graph"|"flowchart"|"sequenceDiagram"|"classDiagram"|"stateDiagram"
+            |"stateDiagram-v2"|"erDiagram"|"journey"|"gantt"|"pie"|"gitGraph"
+            |"mindmap"|"timeline"|"quadrantChart"|"requirementDiagram"|"C4Context"
+            |"zenuml"|"sankey-beta"|"xychart-beta"|"block-beta"|"packet-beta"
+            |"kanban"|"architecture-beta"|"radar"))
 }

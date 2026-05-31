@@ -1,0 +1,9 @@
+---
+title: Order Flow
+---
+flowchart TD
+    A[Customer places order] --> B{In stock?}
+    B -->|Yes| C[Charge card]
+    B -->|No| D[Backorder]
+    C --> E[Ship]
+    D --> E

@@ -163,7 +163,11 @@ impl MarkdownifyInput {
                 let md = format!("```html\n{html}\n```");
                 Ok(md)
             }),
-            (|_| false, &["md", "qmd"], &|| parse_text(bytes)),
+            (is_mermaid, &[""] as &[&str], &|| {
+                let src = parse_text(bytes)?;
+                Ok(format!("```mermaid\n{src}\n```"))
+            }),
+            (|_| false, &["md", "qmd", "mmd"], &|| parse_text(bytes)),
         ];
         let ext = self.ext.clone().unwrap_or_default();
         let result = handlers
@@ -371,4 +375,20 @@ fn binary_fallback(path: Option<&str>, ext: Option<&str>) -> String {
     let path = path.unwrap_or("");
     let ext = ext.unwrap_or("Bin");
     format!("[{ext} file]({path})")
+}
+
+#[rustfmt::skip]
+fn is_mermaid(b: &[u8]) -> bool {
+    let head = &b[..b.len().min(2048)];
+    let s = String::from_utf8_lossy(head);
+    let first = s.lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty() && !l.starts_with("%%") && !l.starts_with("---"));
+    let Some(first) = first else { return false };
+    matches!(first.split_whitespace().next(),
+        Some("graph"|"flowchart"|"sequenceDiagram"|"classDiagram"|"stateDiagram"
+            |"stateDiagram-v2"|"erDiagram"|"journey"|"gantt"|"pie"|"gitGraph"
+            |"mindmap"|"timeline"|"quadrantChart"|"requirementDiagram"|"C4Context"
+            |"zenuml"|"sankey-beta"|"xychart-beta"|"block-beta"|"packet-beta"
+            |"kanban"|"architecture-beta"|"radar"))
 }
