@@ -23,7 +23,7 @@ fn transmit_shm(
     opts: HashMap<String, String>,
     shm_name: &str,
     tmux: bool,
-) -> Result<(), RasterError> {
+) -> Result<shared_memory_fork::Shmem, RasterError> {
     let mut opts_string = String::with_capacity(opts.len() * 8);
     for (key, value) in opts {
         if !opts_string.is_empty() {
@@ -51,11 +51,7 @@ fn transmit_shm(
 
     write!(out, "{prefix}{opts_string};{shm_name}{suffix}")?;
 
-    // should be cleaned later. but the nature of this is it can be leaked.
-    // perhaps we need to reconsider how to do this, since its a leak that precedes the app
-    // lifetime.
-    std::mem::forget(shmem);
-    Ok(())
+    Ok(shmem)
 }
 
 fn chunk_base64(
@@ -264,11 +260,11 @@ fn process_frame(
     use_shm: bool,
     shm_name: &str,
     tmux: bool,
-) -> Result<(), RasterError> {
+) -> Result<Option<shared_memory_fork::Shmem>, RasterError> {
     #[cfg(target_os = "linux")]
     if use_shm {
-        transmit_shm(data, out, first_opts, shm_name, tmux)?;
-        return Ok(());
+        let shmem = transmit_shm(data, out, first_opts, shm_name, tmux)?;
+        return Ok(Some(shmem));
     }
     let base64 = general_purpose::STANDARD.encode(data);
     chunk_base64(
@@ -279,15 +275,14 @@ fn process_frame(
         sub_opts.unwrap_or_default(),
         tmux,
     )?;
-    Ok(())
+    Ok(None)
 }
 
 /// # Safety
 ///
-/// this method is considered unsafe because it leaks memory to the os shared memory.
-/// terminals such as kitty clear the shared memory after consuming, but it won't be certain on
-/// every terminal. also saving the video for future use will include having memory spent on this
-/// and not storage.
+/// this method is considered unsafe because it uses shared memory to transmit
+/// frame data to the terminal. the terminal must consume the shared memory
+/// within a brief window after each frame is written.
 #[cfg(target_os = "linux")]
 pub unsafe fn encode_frames_fast(
     frames: &mut dyn Iterator<Item = VideoFrame>,
@@ -296,33 +291,12 @@ pub unsafe fn encode_frames_fast(
     offset: Option<u16>,
     print_at: Option<(u16, u16)>,
 ) -> Result<(), RasterError> {
-    let id = encode_frames_sep(frames, out, true, wininfo, offset, print_at)?;
+    let (_id, pending_shm) = encode_frames_sep(frames, out, true, wininfo, offset, print_at)?;
 
-    // fork a cleanup process that gives the terminal time to consume the shm objects
-    let first_shm = format!("mcat-video-{id}-0");
-    if shared_memory_fork::ShmemConf::new()
-        .os_id(&first_shm)
-        .open()
-        .is_ok()
-    {
-        let pid = unsafe { libc::fork() };
-        if pid == 0 {
-            unsafe { libc::setsid() };
-            std::thread::sleep(std::time::Duration::from_millis(200));
-            let mut index = 0;
-            loop {
-                let name = format!("mcat-video-{id}-{index}");
-                match shared_memory_fork::ShmemConf::new().os_id(&name).open() {
-                    Ok(mut shmem) => {
-                        shmem.set_owner(true);
-                        drop(shmem);
-                        index += 1;
-                    }
-                    Err(_) => break,
-                }
-            }
-            std::process::exit(0);
-        }
+    // Give the terminal time to consume the remaining shared memory
+    // segments before they are dropped (and unlinked from /dev/shm).
+    if !pending_shm.is_empty() {
+        std::thread::sleep(std::time::Duration::from_millis(200));
     }
 
     Ok(())
@@ -335,7 +309,7 @@ pub fn encode_frames(
     offset: Option<u16>,
     print_at: Option<(u16, u16)>,
 ) -> Result<(), RasterError> {
-    encode_frames_sep(frames, out, false, wininfo, offset, print_at)?;
+    let (_id, _) = encode_frames_sep(frames, out, false, wininfo, offset, print_at)?;
     Ok(())
 }
 
@@ -346,7 +320,7 @@ fn encode_frames_sep(
     wininfo: &Wininfo,
     offset: Option<u16>,
     print_at: Option<(u16, u16)>,
-) -> Result<u32, RasterError> {
+) -> Result<(u32, Vec<shared_memory_fork::Shmem>), RasterError> {
     let (first_img, _) = frames.next().ok_or(RasterError::EmptyVideo)?;
     let width = first_img.width() as u16;
     let height = first_img.height() as u16;
@@ -398,8 +372,13 @@ fn encode_frames_sep(
         (0, 0)
     };
 
+    // Track shared memory segments so we can limit /dev/shm usage.
+    // Old segments are dropped after the terminal has had time to consume them.
+    let mut pending_shm: Vec<shared_memory_fork::Shmem> = Vec::new();
+    const MAX_PENDING_SHM: usize = 8;
+
     // adding the root image
-    process_frame(
+    if let Some(shmem) = process_frame(
         first_data,
         out,
         opts,
@@ -407,7 +386,9 @@ fn encode_frames_sep(
         use_shm,
         &format!("{shm_name}thumb"),
         tmux,
-    )?;
+    )? {
+        pending_shm.push(shmem);
+    }
 
     // starting the animation
     let z = 100;
@@ -439,7 +420,7 @@ fn encode_frames_sep(
         ]);
         let sub_opts = HashMap::from([("a".to_string(), "f".to_string())]);
 
-        if process_frame(
+        match process_frame(
             data,
             out,
             first_opts,
@@ -447,10 +428,17 @@ fn encode_frames_sep(
             use_shm,
             &format!("{shm_name}{c}"),
             tmux,
-        )
-        .is_err()
-        {
-            break;
+        ) {
+            Ok(Some(shmem)) => {
+                pending_shm.push(shmem);
+                // Drop the oldest segment once we exceed the limit.
+                // The terminal has already consumed it by now.
+                while pending_shm.len() > MAX_PENDING_SHM {
+                    pending_shm.remove(0);
+                }
+            }
+            Ok(None) => {}
+            Err(_) => break,
         }
     }
 
@@ -459,7 +447,7 @@ fn encode_frames_sep(
         out.write_all(placement.as_bytes())?;
     }
     write!(out, "{prefix}a=a,s=3,v=1,r=1,i={id},z={z}{suffix}")?;
-    Ok(id)
+    Ok((id, pending_shm))
 }
 
 pub fn is_kitty_capable(env: &EnvIdentifiers) -> bool {
