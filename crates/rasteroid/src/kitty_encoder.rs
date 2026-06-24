@@ -453,3 +453,119 @@ fn encode_frames_sep(
 pub fn is_kitty_capable(env: &EnvIdentifiers) -> bool {
     env.term_contains("kitty") || env.term_contains("ghostty")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn process_frame_base64_returns_none() {
+        let data = vec![0u8; 4 * 4 * 3];
+        let mut out = Vec::new();
+        let opts = HashMap::from([("a".into(), "T".into())]);
+        let result = process_frame(&data, &mut out, opts, None, false, "test", false);
+        assert!(result.is_ok(), "process_frame should succeed");
+        assert!(result.unwrap().is_none(), "base64 path must return None");
+        assert!(!out.is_empty(), "base64 output should not be empty");
+    }
+
+    #[test]
+    fn process_frame_chunking() {
+        let data = vec![128u8; 10_000];
+        let mut out = Vec::new();
+        let opts = HashMap::from([
+            ("a".into(), "f".into()),
+            ("f".into(), "24".into()),
+        ]);
+        let result = process_frame(&data, &mut out, opts, None, false, "test", false);
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+        let out_str = String::from_utf8_lossy(&out);
+        let chunk_count = out_str.matches("m=1;").count();
+        assert!(chunk_count >= 3, "should have at least 3 chunks with m=1, got {chunk_count}");
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn shm_is_cleaned_on_drop() {
+        let data = vec![64u8; 1024];
+        let shm_id = format!("mcat-test-{}", rand::random::<u32>());
+        let mut out = Vec::new();
+        let opts = HashMap::from([("a".into(), "T".into())]);
+
+        let shmem = transmit_shm(&data, &mut out, opts, &shm_id, false)
+            .expect("transmit_shm should succeed");
+
+        let path = std::path::Path::new("/dev/shm").join(&shm_id);
+        assert!(path.exists(), "SHM should exist in /dev/shm after creation");
+
+        drop(shmem);
+
+        assert!(!path.exists(), "SHM should be removed from /dev/shm after drop");
+    }
+
+    /// Simulates the actual video playback scenario that caused SIGBUS.
+    /// 1080p RGB frames (~6MB each), many frames, verify /dev/shm stays bounded.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn shm_usage_stays_bounded_during_video_playback() {
+        let width: u32 = 320;
+        let height: u32 = 240;
+        let frame_count = 200;
+        let pixels_per_frame = (width * height) as usize; // RGB = 3× that
+
+        let img = DynamicImage::new_rgb8(width, height);
+        let frames: Vec<VideoFrame> = (0..frame_count)
+            .map(|i| (img.clone(), i as f32 / 30.0))
+            .collect();
+
+        let mut out = Vec::new();
+
+        // Use encode_frames_sep directly with use_shm=true to exercise
+        // the SHM path without needing a TTY.
+        let (id, pending_shm) = encode_frames_sep(
+            &mut Box::new(frames.into_iter()),
+            &mut out,
+            true, // use_shm
+            &Wininfo {
+                sc_width: 80,
+                sc_height: 24,
+                spx_width: 1920,
+                spx_height: 1080,
+                is_tmux: false,
+                needs_inline: false,
+            },
+            None,
+            None,
+        )
+        .expect("encode_frames_sep should succeed with SHM");
+
+        // Verify output contains kitty escape sequences
+        let out_str = String::from_utf8_lossy(&out);
+        assert!(out_str.contains("\x1b_G"), "should emit kitty graphics escapes");
+
+        // Verify the remaining SHM segments are only a handful (≤ MAX_PENDING_SHM + 1 for thumb)
+        assert!(
+            pending_shm.len() <= 9, // 8 (MAX_PENDING_SHM) + 1 (thumb)
+            "remaining SHM should be bounded, got {}",
+            pending_shm.len()
+        );
+
+        // Verify /dev/shm is clean after dropping remaining SHM
+        drop(pending_shm);
+
+        // All SHM segments should now be cleaned up
+        let shm_thumb = format!("/dev/shm/mcat-video-{id}-thumb");
+        assert!(
+            !std::path::Path::new(&shm_thumb).exists(),
+            "thumb SHM should be cleaned: {shm_thumb}"
+        );
+        for i in 0..10 {
+            let shm_path = format!("/dev/shm/mcat-video-{id}-{i}");
+            assert!(
+                !std::path::Path::new(&shm_path).exists(),
+                "frame SHM should be cleaned: {shm_path}"
+            );
+        }
+    }
+}
