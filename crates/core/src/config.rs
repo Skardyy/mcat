@@ -78,7 +78,7 @@ pub struct McatConfig {
     pub report: bool,
 
     /// Remove loading bars
-    #[arg(long, help_heading = "Core Options")]
+    #[arg(long, help_heading = "Core Options", env = "MCAT_SILENT")]
     pub silent: bool,
 
     /// Pixel bounding box for image rendering, auto-detected by default
@@ -87,6 +87,7 @@ pub struct McatConfig {
         long,
         value_name = "WxH",
         help_heading = "Core Options",
+        env = "MCAT_SPX",
         default_value = "autoxauto"
     )]
     pub spx: String,
@@ -98,6 +99,7 @@ pub struct McatConfig {
         long,
         value_name = "WxH",
         help_heading = "Core Options",
+        env = "MCAT_SC",
         default_value = "autoxauto"
     )]
     pub sc: String,
@@ -107,6 +109,7 @@ pub struct McatConfig {
         long,
         value_name = "float",
         help_heading = "Core Options",
+        env = "MCAT_SCALEX",
         default_value_t = 1.0
     )]
     pub scalex: f32,
@@ -116,21 +119,22 @@ pub struct McatConfig {
         long,
         value_name = "float",
         help_heading = "Core Options",
+        env = "MCAT_SCALEY",
         default_value_t = 1.0
     )]
     pub scaley: f32,
 
     // ## Markdown Viewing ##
     /// Enable Table of content for markdown
-    #[arg(long, help_heading = "Markdown Viewing")]
+    #[arg(long, help_heading = "Markdown Viewing", env = "MCAT_TOC")]
     pub toc: bool,
 
     /// Enable Experimental support for kitty text-sizing protocol
-    #[arg(long, help_heading = "Markdown Viewing")]
+    #[arg(long, help_heading = "Markdown Viewing", env = "MCAT_MD_KITTY_HEADERS")]
     pub md_kitty_headers: bool,
 
     /// Disable line numbers in code blocks
-    #[arg(long, help_heading = "Markdown Viewing")]
+    #[arg(long, help_heading = "Markdown Viewing", env = "MCAT_NO_LINENUMBERS")]
     pub no_linenumbers: bool,
 
     /// What images to render in the markdown
@@ -156,19 +160,29 @@ pub struct McatConfig {
     /// Embed images as base64 in markdown. Images inside archives lack file paths and are
     /// normally dropped. This embeds them as data URIs for a complete output, useful when
     /// saving markdown for an external renderer. Enabled automatically when rendering images.
-    #[arg(long, help_heading = "Markdown Viewing")]
+    #[arg(
+        long,
+        help_heading = "Markdown Viewing",
+        env = "MCAT_FORCE_EMBED_IMAGES"
+    )]
     pub force_embed_images: bool,
 
     /// Shows YAML headers too
-    #[arg(long, help_heading = "Markdown Viewing")]
+    #[arg(long, help_heading = "Markdown Viewing", env = "MCAT_HEADER")]
     pub header: bool,
 
     /// Horizontal padding
-    #[arg(long, help_heading = "Markdown Viewing", default_value_t = 0)]
+    #[arg(
+        long,
+        help_heading = "Markdown Viewing",
+        env = "MCAT_PADDING",
+        default_value_t = 0
+    )]
     pub padding: u16,
 
     #[arg(long = "color", help_heading = "Markdown Viewing",
         hide = true,
+        env = "MCAT_COLOR",
         default_value_t = ColorMode::Auto,
         default_value_if("color_always", "true", "always"),
         default_value_if("color_never", "true", "never"))]
@@ -194,6 +208,7 @@ pub struct McatConfig {
 
     #[arg(long = "paging", help_heading = "Markdown Viewing",
         hide = true,
+        env = "MCAT_PAGING",
         default_value_t = PagingMode::Auto,
         default_value_if("paging_always", "true", "always"),
         default_value_if("paging_never", "true", "never"))]
@@ -225,7 +240,7 @@ pub struct McatConfig {
     ascii: bool,
 
     /// Disable centering the image in the terminal
-    #[arg(long, help_heading = "Image/Video Viewing")]
+    #[arg(long, help_heading = "Image/Video Viewing", env = "MCAT_NO_CENTER")]
     pub no_center: bool,
 
     /// Image render width (e.g. 80% of terminal, 40c columns, 1920px pixels)
@@ -233,6 +248,7 @@ pub struct McatConfig {
         long,
         value_name = "size",
         help_heading = "Image/Video Viewing",
+        env = "MCAT_IMG_WIDTH",
         default_value = "80%"
     )]
     pub img_width: String,
@@ -242,38 +258,60 @@ pub struct McatConfig {
         long,
         value_name = "size",
         help_heading = "Image/Video Viewing",
+        env = "MCAT_IMG_HEIGHT",
         default_value = "40%"
     )]
     pub img_height: String,
 
     /// Image zoom level
-    #[arg(long, value_name = "level", help_heading = "Image/Video Viewing")]
+    #[arg(
+        long,
+        value_name = "level",
+        help_heading = "Image/Video Viewing",
+        env = "MCAT_IMG_ZOOM"
+    )]
     pub img_zoom: Option<usize>,
 
     /// X offset from top-left corner in pixels
-    #[arg(long, value_name = "pixels", help_heading = "Image/Video Viewing")]
+    #[arg(
+        long,
+        value_name = "pixels",
+        help_heading = "Image/Video Viewing",
+        env = "MCAT_IMG_X_OFFSET"
+    )]
     pub img_x_offset: Option<i32>,
 
     /// Y offset from top-left corner in pixels
-    #[arg(long, value_name = "pixels", help_heading = "Image/Video Viewing")]
+    #[arg(
+        long,
+        value_name = "pixels",
+        help_heading = "Image/Video Viewing",
+        env = "MCAT_IMG_Y_OFFSET"
+    )]
     pub img_y_offset: Option<i32>,
 
     // ## Conversion ##
     /// Add styling to HTML output
-    #[arg(long, help_heading = "Conversion")]
+    #[arg(long, help_heading = "Conversion", env = "MCAT_STYLE_HTML")]
     pub style_html: bool,
 
     // ## Directory Listing ##
     /// Include hidden files
-    #[arg(long, short = 'a', help_heading = "Directory Listing")]
+    #[arg(
+        long,
+        short = 'a',
+        help_heading = "Directory Listing",
+        env = "MCAT_HIDDEN"
+    )]
     pub hidden: bool,
 
     /// Add hyperlinks to file names
-    #[arg(long, help_heading = "Directory Listing")]
+    #[arg(long, help_heading = "Directory Listing", env = "MCAT_HYPRLINK")]
     pub hyprlink: bool,
 
     /// Sort method
     #[arg(long, help_heading = "Directory Listing",
+        env = "MCAT_SORT",
         default_value_t = SortMode::Name,
         default_value_if("sort_type", "true", "type"),
         default_value_if("sort_size", "true", "size"))]
@@ -288,7 +326,12 @@ pub struct McatConfig {
     sort_size: bool,
 
     /// Reverse the order of items
-    #[arg(long, short = 'r', help_heading = "Directory Listing")]
+    #[arg(
+        long,
+        short = 'r',
+        help_heading = "Directory Listing",
+        env = "MCAT_REVERSE"
+    )]
     pub reverse: bool,
 
     /// Cell x padding (e.g. 3c columns, 10% of the terminal, 100px pixels)
@@ -296,6 +339,7 @@ pub struct McatConfig {
         long,
         value_name = "size",
         help_heading = "Directory Listing",
+        env = "MCAT_LS_X_PADDING",
         default_value = "3c"
     )]
     pub ls_x_padding: String,
@@ -305,6 +349,7 @@ pub struct McatConfig {
         long,
         value_name = "size",
         help_heading = "Directory Listing",
+        env = "MCAT_LS_Y_PADDING",
         default_value = "2c"
     )]
     pub ls_y_padding: String,
@@ -314,6 +359,7 @@ pub struct McatConfig {
         long,
         value_name = "size",
         help_heading = "Directory Listing",
+        env = "MCAT_LS_MIN_WIDTH",
         default_value = "2c"
     )]
     pub ls_min_width: String,
@@ -323,6 +369,7 @@ pub struct McatConfig {
         long,
         value_name = "size",
         help_heading = "Directory Listing",
+        env = "MCAT_LS_MAX_WIDTH",
         default_value = "16c"
     )]
     pub ls_max_width: String,
@@ -332,6 +379,7 @@ pub struct McatConfig {
         long,
         value_name = "size",
         help_heading = "Directory Listing",
+        env = "MCAT_LS_HEIGHT",
         default_value = "2c"
     )]
     pub ls_height: String,
@@ -341,6 +389,7 @@ pub struct McatConfig {
         long,
         value_name = "count",
         help_heading = "Directory Listing",
+        env = "MCAT_LS_ITEMS_PER_ROW",
         default_value_t = 20
     )]
     pub ls_items_per_row: usize,
@@ -363,7 +412,7 @@ pub struct McatConfig {
     pub fetch_clean: bool,
 
     /// Enable verbose debug logging
-    #[arg(short = 'v', long, help_heading = "Core Options")]
+    #[arg(short = 'v', long, help_heading = "Core Options", env = "MCAT_VERBOSE")]
     pub verbose: bool,
 
     // ## Runtime ##

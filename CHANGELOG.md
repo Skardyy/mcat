@@ -1,3 +1,8 @@
+# Src
+
+- added ENV config for more flags
+- added fallback for `spx` and `sc`, this will help people with complex setup, like wsl / ci
+
 ## V0.6.2
 
 - now when stdout isn't tty, and no output format was asked, mcat will act like a normal cat command, #86
