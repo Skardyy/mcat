@@ -1,4 +1,4 @@
-# V0.6.3
+## V0.6.3
 
 - added ENV config for more flags
 - added fallback for `spx` and `sc`, this will help people with complex setup, like wsl / ci
