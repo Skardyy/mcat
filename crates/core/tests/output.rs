@@ -79,6 +79,7 @@ fn stdin_pdf_output_is_image() {
     assert!(output.stdout.starts_with(b"\x89PNG"));
 }
 
+// see https://github.com/Skardyy/mcat/issues/86
 #[test]
 fn rust_file_piped_is_raw() {
     let mut f = Builder::new().suffix(".rs").tempfile().unwrap();
@@ -111,4 +112,21 @@ fn multiple_files_piped_concatenated_raw() {
 
     assert!(output.status.success());
     assert_eq!(output.stdout, b"fn a() {}\nfn b() {}\n");
+}
+
+// see https://github.com/Skardyy/mcat/issues/91
+#[test]
+fn stdin_md_with_color_always_flag_is_rendered_not_raw() {
+    let output = Command::cargo_bin("mcat")
+        .unwrap()
+        .arg("-c")
+        .write_stdin("# Header\n\nhello world")
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(
+        output.stdout.contains(&b'\x1b'),
+        "expected ANSI escape sequences in colored output"
+    );
 }
