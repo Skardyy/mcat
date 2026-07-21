@@ -2,6 +2,7 @@
 
 - added ENV config for more flags
 - added fallback for `spx` and `sc`, this will help people with complex setup, like wsl / ci
+- fixed a regression on the `-c` flag not working as expected
 
 ## V0.6.2
 
