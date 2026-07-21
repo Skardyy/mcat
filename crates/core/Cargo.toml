@@ -1,14 +1,14 @@
 [package]
 name = "mcat"
-version = "0.6.2"
+version = "0.6.3"
 authors = ["Meron Bossin"]
 description = "Terminal image, video, and Markdown viewer"
-keywords = ["sixel", "iterm", "markdown", "kitty", "file-converter"]
+keywords = ["file-converter", "iterm", "kitty", "markdown", "sixel"]
 categories = [
   "command-line-utilities",
-  "text-processing",
-  "rendering",
   "multimedia",
+  "rendering",
+  "text-processing",
 ]
 repository = "https://github.com/Skardyy/mcat"
 homepage = "https://github.com/Skardyy/mcat"
@@ -31,86 +31,125 @@ section = "utils"
 priority = "optional"
 revision = ""
 assets = [
-    ["../../target/release/mcat", "usr/bin/", "755"],
-    ["../../README.md", "usr/share/doc/mcat/README", "644"],
-    ["../../CHANGELOG.md", "usr/share/doc/mcat/CHANGELOG", "644"],
-    ["../../completions/mcat.bash", "usr/share/bash-completion/completions/mcat", "644"],
-    ["../../completions/_mcat", "usr/share/zsh/site-functions/_mcat", "644"],
-    ["../../completions/mcat.fish", "usr/share/fish/vendor_completions.d/mcat.fish", "644"],
-]
-
-[package.metadata.generate-rpm]
-assets = [
-    { source = "../../target/release/mcat", dest = "/usr/bin/mcat", mode = "755" },
-    { source = "../../LICENSE", dest = "/usr/share/licenses/mcat/LICENSE", mode = "644", doc = true },
-    { source = "../../README.md", dest = "/usr/share/doc/mcat/README", mode = "644", doc = true },
-    { source = "../../CHANGELOG.md", dest = "/usr/share/doc/mcat/CHANGELOG", mode = "644", doc = true },
-    { source = "../../completions/mcat.bash", dest = "/usr/share/bash-completion/completions/mcat", mode = "644" },
-    { source = "../../completions/_mcat", dest = "/usr/share/zsh/site-functions/_mcat", mode = "644" },
-    { source = "../../completions/mcat.fish", dest = "/usr/share/fish/vendor_completions.d/mcat.fish", mode = "644" },
+  ["../../target/release/mcat", "usr/bin/", "755"],
+  ["../../README.md", "usr/share/doc/mcat/README", "644"],
+  ["../../CHANGELOG.md", "usr/share/doc/mcat/CHANGELOG", "644"],
+  [
+    "../../completions/mcat.bash",
+    "usr/share/bash-completion/completions/mcat",
+    "644"
+  ],
+  ["../../completions/_mcat", "usr/share/zsh/site-functions/_mcat", "644"],
+  [
+    "../../completions/mcat.fish",
+    "usr/share/fish/vendor_completions.d/mcat.fish",
+    "644"
+  ],
 ]
 
 [package.metadata.deb.variants.musl]
 name = "mcat-musl"
 revision = ""
 
+[package.metadata.generate-rpm]
+assets = [
+  {
+    source = "../../target/release/mcat",
+    dest = "/usr/bin/mcat",
+    mode = "755"
+  },
+  {
+    source = "../../LICENSE",
+    dest = "/usr/share/licenses/mcat/LICENSE",
+    mode = "644",
+    doc = true
+  },
+  {
+    source = "../../README.md",
+    dest = "/usr/share/doc/mcat/README",
+    mode = "644",
+    doc = true
+  },
+  {
+    source = "../../CHANGELOG.md",
+    dest = "/usr/share/doc/mcat/CHANGELOG",
+    mode = "644",
+    doc = true
+  },
+  {
+    source = "../../completions/mcat.bash",
+    dest = "/usr/share/bash-completion/completions/mcat",
+    mode = "644"
+  },
+  {
+    source = "../../completions/_mcat",
+    dest = "/usr/share/zsh/site-functions/_mcat",
+    mode = "644"
+  },
+  {
+    source = "../../completions/mcat.fish",
+    dest = "/usr/share/fish/vendor_completions.d/mcat.fish",
+    mode = "644"
+  },
+]
+
 [package.metadata.generate-rpm.variants.musl]
 name = "mcat-musl"
 
 [dependencies]
-markdownify.workspace = true
-rasteroid.workspace = true
-strip-ansi-escapes.workspace = true
-clap_complete.workspace = true
-which.workspace = true
-rayon.workspace = true
-itertools.workspace = true
-inquire.workspace = true
-shell-words.workspace = true
-ignore.workspace = true
-textwrap.workspace = true
+anyhow.workspace = true
+base64.workspace = true
+boxcar.workspace = true
 clap.workspace = true
+clap_complete.workspace = true
 comrak.workspace = true
 crossterm.workspace = true
-pelite.workspace = true
-image.workspace = true
-tempfile.workspace = true
+dirs.workspace = true
+encoding_rs.workspace = true
 ffmpeg-sidecar.workspace = true
-syntect.workspace = true
-two-face.workspace = true
-resvg.workspace = true
+flate2.workspace = true
 fontdb.workspace = true
+futures.workspace = true
+hayro.workspace = true
+ignore.workspace = true
+image.workspace = true
+indicatif.workspace = true
+infer.workspace = true
+inquire.workspace = true
+itertools.workspace = true
+jxl-oxide.workspace = true
+lzma-rust2.workspace = true
+markdownify.workspace = true
+mermaid-rs-renderer.workspace = true
+pelite.workspace = true
+rasteroid.workspace = true
+rayon.workspace = true
+regex.workspace = true
+reqwest.workspace = true
+resvg.workspace = true
+scraper.workspace = true
 serde_json.workspace = true
-base64.workspace = true
+shell-words.workspace = true
+signal-hook.workspace = true
+strip-ansi-escapes.workspace = true
+syntect.workspace = true
+tar.workspace = true
+tempfile.workspace = true
+textwrap.workspace = true
 tokio.workspace = true
 tokio-tungstenite.workspace = true
-futures.workspace = true
-unicode-width.workspace = true
-dirs.workspace = true
-zip.workspace = true
-scraper.workspace = true
-reqwest.workspace = true
-indicatif.workspace = true
-regex.workspace = true
-infer.workspace = true
-anyhow.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
-flate2.workspace = true
-lzma-rust2.workspace = true
-encoding_rs.workspace = true
-hayro.workspace = true
-boxcar.workspace = true
-signal-hook.workspace = true
-tar.workspace = true
-jxl-oxide.workspace = true
-mermaid-rs-renderer.workspace = true
-
-[target.'cfg(windows)'.dependencies]
-winreg.workspace = true
+two-face.workspace = true
+unicode-width.workspace = true
+which.workspace = true
+zip.workspace = true
 
 [dev-dependencies]
 assert_cmd.workspace = true
-predicates.workspace = true
 base64.workspace = true
 indoc.workspace = true
+predicates.workspace = true
+
+[target."cfg(windows)".dependencies]
+winreg.workspace = true

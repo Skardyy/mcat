@@ -3,8 +3,8 @@ name = "rasteroid"
 version = "0.3.2"
 authors = ["Meron Bossin"]
 description = "terminal image / video graphics ( iterm / kitty / sixel )"
-keywords = ["sixel", "iterm", "kitty", "terminal", "terminal-graphics"]
-categories = ["graphics", "rendering", "command-line-utilities"]
+keywords = ["iterm", "kitty", "sixel", "terminal", "terminal-graphics"]
+categories = ["command-line-utilities", "graphics", "rendering"]
 repository = "https://github.com/Skardyy/mcat"
 homepage = "https://github.com/Skardyy/mcat"
 documentation = "https://github.com/Skardyy/mcat"
@@ -13,21 +13,21 @@ readme = "README.md"
 edition = "2024"
 
 [dependencies]
-crossterm.workspace = true
-image.workspace = true
-color_quant.workspace = true
 base64.workspace = true
-rand.workspace = true
+color_quant.workspace = true
+crossterm.workspace = true
 fast_image_resize.workspace = true
+image.workspace = true
+rand.workspace = true
 signal-hook.workspace = true
 thiserror.workspace = true
 
-[target.'cfg(target_os = "linux")'.dependencies]
-shared_memory_fork.workspace = true
-libc.workspace = true
-
-[target.'cfg(windows)'.dependencies]
-windows.workspace = true
-
 [dev-dependencies]
 ffmpeg-sidecar.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc.workspace = true
+shared_memory_fork.workspace = true
+
+[target."cfg(windows)".dependencies]
+windows.workspace = true

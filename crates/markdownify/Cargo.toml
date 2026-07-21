@@ -3,7 +3,7 @@ name = "markdownify"
 version = "0.3.6"
 authors = ["Meron Bossin"]
 description = "markitdown in rust - convert various document and files into markdown"
-keywords = ["conversion", "parser", "markitdown", "document", "markdown"]
+keywords = ["conversion", "document", "markdown", "markitdown", "parser"]
 categories = ["parser-implementations", "text-processing"]
 repository = "https://github.com/Skardyy/mcat"
 homepage = "https://github.com/Skardyy/mcat"
@@ -16,8 +16,8 @@ exclude = ["fixtures/"]
 [dependencies]
 thiserror.workspace = true
 
-zip.workspace = true
 tar.workspace = true
+zip.workspace = true
 
 flate2.workspace = true
 lzma-rust2.workspace = true
@@ -27,6 +27,6 @@ csv.workspace = true
 
 quick-xml.workspace = true
 
-infer.workspace = true
-encoding_rs.workspace = true
 base64.workspace = true
+encoding_rs.workspace = true
+infer.workspace = true
