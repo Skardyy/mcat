@@ -522,6 +522,7 @@ fn render_heading<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
 /// 1. no newlines, I spam spaces to create those "new lines"
 /// 2. i put 2 newlines and scroll up on every header, fixes the first heading in less not having
 ///    enough space to render.
+///
 /// also i don't think the bg is possible without the spamming of spaces, and without bg it looks
 /// bad imo
 fn render_heading_kitty<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
@@ -1110,7 +1111,7 @@ pub fn build_toc<'a>(root: &'a AstNode<'a>, ctx: &mut AnsiContext) -> String {
 fn collect_headings<'a>(node: &'a AstNode<'a>, ctx: &mut AnsiContext, out: &mut Vec<(u8, String)>) {
     if let NodeValue::Heading(NodeHeading { level, .. }) = node.data.borrow().value {
         let text = collect(node, ctx, "");
-        let text = trim_ansi_string(strip_str(&text).to_string());
+        let text = trim_ansi_string(text);
         if !text.is_empty() {
             out.push((level, text));
         }

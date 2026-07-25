@@ -73,7 +73,7 @@ pub fn md_to_ansi(
     output.push_str(&ctx.theme.foreground.fg);
     output.push_str(&parse_node(root, &mut ctx));
 
-    let mut res = output.replace(RESET, &format!("{RESET}{}", &ctx.theme.foreground.fg));
+    let mut res = output.replace(RESET, &format!("{RESET}{}", ctx.theme.foreground.fg));
 
     // replace images
     for (_, img) in ctx.image_preprocessor.mapper {

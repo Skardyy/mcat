@@ -230,7 +230,7 @@ fn load_slide_images(
     let mut map = HashMap::new();
     for (rid, target) in rels {
         let path = if target.starts_with("../") {
-            format!("ppt/{}", &target.strip_prefix("../").unwrap_or(target))
+            format!("ppt/{}", target.strip_prefix("../").unwrap_or(target))
         } else {
             target.clone()
         };
@@ -584,13 +584,12 @@ fn parse_slide(xml: &str, mut ctx: PptxContext) -> Result<String, ParsingError> 
                         ctx.table_rows.push(std::mem::take(&mut ctx.current_row));
                     }
                 }
-                b"a:tc" => {
-                    if ctx.in_table {
+                b"a:tc"
+                    if ctx.in_table => {
                         ctx.current_row.push(ctx.cell_text.trim().to_string());
                         ctx.cell_text.clear();
                         ctx.in_cell = false;
                     }
-                }
                 _ => {}
             },
 
