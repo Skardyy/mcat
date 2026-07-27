@@ -2,6 +2,7 @@
 
 - fixed an regression that made `--no-center` flag ignored sometimes
 - fixed an issue where images in markdown toc would be just white
+- improved syntect theme detection
 
 ## V0.6.3
 
