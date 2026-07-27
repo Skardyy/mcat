@@ -164,12 +164,14 @@ pub fn cat(files: Vec<McatFile>, out: &mut impl Write, config: &McatConfig) -> R
                             .dim_to_cells(&format!("{width}px"), term_misc::SizeDirection::Width)?;
                     }
                     let offset = wininfo.center_offset(width as u16, is_ascii);
-                    encoder.encode_frames(&mut frames, out, wininfo, Some(offset), None)?;
+                    let offset = if config.no_center { None } else { Some(offset) };
+                    encoder.encode_frames(&mut frames, out, wininfo, offset, None)?;
                 }
                 _ => {
                     let img = mcat_file.to_image(config, false, true)?;
                     let offset = wininfo.center_offset(img.width() as u16, is_ascii);
-                    encoder.encode_image(&img, out, wininfo, Some(offset), None)?;
+                    let offset = if config.no_center { None } else { Some(offset) };
+                    encoder.encode_image(&img, out, wininfo, offset, None)?;
                 }
             }
         }

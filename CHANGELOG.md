@@ -1,3 +1,8 @@
+## Src
+
+- fixed an regression that made `--no-center` flag ignored sometimes
+- fixed an issue where images in markdown toc would be just white
+
 ## V0.6.3
 
 - added ENV config for more flags
