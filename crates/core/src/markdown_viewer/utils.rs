@@ -8,7 +8,7 @@ use strip_ansi_escapes::strip_str;
 use syntect::{
     easy::HighlightLines,
     highlighting::Style,
-    parsing::{SyntaxReference, SyntaxSet},
+    parsing::SyntaxReference,
     util::{LinesWithEndings, as_24_bit_terminal_escaped},
 };
 use unicode_width::UnicodeWidthStr;
@@ -458,7 +458,7 @@ pub fn format_code_simple(code: &str, lang: &str, ctx: &AnsiContext, indent: usi
     };
 
     let ts = ctx.theme.to_syntect_theme();
-    let syntax = resolve_syntax(&ctx.ps, lang, code);
+    let syntax = resolve_syntax(ctx, lang, code);
     let mut highlighter = HighlightLines::new(syntax, &ts);
 
     let line_count = code.lines().count().saturating_sub(1);
@@ -490,19 +490,24 @@ pub fn format_code_simple(code: &str, lang: &str, ctx: &AnsiContext, indent: usi
     format!("{indent}{header}\n{content}{RESET}")
 }
 
-pub fn resolve_syntax<'a>(ps: &'a SyntaxSet, lang: &str, code: &str) -> &'a SyntaxReference {
-    ps.find_syntax_by_token(lang)
+pub fn resolve_syntax<'a>(ctx: &'a AnsiContext, lang: &str, code: &str) -> &'a SyntaxReference {
+    let key = lang.to_lowercase();
+    ctx.syntax_map
+        .iter()
+        .find(|(ext, _)| *ext == key)
+        .and_then(|(_, syn)| ctx.ps.find_syntax_by_token(syn))
+        .or_else(|| ctx.ps.find_syntax_by_token(lang))
         .or_else(|| {
             code.lines()
                 .next()
-                .and_then(|l| ps.find_syntax_by_first_line(l))
+                .and_then(|l| ctx.ps.find_syntax_by_first_line(l))
         })
-        .unwrap_or_else(|| ps.find_syntax_plain_text())
+        .unwrap_or_else(|| ctx.ps.find_syntax_plain_text())
 }
 
 pub fn format_code_full(code: &str, lang: &str, ctx: &AnsiContext) -> String {
     let ts = ctx.theme.to_syntect_theme();
-    let syntax = resolve_syntax(&ctx.ps, lang, code);
+    let syntax = resolve_syntax(ctx, lang, code);
     let mut highlighter = HighlightLines::new(syntax, &ts);
 
     let header = match get_lang_icon_and_color(lang) {
@@ -569,7 +574,7 @@ pub fn format_code_box(code: &str, lang: &str, title: &str, ctx: &AnsiContext) -
     let content = code.trim();
 
     let ts = ctx.theme.to_syntect_theme();
-    let syntax = resolve_syntax(&ctx.ps, lang, code);
+    let syntax = resolve_syntax(ctx, lang, code);
     let mut highlighter = HighlightLines::new(syntax, &ts);
 
     let max_line_width = content
@@ -854,6 +859,7 @@ mod tests {
             under_header: false,
             force_simple_code_block: 0,
             list_depth: 0,
+            syntax_map: vec![],
         }
     }
 

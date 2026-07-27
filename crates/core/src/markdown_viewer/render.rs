@@ -46,6 +46,7 @@ pub struct AnsiContext {
     pub render_kitty_headers: bool,
     pub center: bool,
     pub image_preprocessor: ImagePreprocessor,
+    pub syntax_map: Vec<(String, String)>,
 
     pub blockquote_fenced_offset: Option<usize>,
     pub collecting_depth: usize,

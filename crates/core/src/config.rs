@@ -144,6 +144,17 @@ pub struct McatConfig {
         env = "MCAT_MD_IMAGE")]
     pub md_image: MdImageMode,
 
+    /// Map file extensions to syntaxes (e.g. --map-syntax recipe:yaml,plist:xml)
+    #[arg(
+        long = "map-syntax",
+        value_name = "ext:syntax,...",
+        help_heading = "Markdown Viewing",
+        env = "MCAT_MAP_SYNTAX",
+        value_delimiter = ',',
+        value_parser = parse_syntax_map
+    )]
+    pub syntax_map: Vec<(String, String)>,
+
     /// Shortcut for --md-image none
     #[arg(short = 'f', help_heading = "Markdown Viewing")]
     fast: bool,
@@ -620,4 +631,18 @@ impl std::fmt::Display for SortMode {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         self.to_possible_value().unwrap().get_name().fmt(f)
     }
+}
+
+fn parse_syntax_map(s: &str) -> Result<(String, String), String> {
+    let (ext, syn) = s
+        .split_once(':')
+        .ok_or_else(|| format!("expected ext:syntax, got {s:?}"))?;
+    let ext = ext.trim().trim_start_matches('.').to_lowercase();
+    let syn = syn.trim().to_owned();
+
+    if ext.is_empty() || syn.is_empty() {
+        return Err(format!("expected ext:syntax, got {s:?}"));
+    }
+
+    Ok((ext, syn))
 }

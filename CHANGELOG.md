@@ -3,6 +3,7 @@
 - fixed an regression that made `--no-center` flag ignored sometimes
 - fixed an issue where images in markdown toc would be just white
 - improved syntect theme detection
+- added `--map-syntax` flag for the markdown viewer, helps hint mcat what syntax highlight it should use for files mcat would normally not highlight
 
 ## V0.6.3
 
