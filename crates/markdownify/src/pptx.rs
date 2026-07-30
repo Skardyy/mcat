@@ -169,9 +169,12 @@ fn get_attr(
     for attr in e.attributes().with_checks(false).flatten() {
         if attr.key.as_ref() == key {
             return Some(
-                attr.decode_and_unescape_value(reader.decoder())
-                    .ok()?
-                    .into_owned(),
+                attr.decoded_and_normalized_value(
+                    quick_xml::XmlVersion::Implicit1_0,
+                    reader.decoder(),
+                )
+                .ok()?
+                .into_owned(),
             );
         }
     }
@@ -584,12 +587,11 @@ fn parse_slide(xml: &str, mut ctx: PptxContext) -> Result<String, ParsingError> 
                         ctx.table_rows.push(std::mem::take(&mut ctx.current_row));
                     }
                 }
-                b"a:tc"
-                    if ctx.in_table => {
-                        ctx.current_row.push(ctx.cell_text.trim().to_string());
-                        ctx.cell_text.clear();
-                        ctx.in_cell = false;
-                    }
+                b"a:tc" if ctx.in_table => {
+                    ctx.current_row.push(ctx.cell_text.trim().to_string());
+                    ctx.cell_text.clear();
+                    ctx.in_cell = false;
+                }
                 _ => {}
             },
 

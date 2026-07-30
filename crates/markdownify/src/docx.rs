@@ -145,9 +145,12 @@ fn get_attr(
     for attr in e.attributes().with_checks(false).flatten() {
         if attr.key.as_ref() == key {
             return Some(
-                attr.decode_and_unescape_value(reader.decoder())
-                    .ok()?
-                    .into_owned(),
+                attr.decoded_and_normalized_value(
+                    quick_xml::XmlVersion::Implicit1_0,
+                    reader.decoder(),
+                )
+                .ok()?
+                .into_owned(),
             );
         }
     }

@@ -76,11 +76,15 @@ fn stdin_jpeg_detected_as_image() {
 
 #[test]
 fn stdin_webm_detected_as_video() {
-    // WebM/EBML magic bytes
+    let mut buf = Vec::new();
+    buf.extend_from_slice(b"\x1a\x45\xdf\xa3");
+    buf.extend_from_slice(b"\x42\x82\x84webm");
+    buf.resize(512, 0);
+
     Command::cargo_bin("mcat")
         .unwrap()
         .arg("--testing")
-        .write_stdin(b"\x1a\x45\xdf\xa3".as_ref())
+        .write_stdin(buf)
         .assert()
         .success()
         .stdout(predicate::str::contains("kind: Video"));
