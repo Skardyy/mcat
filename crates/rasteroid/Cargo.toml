@@ -1,6 +1,6 @@
 [package]
 name = "rasteroid"
-version = "0.3.2"
+version = "0.3.3"
 description = "terminal image / video graphics ( iterm / kitty / sixel )"
 keywords = ["iterm", "kitty", "sixel", "terminal", "terminal-graphics"]
 categories = ["command-line-utilities", "graphics", "rendering"]

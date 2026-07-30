@@ -1,4 +1,4 @@
-## Src
+## V0.6.4
 
 - fixed an regression that made `--no-center` flag ignored sometimes
 - fixed an issue where images in markdown toc would be just white

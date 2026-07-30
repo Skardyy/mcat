@@ -2104,7 +2104,7 @@ dependencies = [
 
 [[package]]
 name = "markdownify"
-version = "0.3.6"
+version = "0.3.7"
 dependencies = [
  "base64 0.23.0",
  "calamine",
@@ -2141,7 +2141,7 @@ dependencies = [
 
 [[package]]
 name = "mcat"
-version = "0.6.3"
+version = "0.6.4"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -2815,7 +2815,7 @@ dependencies = [
 
 [[package]]
 name = "rasteroid"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "base64 0.23.0",
  "color_quant 2.0.0",
