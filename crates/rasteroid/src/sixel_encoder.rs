@@ -178,20 +178,23 @@ pub fn encode_frames(
     let mut frame_cache: Vec<(Vec<u8>, Duration)> = Vec::new();
     let (first_img, _) = frames.next().ok_or(RasterError::EmptyVideo)?;
 
-    let at = print_at.unwrap_or((0, 0));
+    let reserved_rows = wininfo.dim_to_cells(
+        &format!("{}px", first_img.height()),
+        term_misc::SizeDirection::Height,
+    )? as u16;
 
-    // pre-encode first frame and ensure space
     let mut first_buf = Vec::new();
-    encode_image(&first_img, &mut first_buf, offset, Some(at), wininfo)?;
-    term_misc::ensure_space(out, first_img.height() as u16)?;
+    encode_image(&first_img, &mut first_buf, offset, print_at, wininfo)?;
+    term_misc::ensure_space(out, reserved_rows)?;
+    write!(out, "\x1b[s")?;
     out.write_all(&first_buf)?;
     out.flush()?;
 
-    let delay = Duration::from_millis(33);
-    frame_cache.push((first_buf, delay));
+    frame_cache.push((first_buf, Duration::from_millis(33)));
 
     for (img, timestamp) in frames {
         if shutdown.load(Ordering::SeqCst) {
+            park_cursor_below(out, reserved_rows)?;
             return Ok(());
         }
 
@@ -202,8 +205,9 @@ pub fn encode_frames(
         last_timestamp = Some(timestamp);
 
         let mut buf = Vec::new();
-        encode_image(&img, &mut buf, offset, Some(at), wininfo)?;
+        encode_image(&img, &mut buf, offset, print_at, wininfo)?;
 
+        write!(out, "\x1b[u")?;
         out.write_all(&buf)?;
         out.flush()?;
         frame_cache.push((buf, delay));
@@ -214,15 +218,22 @@ pub fn encode_frames(
         return Err(RasterError::EmptyVideo);
     }
 
-    // loop cached frames
     loop {
         for (buf, delay) in &frame_cache {
             if shutdown.load(Ordering::SeqCst) {
+                park_cursor_below(out, reserved_rows)?;
                 return Ok(());
             }
+            write!(out, "\x1b[u")?;
             out.write_all(buf)?;
             out.flush()?;
             std::thread::sleep(*delay);
         }
     }
+}
+
+fn park_cursor_below(out: &mut impl Write, rows: u16) -> Result<(), RasterError> {
+    write!(out, "\x1b[u\x1b[{rows}B\r")?;
+    out.flush()?;
+    Ok(())
 }
