@@ -5,6 +5,7 @@ use crate::{
 };
 use color_quant::NeuQuant;
 use image::{DynamicImage, ImageBuffer, Rgb};
+use rayon::prelude::*;
 use std::{io::Write, sync::atomic::Ordering, time::Duration};
 
 const SIXEL_MIN: u8 = 0x3f;
@@ -62,7 +63,8 @@ fn encode_sixel(
         .pixels()
         .flat_map(|p| [p.0[0], p.0[1], p.0[2], 255])
         .collect();
-    let nq = NeuQuant::new(10, 256, &pixels);
+    let samplefac = samplefac_for(width * height);
+    let nq = NeuQuant::new(samplefac, 256, &pixels);
     let palette_vec: Vec<(u8, u8, u8)> = nq
         .color_map_rgb()
         .chunks(3)
@@ -143,8 +145,9 @@ fn encode_sixel(
 }
 
 fn map_to_palette(img: &ImageBuffer<Rgb<u8>, Vec<u8>>, nq: &NeuQuant) -> Vec<u8> {
-    img.pixels()
-        .map(|p| nq.index_of(&[p.0[0], p.0[1], p.0[2], 255]) as u8)
+    img.as_raw()
+        .par_chunks(3)
+        .map(|p| nq.index_of(&[p[0], p[1], p[2], 255]) as u8)
         .collect()
 }
 
@@ -236,4 +239,9 @@ fn park_cursor_below(out: &mut impl Write, rows: u16) -> Result<(), RasterError>
     write!(out, "\x1b[u\x1b[{rows}B\r")?;
     out.flush()?;
     Ok(())
+}
+
+fn samplefac_for(pixel_count: usize) -> i32 {
+    const TARGET_SAMPLES: usize = 30_000;
+    (pixel_count / TARGET_SAMPLES).clamp(1, 30) as i32
 }

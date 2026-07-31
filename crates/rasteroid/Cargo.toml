@@ -20,6 +20,7 @@ image.workspace = true
 rand.workspace = true
 signal-hook.workspace = true
 thiserror.workspace = true
+rayon.workspace = true
 
 [dev-dependencies]
 ffmpeg-sidecar.workspace = true

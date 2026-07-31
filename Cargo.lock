@@ -2825,6 +2825,7 @@ dependencies = [
  "image",
  "libc",
  "rand 0.10.2",
+ "rayon",
  "shared_memory_fork",
  "signal-hook 0.4.4",
  "thiserror",
