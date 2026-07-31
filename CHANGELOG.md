@@ -1,6 +1,7 @@
 ## Src
 
 - improved tmux support for kitty image protocol
+- improved support for iterm image protocol for both normal and tmux, video is now rendered inline and doesn't clear the screen, and in tmux the cursor goes after the video
 
 ## V0.6.4
 

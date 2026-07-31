@@ -33,16 +33,12 @@ pub fn encode_image(
         "\x1b"
     };
     let suffix = if wininfo.is_tmux {
-        "\x1b\x07\x1b\\"
+        "\x07\x1b\\"
     } else {
         "\x07"
     };
 
-    write!(
-        out,
-        "{prefix}]1337;File=inline=1;size={}:{base64_encoded}{suffix}",
-        base64_encoded.len()
-    )?;
+    write!(out, "{prefix}]1337;File=inline=1;:{base64_encoded}{suffix}",)?;
 
     Ok(())
 }
@@ -56,6 +52,12 @@ pub fn is_iterm_capable(env: &EnvIdentifiers) -> bool {
         || env.has_key("KONSOLE_VERSION")
 }
 
+fn park_cursor_below(out: &mut impl Write, rows: u16) -> Result<(), RasterError> {
+    write!(out, "\x1b[u\x1b[{rows}B\r")?;
+    out.flush()?;
+    Ok(())
+}
+
 pub fn encode_frames(
     frames: &mut dyn Iterator<Item = VideoFrame>,
     out: &mut impl Write,
@@ -67,9 +69,11 @@ pub fn encode_frames(
     let mut last_timestamp: Option<f32> = None;
     let mut frame_cache: Vec<(Vec<u8>, Duration)> = Vec::new();
     let mut first = true;
+    let mut reserved_rows: u16 = 0;
 
     for (img, timestamp) in frames {
         if shutdown.load(Ordering::SeqCst) {
+            park_cursor_below(out, reserved_rows)?;
             return Ok(());
         }
 
@@ -83,11 +87,15 @@ pub fn encode_frames(
         encode_image(&img, &mut buf, offset, print_at, wininfo)?;
 
         if first {
-            term_misc::ensure_space(out, img.height() as u16)?;
+            reserved_rows = wininfo.dim_to_cells(
+                &format!("{}px", img.height()),
+                term_misc::SizeDirection::Height,
+            )? as u16;
+            term_misc::ensure_space(out, reserved_rows)?;
             write!(out, "\x1b[s")?;
             first = false;
         } else {
-            write!(out, "\x1b[u\x1b[s")?;
+            write!(out, "\x1b[u")?;
         }
 
         out.write_all(&buf)?;
@@ -104,9 +112,10 @@ pub fn encode_frames(
     loop {
         for (buf, delay) in &frame_cache {
             if shutdown.load(Ordering::SeqCst) {
+                park_cursor_below(out, reserved_rows)?;
                 return Ok(());
             }
-            write!(out, "\x1b[u\x1b[s")?;
+            write!(out, "\x1b[u")?;
             out.write_all(buf)?;
             out.flush()?;
             std::thread::sleep(*delay);
