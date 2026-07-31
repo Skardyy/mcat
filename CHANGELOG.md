@@ -2,6 +2,7 @@
 
 - improved the sixel encoder, now faster and should produce better looking images/videos
 - improved tmux support for kitty image protocol
+- improved iterm and sixel frame encoders, added a scheduler for varying sleep times and frame drop, also no longer saving the results in ram for loop, the video will just redemux and mcat will re render
 - improved support for iterm+sixel image protocol for both normal and tmux, video is now rendered inline and doesn't clear the screen, and in tmux the cursor goes after the video
 - fixed potential memory leak, if you rendered a kitty animation on a terminal that doesn't support kitty at all (through `--kitty`) flag, the first image would not be cleaned and would sit in /dev/shm (only linux and if the terminal is the tty)
 

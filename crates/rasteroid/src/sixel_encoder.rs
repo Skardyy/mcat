@@ -176,9 +176,11 @@ pub fn encode_frames(
     offset: Option<u16>,
     print_at: Option<(u16, u16)>,
 ) -> Result<(), RasterError> {
+    // floor on the effective frame rate, so a machine that can't keep up
+    // degrades to a lower rate instead of dropping every frame
+    const MIN_INTERVAL: Duration = Duration::from_millis(100);
+
     let shutdown = term_misc::setup_signal_handler();
-    let mut last_timestamp: Option<f32> = None;
-    let mut frame_cache: Vec<(Vec<u8>, Duration)> = Vec::new();
     let (first_img, _) = frames.next().ok_or(RasterError::EmptyVideo)?;
 
     let reserved_rows = wininfo.dim_to_cells(
@@ -192,8 +194,11 @@ pub fn encode_frames(
     write!(out, "\x1b[s")?;
     out.write_all(&first_buf)?;
     out.flush()?;
+    drop(first_buf);
 
-    frame_cache.push((first_buf, Duration::from_millis(33)));
+    // frame 0 is on screen now; every later frame is scheduled against this
+    let start = std::time::Instant::now();
+    let mut last_shown = start;
 
     for (img, timestamp) in frames {
         if shutdown.load(Ordering::SeqCst) {
@@ -201,38 +206,31 @@ pub fn encode_frames(
             return Ok(());
         }
 
-        let delay = match (timestamp, last_timestamp) {
-            (ts, Some(last)) if ts > last => Duration::from_secs_f32(ts - last),
-            _ => Duration::from_millis(33),
-        };
-        last_timestamp = Some(timestamp);
+        let target = start + Duration::from_secs_f32(timestamp.max(0.0));
+        let now = std::time::Instant::now();
+
+        // already overdue, and we've shown something recently enough
+        if now > target && now.duration_since(last_shown) < MIN_INTERVAL {
+            continue;
+        }
 
         let mut buf = Vec::new();
         encode_image(&img, &mut buf, offset, print_at, wininfo)?;
 
+        // sleep only the time left until this frame is due, not the full delay.
+        // encoding already consumed part of the budget.
+        if let Some(left) = target.checked_duration_since(std::time::Instant::now()) {
+            std::thread::sleep(left);
+        }
+
         write!(out, "\x1b[u")?;
         out.write_all(&buf)?;
         out.flush()?;
-        frame_cache.push((buf, delay));
-        std::thread::sleep(delay);
+        last_shown = std::time::Instant::now();
     }
 
-    if frame_cache.is_empty() {
-        return Err(RasterError::EmptyVideo);
-    }
-
-    loop {
-        for (buf, delay) in &frame_cache {
-            if shutdown.load(Ordering::SeqCst) {
-                park_cursor_below(out, reserved_rows)?;
-                return Ok(());
-            }
-            write!(out, "\x1b[u")?;
-            out.write_all(buf)?;
-            out.flush()?;
-            std::thread::sleep(*delay);
-        }
-    }
+    park_cursor_below(out, reserved_rows)?;
+    Ok(())
 }
 
 fn park_cursor_below(out: &mut impl Write, rows: u16) -> Result<(), RasterError> {

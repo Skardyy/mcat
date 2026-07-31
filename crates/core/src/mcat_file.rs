@@ -435,6 +435,9 @@ impl McatFile {
         if let Some(path) = &self.path {
             command
                 .hwaccel("auto")
+                .arg("-stream_loop") // we only use in loops, save me having to loop
+                .arg("-1")
+                .no_audio()
                 .input(path.to_string_lossy())
                 .rawvideo();
         } else {

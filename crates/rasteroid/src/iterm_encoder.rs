@@ -1,4 +1,4 @@
-use image::DynamicImage;
+use image::{DynamicImage, codecs::jpeg::JpegEncoder};
 
 use crate::{
     VideoFrame,
@@ -18,9 +18,15 @@ pub fn encode_image(
     print_at: Option<(u16, u16)>,
     wininfo: &Wininfo,
 ) -> Result<(), RasterError> {
-    let mut png = Vec::new();
-    img.write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png)?;
-    let base64_encoded = term_misc::image_to_base64(&png);
+    let mut buf = Vec::new();
+    if img.color().has_alpha() {
+        img.write_to(&mut Cursor::new(&mut buf), image::ImageFormat::Png)?;
+    } else {
+        let mut cursor = Cursor::new(&mut buf);
+        let mut enc = JpegEncoder::new_with_quality(&mut cursor, 90);
+        enc.encode_image(img)?;
+    }
+    let base64_encoded = term_misc::image_to_base64(&buf);
 
     let center = term_misc::offset_to_terminal(offset);
     let at = term_misc::loc_to_terminal(print_at);
@@ -65,11 +71,15 @@ pub fn encode_frames(
     offset: Option<u16>,
     print_at: Option<(u16, u16)>,
 ) -> Result<(), RasterError> {
+    // floor on the effective frame rate, so a machine that can't keep up
+    // degrades to a lower rate instead of dropping every frame
+    const MIN_INTERVAL: Duration = Duration::from_millis(100);
+
     let shutdown = term_misc::setup_signal_handler();
-    let mut last_timestamp: Option<f32> = None;
-    let mut frame_cache: Vec<(Vec<u8>, Duration)> = Vec::new();
     let mut first = true;
     let mut reserved_rows: u16 = 0;
+    let mut start = std::time::Instant::now();
+    let mut last_shown = start;
 
     for (img, timestamp) in frames {
         if shutdown.load(Ordering::SeqCst) {
@@ -77,48 +87,53 @@ pub fn encode_frames(
             return Ok(());
         }
 
-        let delay = match (timestamp, last_timestamp) {
-            (ts, Some(last)) if ts > last => Duration::from_secs_f32(ts - last),
-            _ => Duration::from_millis(33),
-        };
-        last_timestamp = Some(timestamp);
-
-        let mut buf = Vec::new();
-        encode_image(&img, &mut buf, offset, print_at, wininfo)?;
-
         if first {
+            let mut buf = Vec::new();
+            encode_image(&img, &mut buf, offset, print_at, wininfo)?;
+
             reserved_rows = wininfo.dim_to_cells(
                 &format!("{}px", img.height()),
                 term_misc::SizeDirection::Height,
             )? as u16;
             term_misc::ensure_space(out, reserved_rows)?;
             write!(out, "\x1b[s")?;
+            out.write_all(&buf)?;
+            out.flush()?;
+
+            // frame 0 is on screen now; every later frame is scheduled against this
+            start = std::time::Instant::now();
+            last_shown = start;
             first = false;
-        } else {
-            write!(out, "\x1b[u")?;
+            continue;
         }
 
+        let target = start + Duration::from_secs_f32(timestamp.max(0.0));
+        let now = std::time::Instant::now();
+
+        // already overdue, and we've shown something recently enough
+        if now > target && now.duration_since(last_shown) < MIN_INTERVAL {
+            continue;
+        }
+
+        let mut buf = Vec::new();
+        encode_image(&img, &mut buf, offset, print_at, wininfo)?;
+
+        // sleep only the time left until this frame is due, not the full delay.
+        // encoding already consumed part of the budget.
+        if let Some(left) = target.checked_duration_since(std::time::Instant::now()) {
+            std::thread::sleep(left);
+        }
+
+        write!(out, "\x1b[u")?;
         out.write_all(&buf)?;
         out.flush()?;
-        frame_cache.push((buf, delay));
-        std::thread::sleep(delay);
+        last_shown = std::time::Instant::now();
     }
 
-    if frame_cache.is_empty() {
+    if first {
         return Err(RasterError::EmptyVideo);
     }
 
-    // loop cached frames
-    loop {
-        for (buf, delay) in &frame_cache {
-            if shutdown.load(Ordering::SeqCst) {
-                park_cursor_below(out, reserved_rows)?;
-                return Ok(());
-            }
-            write!(out, "\x1b[u")?;
-            out.write_all(buf)?;
-            out.flush()?;
-            std::thread::sleep(*delay);
-        }
-    }
+    park_cursor_below(out, reserved_rows)?;
+    Ok(())
 }
