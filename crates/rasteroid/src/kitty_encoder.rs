@@ -290,7 +290,7 @@ pub unsafe fn encode_frames_fast(
     offset: Option<u16>,
     print_at: Option<(u16, u16)>,
 ) -> Result<(), RasterError> {
-    let id = encode_frames_sep(frames, out, true, wininfo, offset, print_at)?;
+    let (id, last_index) = encode_frames_sep(frames, out, true, wininfo, offset, print_at)?;
 
     // fork a cleanup process that gives the terminal time to consume the shm objects
     let first_shm = format!("mcat-video-{id}-0");
@@ -303,16 +303,12 @@ pub unsafe fn encode_frames_fast(
         if pid == 0 {
             unsafe { libc::setsid() };
             std::thread::sleep(std::time::Duration::from_millis(200));
-            let mut index = 0;
-            loop {
-                let name = format!("mcat-video-{id}-{index}");
-                match shared_memory_fork::ShmemConf::new().os_id(&name).open() {
-                    Ok(mut shmem) => {
-                        shmem.set_owner(true);
-                        drop(shmem);
-                        index += 1;
-                    }
-                    Err(_) => break,
+            for name in std::iter::once(format!("mcat-video-{id}-thumb"))
+                .chain((0..=last_index).map(|i| format!("mcat-video-{id}-{i}")))
+            {
+                if let Ok(mut shmem) = shared_memory_fork::ShmemConf::new().os_id(&name).open() {
+                    shmem.set_owner(true);
+                    drop(shmem);
                 }
             }
             std::process::exit(0);
@@ -340,7 +336,7 @@ fn encode_frames_sep(
     wininfo: &Wininfo,
     offset: Option<u16>,
     print_at: Option<(u16, u16)>,
-) -> Result<u32, RasterError> {
+) -> Result<(u32, usize), RasterError> {
     let (first_img, _) = frames.next().ok_or(RasterError::EmptyVideo)?;
     let width = first_img.width() as u16;
     let height = first_img.height() as u16;
@@ -409,10 +405,12 @@ fn encode_frames_sep(
 
     let shutdown = term_misc::setup_signal_handler();
 
+    let mut last_index = 0; // later for clearing frames
     for (c, (img, timestamp)) in frames.enumerate() {
         if shutdown.load(Ordering::SeqCst) {
             break; // clean exit
         }
+        last_index = c;
         let rgb = img.to_rgb8();
         let data = rgb.as_raw();
         let s = img.width().to_string();
@@ -453,7 +451,7 @@ fn encode_frames_sep(
         out.write_all(placement.as_bytes())?;
     }
     write!(out, "{prefix}a=a,s=3,v=1,r=1,i={id},z={z}{suffix}")?;
-    Ok(id)
+    Ok((id, last_index))
 }
 
 pub fn is_kitty_capable(env: &EnvIdentifiers) -> bool {
