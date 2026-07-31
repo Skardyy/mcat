@@ -90,13 +90,11 @@ fn chunk_base64(
         sub_opts_string.push(',');
     }
 
-    let prefix = if tmux {
-        out.write_all(b"\x1bPtmux;")?;
-        "\x1b\x1b_G"
+    let (prefix, suffix) = if tmux {
+        ("\x1bPtmux;\x1b\x1b_G", "\x1b\x1b\\\x1b\\")
     } else {
-        "\x1b_G"
+        ("\x1b_G", "\x1b\\")
     };
-    let suffix = if tmux { "\x1b\x1b\\" } else { "\x1b\\" };
 
     let total_bytes = base64.len();
     let mut start = 0;
@@ -118,10 +116,6 @@ fn chunk_base64(
         )?;
 
         start = end;
-    }
-
-    if tmux {
-        out.write_all(b"\x1b\\")?;
     }
 
     Ok(())

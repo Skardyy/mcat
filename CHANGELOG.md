@@ -1,3 +1,7 @@
+## Src
+
+- improved tmux support for kitty image protocol
+
 ## V0.6.4
 
 - fixed an regression that made `--no-center` flag ignored sometimes
