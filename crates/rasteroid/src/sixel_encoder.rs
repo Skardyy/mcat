@@ -50,11 +50,18 @@ fn encode_sixel(
     } else {
         "\x1b"
     };
-    let suffix = if is_tmux { "\x1b\x1b\\\x1b\\" } else { "\x07" };
+    let suffix = if is_tmux {
+        "\x1b\x1b\\\x1b\\"
+    } else {
+        "\x1b\\"
+    };
 
     write!(out, "{prefix}P0;1q\"1;1;{};{}", width, height)?;
 
-    let pixels: Vec<u8> = img.pixels().flat_map(|p| p.0[..3].to_vec()).collect();
+    let pixels: Vec<u8> = img
+        .pixels()
+        .flat_map(|p| [p.0[0], p.0[1], p.0[2], 255])
+        .collect();
     let nq = NeuQuant::new(10, 256, &pixels);
     let palette_vec: Vec<(u8, u8, u8)> = nq
         .color_map_rgb()
@@ -62,7 +69,7 @@ fn encode_sixel(
         .map(|c| (c[0], c[1], c[2]))
         .collect();
     let palette = &palette_vec;
-    let color_indices = map_to_palette(img, palette);
+    let color_indices = map_to_palette(img, &nq);
 
     for (i, &(r, g, b)) in palette.iter().enumerate() {
         let r_pct = (r as f32 / 255.0 * 100.0) as u8;
@@ -135,22 +142,10 @@ fn encode_sixel(
     Ok(())
 }
 
-fn map_to_palette(img: &ImageBuffer<Rgb<u8>, Vec<u8>>, palette: &[(u8, u8, u8)]) -> Vec<u8> {
-    let width = img.width() as usize;
-    let height = img.height() as usize;
-    let mut indices = Vec::with_capacity(width * height);
-
-    for y in 0..height {
-        for x in 0..width {
-            let pixel = img.get_pixel(x as u32, y as u32);
-            let rgb = (pixel[0], pixel[1], pixel[2]);
-
-            let idx = find_closest_color(palette, &rgb);
-            indices.push(idx);
-        }
-    }
-
-    indices
+fn map_to_palette(img: &ImageBuffer<Rgb<u8>, Vec<u8>>, nq: &NeuQuant) -> Vec<u8> {
+    img.pixels()
+        .map(|p| nq.index_of(&[p.0[0], p.0[1], p.0[2], 255]) as u8)
+        .collect()
 }
 
 fn write_gri<W: Write>(out: &mut W, repeat_count: usize, sixel: u8) -> Result<(), RasterError> {
@@ -169,25 +164,6 @@ fn write_gri<W: Write>(out: &mut W, repeat_count: usize, sixel: u8) -> Result<()
     }
 
     Ok(())
-}
-
-fn find_closest_color(palette: &[(u8, u8, u8)], color: &(u8, u8, u8)) -> u8 {
-    let mut closest = 0;
-    let mut min_dist = u32::MAX;
-
-    for (i, pal_color) in palette.iter().enumerate() {
-        let dr = color.0 as i32 - pal_color.0 as i32;
-        let dg = color.1 as i32 - pal_color.1 as i32;
-        let db = color.2 as i32 - pal_color.2 as i32;
-
-        let dist = (dr * dr + dg * dg + db * db) as u32;
-        if dist < min_dist {
-            min_dist = dist;
-            closest = i;
-        }
-    }
-
-    closest as u8
 }
 
 pub fn encode_frames(
