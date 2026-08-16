@@ -77,6 +77,15 @@ pub struct McatConfig {
     #[arg(long, help_heading = "Core Options")]
     pub report: bool,
 
+    /// Extension hint for stdin input (e.g. csv, json, md)
+    #[arg(
+        short = 'e',
+        long = "ext",
+        value_name = "ext",
+        help_heading = "Core Options"
+    )]
+    pub stdin_ext: Option<String>,
+
     /// Remove loading bars
     #[arg(long, help_heading = "Core Options", env = "MCAT_SILENT")]
     pub silent: bool,

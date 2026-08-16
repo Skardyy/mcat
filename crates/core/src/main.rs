@@ -114,7 +114,7 @@ fn main() -> Result<()> {
         let file = McatFile::from_bytes(
             buffer,
             None,
-            Some("md".to_owned()),
+            Some(config.stdin_ext.clone().unwrap_or_else(|| "md".to_owned())),
             Some("stdin".to_owned()),
             true,
         )?;
