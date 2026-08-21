@@ -253,10 +253,6 @@ fn interact_with_image(
         RasterEncoder::Iterm | RasterEncoder::Sixel => false,
     };
 
-    // kitty/iterm/sixel take time to draw the image, time that will cause a blink for the prompt
-    // ascii on the other hand is faster, so no need for syncing and probbs the terminal not supports 2026 Esc
-    let sync = !resize_for_ascii;
-
     let mut current_index = 0;
     let max_images = images.len();
 
@@ -325,7 +321,7 @@ fn interact_with_image(
                 scale,
             )
             .ok()?;
-            draw_frame(out, buf, sync).ok()?;
+            draw_frame(out, buf).ok()?;
             if should_disable_raw_mode {
                 enable_raw_mode().ok()?;
             }

@@ -64,16 +64,13 @@ pub fn show_help_prompt(
 const SYNC_START: &[u8] = b"\x1b[?2026h";
 const SYNC_END: &[u8] = b"\x1b[?2026l";
 
-pub fn draw_frame(out: &mut impl Write, frame: Vec<u8>, sync: bool) -> io::Result<()> {
+pub fn draw_frame(out: &mut impl Write, frame: Vec<u8>) -> io::Result<()> {
     let mut buffer: Vec<u8> = Vec::with_capacity(frame.len() + 64);
-    if sync {
-        buffer.extend_from_slice(SYNC_START);
-    }
+
+    buffer.extend_from_slice(SYNC_START);
     queue!(buffer, Clear(ClearType::All), MoveTo(0, 0))?;
     buffer.extend_from_slice(&frame);
-    if sync {
-        buffer.extend_from_slice(SYNC_END);
-    }
+    buffer.extend_from_slice(SYNC_END);
 
     out.write_all(&buffer)?;
     out.flush()
