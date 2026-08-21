@@ -255,8 +255,7 @@ fn interact_with_image(
 
     // kitty/iterm/sixel take time to draw the image, time that will cause a blink for the prompt
     // ascii on the other hand is faster, so no need for syncing and probbs the terminal not supports 2026 Esc
-    // tmux tricky, leave as ascii now for simplicity
-    let sync = !resize_for_ascii && !wininfo.is_tmux;
+    let sync = !resize_for_ascii;
 
     let mut current_index = 0;
     let max_images = images.len();
