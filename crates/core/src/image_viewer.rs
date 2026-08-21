@@ -18,15 +18,22 @@ pub fn show_help_prompt(
     state: &ZoomPanViewport,
     current_image: u8,
     max_images: u8,
+    scale: f32,
 ) -> io::Result<()> {
     let current_image = current_image + 1; // 0 based inex to 1
     let help_text =
         "[Arrow/hjkl] Move [n/p] Next/Pre [g/G] Start/End  [+/-] Zoom  [0] Reset  [q/ESC] Quit";
+
+    let zoom_text = if scale < 1.0 {
+        format!("{scale:.1}")
+    } else {
+        state.zoom().to_string()
+    };
+
     let status_text = format!(
-        "Position: ({}, {}) | Zoom: {}x | image: {current_image}/{max_images}",
+        "Position: ({}, {}) | Zoom: {zoom_text}x | image: {current_image}/{max_images}",
         state.pan_x(),
         state.pan_y(),
-        state.zoom()
     );
 
     // Calculate positions (bottom of screen)
@@ -92,7 +99,7 @@ pub fn run_interactive_viewer(
     image_width: u32,
     image_height: u32,
     max_images: u8,
-    mut callback: impl FnMut(&mut ZoomPanViewport, u8) -> Option<()>,
+    mut callback: impl FnMut(&mut ZoomPanViewport, u8, f32) -> Option<()>,
 ) -> std::io::Result<()> {
     enable_raw_mode()?;
 
@@ -100,8 +107,13 @@ pub fn run_interactive_viewer(
         ZoomPanViewport::new(container_width, container_height, image_width, image_height);
     let mut current_image = 0;
 
+    // above 1 zoom is crop using the viewport, below is just making the image smaller.
+    const MIN_SCALE: f32 = 0.2;
+    const SCALE_STEP: f32 = 0.1;
+    let mut scale: f32 = 1.0;
+
     // Initial callback
-    let mut should_quit = callback(&mut viewport, current_image);
+    let mut should_quit = callback(&mut viewport, current_image, scale);
     let mut last_callback_time = std::time::Instant::now();
     let callback_throttle = std::time::Duration::from_millis(16);
     let mut needs_redraw = false;
@@ -246,7 +258,11 @@ pub fn run_interactive_viewer(
                         ..
                     } => {
                         clicked_correct_key = true;
-                        viewport.set_zoom(viewport.zoom() + 1);
+                        if scale < 1.0 {
+                            scale = (scale + SCALE_STEP).min(1.0);
+                        } else {
+                            viewport.set_zoom(viewport.zoom() + 1);
+                        }
                     }
                     KeyEvent {
                         code: KeyCode::Char('-'),
@@ -256,6 +272,9 @@ pub fn run_interactive_viewer(
                         if viewport.zoom() > 1 {
                             clicked_correct_key = true;
                             viewport.set_zoom(viewport.zoom() - 1);
+                        } else if scale > MIN_SCALE {
+                            clicked_correct_key = true;
+                            scale = (scale - SCALE_STEP).max(MIN_SCALE);
                         }
                     }
 
@@ -291,6 +310,7 @@ pub fn run_interactive_viewer(
                         clicked_correct_key = true;
                         viewport.set_zoom(1);
                         viewport.set_pan(0, 0);
+                        scale = 1.0;
                     }
 
                     _ => {}
@@ -306,7 +326,7 @@ pub fn run_interactive_viewer(
         if needs_redraw {
             let now = std::time::Instant::now();
             if now.duration_since(last_callback_time) >= callback_throttle {
-                should_quit = callback(&mut viewport, current_image);
+                should_quit = callback(&mut viewport, current_image, scale);
                 last_callback_time = now;
                 needs_redraw = false;
             }

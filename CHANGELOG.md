@@ -2,6 +2,7 @@
 
 - added mappings for more exotic file ext (e.g. ots, mdc, ott, dotx, potx, ott..)
 - added `-e` flag, gives file ext hint for stdin, helps for when the stdin is something mcat can't know alone, like csv
+- imporved the interactive mode (`-I`), now supports zooming out (below 1)
 - imporved the interactive mode (`-I`), now syncs using Esc 2026, no longer blinks
 - imporved the interactive mode (`-I`), now spamming won't buffer input, but will work as if it does all at once, fixing phantom actions continuing after release
 - improved the sixel encoder, now faster and should produce better looking images/videos

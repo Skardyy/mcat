@@ -266,7 +266,7 @@ fn interact_with_image(
         image_width,
         image_height,
         images.len() as u8,
-        |vp, current_image| {
+        |vp, current_image, scale| {
             if current_image != current_index {
                 current_index = current_image;
                 img = &images[current_image as usize];
@@ -275,18 +275,21 @@ fn interact_with_image(
                 vp.update_image_size(width, height);
             }
             let new_img = vp.apply_to_image(img);
+            let scale = scale.clamp(0.1, 1.0);
+            let pct = (80.0 * scale).round().max(1.0) as u32;
+            let h = ((height as f32) * scale).round().max(1.0) as u32;
             let img = new_img
                 .resize_plus(
                     wininfo,
-                    Some("80%"),
-                    Some(&format!("{height}c")),
+                    Some(&format!("{pct}%")),
+                    Some(&format!("{h}c")),
                     resize_for_ascii,
                     false,
                 )
                 .ok()?;
             let center = wininfo.center_offset(img.width() as u16, resize_for_ascii);
             let img_height_cells = if resize_for_ascii {
-                img.height()
+                img.height() / 2
             } else {
                 wininfo
                     .dim_to_cells(
@@ -319,6 +322,7 @@ fn interact_with_image(
                 vp,
                 current_image,
                 max_images as u8,
+                scale,
             )
             .ok()?;
             draw_frame(out, buf, sync).ok()?;
