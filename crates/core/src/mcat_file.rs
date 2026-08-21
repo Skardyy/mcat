@@ -65,27 +65,67 @@ pub enum McatKind {
 }
 
 impl McatKind {
-    pub fn from_ext(ext: &str) -> Option<Self> {
-        match ext.to_lowercase().as_str() {
-            "gif" => Some(Self::Gif),
-            "svg" => Some(Self::Svg),
-            "jxl" => Some(Self::JpegXL),
-            "png" | "jpg" | "jpeg" | "webp" | "tiff" | "bmp" | "ico" | "avif" | "exr" | "qoi"
-            | "hdr" | "dds" | "farbfeld" | "pnm" | "pbm" | "pgm" | "ppm" | "pam" => {
-                Some(Self::Image)
-            }
-            "mp4" | "webm" | "mkv" | "mov" | "avi" | "wmv" | "flv" | "mpeg" | "ogg" | "m4v" => {
-                Some(Self::Video)
-            }
-            "pdf" => Some(Self::Pdf),
-            "tex" => Some(Self::Tex),
-            "typ" => Some(Self::Typst),
-            "md" | "qmd" => Some(Self::Markdown),
-            "html" | "htm" => Some(Self::Html),
-            "exe" => Some(Self::Exe),
-            "lnk" => Some(Self::Lnk),
-            _ => None,
+    pub fn detect(bytes: Option<&[u8]>, ext: Option<&str>) -> Option<Self> {
+        let ext = ext.unwrap_or("").to_lowercase();
+        let ext = ext.as_str();
+
+        // doesn't go well into our map
+        if ext == "mmd"
+            && let Some(b) = bytes
+            && is_mermaid(b)
+        {
+            return Some(Self::Mermaid);
         }
+
+        let handlers: &[(Checker, &[&str], McatKind)] = &[
+            (is_pdf, &["pdf"], Self::Pdf),
+            (is_gif, &["gif"], Self::Gif), // gif most be before video check.
+            (
+                |b| image::guess_format(b).is_ok(),
+                &[
+                    "png", "jpg", "jpeg", "webp", "tiff", "tif", "bmp", "ico", "avif", "exr",
+                    "qoi", "hdr", "dds", "farbfeld", "pnm", "pbm", "pgm", "ppm", "pam", "tga",
+                    "pcx",
+                ],
+                Self::Image,
+            ),
+            (
+                is_video,
+                &[
+                    "mp4", "webm", "mkv", "mov", "avi", "wmv", "flv", "mpeg", "ogg", "m4v",
+                ],
+                Self::Video,
+            ),
+            (is_exe, &["exe"], Self::Exe),
+            (is_jxl, &["jxl"], Self::JpegXL),
+            (is_svg, &["svg"], Self::Svg),
+            (|_| false, &["mermaid"], Self::Mermaid),
+            (|_| false, &["html", "htm"], Self::Html),
+            (
+                // markdown exts need to be synced with markdownfiy.
+                |_| false,
+                &[
+                    "md", "markdown", "mdown", "mkd", "mkdn", "mdwn", "mdx", "mdc", "qmd", "rmd",
+                    "mmd",
+                ],
+                Self::Markdown,
+            ),
+            (|_| false, &["tex"], Self::Tex),
+            (|_| false, &["typ"], Self::Typst),
+            (|_| false, &["lnk"], Self::Lnk),
+            (|_| false, &["url"], Self::Url),
+        ];
+
+        // 2 pass to make content beat ext.
+        handlers
+            .iter()
+            .find(|(check, _, _)| bytes.map(check).unwrap_or(false))
+            .or_else(|| handlers.iter().find(|(_, exts, _)| exts.contains(&ext)))
+            .map(|(_, _, kind)| kind.clone())
+    }
+
+    pub fn from_ext(ext: &str) -> Option<Self> {
+        Self::detect(None, Some(ext))
     }
 }
 
@@ -146,7 +186,7 @@ impl McatFile {
         } else {
             bytes
         };
-        let kind = Self::detect_kind(&bytes, ext.as_deref());
+        let kind = McatKind::detect(Some(&bytes), ext.as_deref()).unwrap_or_default();
 
         Ok(Self {
             bytes,
@@ -155,41 +195,6 @@ impl McatFile {
             ext,
             id,
         })
-    }
-
-    fn detect_kind(bytes: &[u8], ext: Option<&str>) -> McatKind {
-        let ext = ext.unwrap_or("");
-
-        // doesn't go well into our map
-        if ext == "mmd" && is_mermaid(bytes) {
-            return McatKind::Mermaid;
-        }
-
-        let handlers: &[(Checker, &str, McatKind)] = &[
-            (is_pdf, "", McatKind::Pdf),
-            (is_gif, "", McatKind::Gif), // gif most be before video check.
-            (|b| image::guess_format(b).is_ok(), "", McatKind::Image),
-            (is_video, "", McatKind::Video),
-            (is_exe, "", McatKind::Exe),
-            (is_jxl, "", McatKind::JpegXL),
-            (is_svg, "svg", McatKind::Svg),
-            (|_| false, "mermaid", McatKind::Mermaid),
-            (|_| false, "html", McatKind::Html),
-            (|_| false, "htm", McatKind::Html),
-            (|_| false, "md", McatKind::Markdown),
-            (|_| false, "qmd", McatKind::Markdown),
-            (|_| false, "mmd", McatKind::Markdown),
-            (|_| false, "tex", McatKind::Tex),
-            (|_| false, "typ", McatKind::Typst),
-            (|_| false, "lnk", McatKind::Lnk),
-            (|_| false, "url", McatKind::Url),
-        ];
-
-        handlers
-            .iter()
-            .find(|(check, e, _)| check(bytes) || (!e.is_empty() && ext == *e))
-            .map(|(_, _, kind)| kind.clone())
-            .unwrap_or_default()
     }
 
     pub fn to_html(&self, theme_for_style: Option<Theme>, inline_images: bool) -> Result<String> {

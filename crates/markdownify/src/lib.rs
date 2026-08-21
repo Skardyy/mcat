@@ -154,25 +154,46 @@ impl MarkdownifyInput {
                     ))
                 },
             ),
-            (is_docx, &["docx"], &|| docx::parse_docx(bytes, inline)),
-            (is_pptx, &["pptx"], &|| pptx::parse_pptx(bytes, inline)),
-            (is_odt, &["odt"], &|| opendoc::parse_opendoc(bytes, inline)),
-            (is_odp, &["odp"], &|| opendoc::parse_opendoc(bytes, inline)),
-            (is_ods, &["ods"], &|| sheets::parse_sheets(bytes)),
+            (is_docx, &["docx", "docm", "dotx", "dotm"], &|| {
+                docx::parse_docx(bytes, inline)
+            }),
+            (
+                is_pptx,
+                &["pptx", "pptm", "potx", "potm", "ppsx", "ppsm"],
+                &|| pptx::parse_pptx(bytes, inline),
+            ),
+            (is_odt, &["odt", "ott", "odm", "oth"], &|| {
+                opendoc::parse_opendoc(bytes, inline)
+            }),
+            (is_odp, &["odp", "otp"], &|| {
+                opendoc::parse_opendoc(bytes, inline)
+            }),
+            (is_ods, &["ods", "ots"], &|| sheets::parse_sheets(bytes)),
             (is_xlsx, &["xlsx"], &|| sheets::parse_sheets(bytes)),
             (is_xls, &["xls"], &|| sheets::parse_sheets(bytes)),
             (is_zip, &["zip"], &|| archives::parse_zip(bytes, inline)),
-            (is_tar, &["tar"], &|| archives::parse_tar(bytes, inline)),
-            (|_| false, &["csv"], &|| sheets::parse_csv(bytes)),
-            (|_| false, &["xlsm", "xlsb", "xla", "xlam"], &|| {
-                sheets::parse_sheets(bytes)
+            (is_tar, &["tar", "tgz", "txz"], &|| {
+                archives::parse_tar(bytes, inline)
             }),
-            (|_| false, &["html"], &|| {
+            (|_| false, &["csv", "tsv"], &|| sheets::parse_csv(bytes)),
+            (
+                |_| false,
+                &["xlsm", "xlsb", "xla", "xlam", "xltx", "xltm"],
+                &|| sheets::parse_sheets(bytes),
+            ),
+            (|_| false, &["html", "htm"], &|| {
                 let html = parse_text(bytes)?;
                 let md = format!("```html\n{html}\n```");
                 Ok(md)
             }),
-            (|_| false, &["md", "qmd", "mmd"], &|| parse_text(bytes)),
+            (
+                |_| false,
+                &[
+                    "md", "markdown", "mdown", "mkd", "mkdn", "mdwn", "mdx", "mdc", "qmd", "rmd",
+                    "mmd",
+                ],
+                &|| parse_text(bytes),
+            ),
         ];
 
         let result = handlers
