@@ -286,12 +286,16 @@ fn interact_with_image(
                 )
                 .ok()?;
             let center = wininfo.center_offset(img.width() as u16, resize_for_ascii);
-            let img_height_cells = wininfo
-                .dim_to_cells(
-                    &format!("{}px", img.height()),
-                    term_misc::SizeDirection::Height,
-                )
-                .unwrap_or(height as u32);
+            let img_height_cells = if resize_for_ascii {
+                img.height()
+            } else {
+                wininfo
+                    .dim_to_cells(
+                        &format!("{}px", img.height()),
+                        term_misc::SizeDirection::Height,
+                    )
+                    .unwrap_or(height as u32)
+            };
             let v_pad = (height as u32).saturating_sub(img_height_cells) / 2;
             if should_disable_raw_mode {
                 disable_raw_mode().ok()?;
