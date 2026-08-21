@@ -106,8 +106,8 @@ pub fn run_interactive_viewer(
     let callback_throttle = std::time::Duration::from_millis(16);
     let mut needs_redraw = false;
 
-    while should_quit.is_some() {
-        if event::poll(Duration::from_millis(16))? {
+    'outer: while should_quit.is_some() {
+        while event::poll(Duration::from_millis(16))? {
             // ~60fps
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Release {
@@ -123,7 +123,7 @@ pub fn run_interactive_viewer(
                     }
                     | KeyEvent {
                         code: KeyCode::Esc, ..
-                    } => break,
+                    } => break 'outer,
 
                     // next image
                     KeyEvent {
