@@ -2,6 +2,7 @@
 
 - added mappings for more exotic file ext (e.g. ots, mdc, ott, dotx, potx, ott..)
 - added `-e` flag, gives file ext hint for stdin, helps for when the stdin is something mcat can't know alone, like csv
+- imporved the interactive mode (`-I`), now syncs using Esc 2026, no longer blinks
 - improved the sixel encoder, now faster and should produce better looking images/videos
 - improved tmux support for kitty image protocol
 - improved iterm and sixel frame encoders, added a scheduler for varying sleep times and frame drop, also no longer saving the results in ram for loop, the video will just redemux and mcat will re render

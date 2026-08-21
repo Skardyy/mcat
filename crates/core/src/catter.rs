@@ -15,7 +15,7 @@ use tracing::{info, warn};
 
 use crate::{
     config::{ColorMode, McatConfig, OutputFormat},
-    image_viewer::{clear_screen, run_interactive_viewer, show_help_prompt},
+    image_viewer::{clear_screen, draw_frame, run_interactive_viewer, show_help_prompt},
     markdown_viewer,
     mcat_file::{McatFile, McatKind},
 };
@@ -252,6 +252,12 @@ fn interact_with_image(
         RasterEncoder::Ascii => true,
         RasterEncoder::Iterm | RasterEncoder::Sixel => false,
     };
+
+    // kitty/iterm/sixel take time to draw the image, time that will cause a blink for the prompt
+    // ascii on the other hand is faster, so no need for syncing and probbs the terminal not supports 2026 Esc
+    // tmux tricky, leave as ascii now for simplicity
+    let sync = !resize_for_ascii && !wininfo.is_tmux;
+
     let mut current_index = 0;
     let max_images = images.len();
 
@@ -312,8 +318,7 @@ fn interact_with_image(
                 max_images as u8,
             )
             .ok()?;
-            clear_screen(out, Some(buf)).ok()?;
-            out.flush().ok()?;
+            draw_frame(out, buf, sync).ok()?;
             if should_disable_raw_mode {
                 enable_raw_mode().ok()?;
             }
