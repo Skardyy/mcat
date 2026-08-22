@@ -283,33 +283,6 @@ pub struct McatConfig {
     )]
     pub img_height: String,
 
-    /// Image zoom level
-    #[arg(
-        long,
-        value_name = "level",
-        help_heading = "Image/Video Viewing",
-        env = "MCAT_IMG_ZOOM"
-    )]
-    pub img_zoom: Option<usize>,
-
-    /// X offset from top-left corner in pixels
-    #[arg(
-        long,
-        value_name = "pixels",
-        help_heading = "Image/Video Viewing",
-        env = "MCAT_IMG_X_OFFSET"
-    )]
-    pub img_x_offset: Option<i32>,
-
-    /// Y offset from top-left corner in pixels
-    #[arg(
-        long,
-        value_name = "pixels",
-        help_heading = "Image/Video Viewing",
-        env = "MCAT_IMG_Y_OFFSET"
-    )]
-    pub img_y_offset: Option<i32>,
-
     // ## Conversion ##
     /// Add styling to HTML output
     #[arg(long, help_heading = "Conversion", env = "MCAT_STYLE_HTML")]
