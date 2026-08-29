@@ -16,3 +16,4 @@
 >
 > - files Compressed with `.xz` or `.gz` will also work
 > - `pdf`, `typst`, and `tex` when passed alone into the interactive viewer, will show all their pages
+> - avif has support, but requires compiling with the `avif` feature

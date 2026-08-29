@@ -32,22 +32,7 @@ fontdb = "0.23.0"
 futures = "0.3.33"
 hayro = "0.7.1"
 ignore = "0.4.31"
-image = { version = "0.25.10", default-features = false, features = [
-  "bmp",
-  "dds",
-  "exr",
-  "ff",
-  "gif",
-  "hdr",
-  "ico",
-  "jpeg",
-  "png",
-  "pnm",
-  "qoi",
-  "tga",
-  "tiff",
-  "webp",
-] }
+image = { version = "0.25.10", default-features = false }
 indicatif = "0.18.6"
 infer = "0.22.0"
 inquire = "0.9.4"

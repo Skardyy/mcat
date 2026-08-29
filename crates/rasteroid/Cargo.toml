@@ -16,7 +16,7 @@ base64.workspace = true
 color_quant.workspace = true
 crossterm.workspace = true
 fast_image_resize.workspace = true
-image.workspace = true
+image = { workspace = true, features = ["png", "jpeg", "pnm"] }
 rand.workspace = true
 signal-hook.workspace = true
 thiserror.workspace = true
