@@ -1,4 +1,4 @@
-## Src
+## V0.6.5
 
 - added optional avif support, feature `avif`
 - added mappings for more exotic file ext (e.g. ots, mdc, ott, dotx, potx, ott..)
