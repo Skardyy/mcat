@@ -1,6 +1,6 @@
 [package]
 name = "mcat"
-version = "0.6.4"
+version = "0.6.5"
 description = "Terminal image, video, and Markdown viewer"
 keywords = ["file-converter", "iterm", "kitty", "markdown", "sixel"]
 categories = [
