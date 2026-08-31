@@ -157,7 +157,7 @@ pub fn cat(files: Vec<McatFile>, out: &mut impl Write, config: &McatConfig) -> R
                 .unwrap_or(false);
             match mcat_file.kind {
                 McatKind::Video | McatKind::Gif => {
-                    let (mut frames, mut width, _) = mcat_file.to_frames()?;
+                    let (mut frames, mut width, _) = mcat_file.to_frames(encoder)?;
                     // frames don't give width according to the encoder
                     if is_ascii {
                         width = wininfo

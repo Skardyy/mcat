@@ -1,3 +1,7 @@
+## Src
+
+- fixed an regression on kitty animation
+
 ## V0.6.5
 
 - added optional avif support, feature `avif`

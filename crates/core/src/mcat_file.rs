@@ -432,22 +432,24 @@ impl McatFile {
         })
     }
 
-    pub fn to_frames(&self) -> Result<(Box<dyn Iterator<Item = rasteroid::VideoFrame>>, u32, u32)> {
+    pub fn to_frames(
+        &self,
+        enc: RasterEncoder,
+    ) -> Result<(Box<dyn Iterator<Item = rasteroid::VideoFrame>>, u32, u32)> {
         let mut command = fetch_manager::get_ffmpeg().context(
             "ffmpeg isn't installed. either install it manually, or call `mcat --fetch-ffmpeg`",
         )?;
 
-        if let Some(path) = &self.path {
-            command
-                .hwaccel("auto")
-                .arg("-stream_loop") // we only use in loops, save me having to loop
-                .arg("-1")
-                .no_audio()
-                .input(path.to_string_lossy())
-                .rawvideo();
-        } else {
-            command.hwaccel("auto").input("pipe:0").rawvideo();
+        command.hwaccel("auto");
+        if enc != RasterEncoder::Kitty {
+            // kitty doesn't need loop, rasteroid impl
+            command.arg("-stream_loop").arg("-1");
         }
+        match &self.path {
+            Some(path) => command.input(path.to_string_lossy()),
+            None => command.input("pipe:0"),
+        };
+        command.no_audio().rawvideo();
 
         let mut child = command.spawn()?;
 
