@@ -1,6 +1,8 @@
 ## Src
 
 - fixed an regression on kitty animation
+- added support for animated avif files in the video route
+- added fallback to multi stream container, choosing a stream with more then 1 fps
 
 ## V0.6.5
 

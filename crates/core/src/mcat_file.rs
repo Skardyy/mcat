@@ -6,7 +6,7 @@ use infer::{
     app::is_exe,
     archive::is_pdf,
     image::{is_gif, is_jxl},
-    is_video,
+    is_video as infer_is_video,
 };
 use lzma_rust2::XzReader;
 use markdownify::MarkdownifyInput;
@@ -436,6 +436,14 @@ impl McatFile {
         &self,
         enc: RasterEncoder,
     ) -> Result<(Box<dyn Iterator<Item = rasteroid::VideoFrame>>, u32, u32)> {
+        self.spawn_frames(enc, None)
+    }
+
+    fn spawn_frames(
+        &self,
+        enc: RasterEncoder,
+        map: Option<u32>,
+    ) -> Result<(Box<dyn Iterator<Item = rasteroid::VideoFrame>>, u32, u32)> {
         let mut command = fetch_manager::get_ffmpeg().context(
             "ffmpeg isn't installed. either install it manually, or call `mcat --fetch-ffmpeg`",
         )?;
@@ -449,7 +457,11 @@ impl McatFile {
             Some(path) => command.input(path.to_string_lossy()),
             None => command.input("pipe:0"),
         };
-        command.no_audio().rawvideo();
+        command.no_audio();
+        if let Some(idx) = map {
+            command.arg("-map").arg(format!("0:{idx}"));
+        }
+        command.rawvideo();
 
         let mut child = command.spawn()?;
 
@@ -462,20 +474,47 @@ impl McatFile {
             });
         }
 
-        let mut frames = child.iter()?.filter_frames().map(|f| {
+        let mut iter = child.iter()?;
+        let meta = iter.collect_metadata()?;
+
+        let out = meta
+            .output_streams
+            .iter()
+            .find_map(|s| s.video_data())
+            .context("no video stream in ffmpeg output")?;
+
+        // a 1-fps pick is a still image, never a real track. only then look for a
+        // better candidate: best resolution among the tracks that aren't stills.
+        if map.is_none() && out.fps <= 1.0 {
+            let better = meta
+                .input_streams
+                .iter()
+                .filter_map(|s| s.video_data().map(|v| (s.stream_index, v)))
+                .filter(|(_, v)| v.fps > 1.0)
+                .max_by_key(|(_, v)| v.width * v.height);
+
+            if let Some((idx, v)) = better {
+                debug!(
+                    idx,
+                    fps = v.fps,
+                    w = v.width,
+                    h = v.height,
+                    "still image, remapping"
+                );
+                let _ = child.kill();
+                return self.spawn_frames(enc, Some(idx));
+            }
+        }
+
+        let (width, height) = (out.width, out.height);
+        debug!(width, height, fps = out.fps, "reading frames");
+
+        let frames = iter.filter_frames().map(|f| {
             let rgb = image::RgbImage::from_raw(f.width, f.height, f.data).unwrap_or_default();
             (image::DynamicImage::ImageRgb8(rgb), f.timestamp)
         });
 
-        let first = frames.next().context("no frames found")?;
-        let width = first.0.width();
-        let height = first.0.height();
-
-        Ok((
-            Box::new(std::iter::once(first).chain(frames)),
-            width,
-            height,
-        ))
+        Ok((Box::new(frames), width, height))
     }
 }
 
@@ -801,4 +840,22 @@ fn is_mermaid(b: &[u8]) -> bool {
         return KEYWORDS.contains(&first);
     }
     false
+}
+
+fn is_video(buf: &[u8]) -> bool {
+    if infer_is_video(buf) {
+        return true;
+    }
+
+    // animated avif
+    if buf.len() < 16 || &buf[4..8] != b"ftyp" {
+        return false;
+    }
+    let Ok(size) = buf[0..4].try_into().map(u32::from_be_bytes) else {
+        return false;
+    };
+    let end = (size as usize).clamp(16, buf.len()) & !3;
+    buf[8..end]
+        .chunks_exact(4)
+        .any(|b| b == b"avis" || b == b"msf1")
 }
