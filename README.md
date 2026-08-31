@@ -4,7 +4,7 @@
 
 <img src="https://i.imgur.com/qSSM6Iy.png" width="128"/>
 
-Parse, Convert and Preview files  
+View images, video, Markdown, PDF, and Office documents  
 **_In your Terminal_**
 
 ![Total Downloads](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/skardyy/d30563e4945958e7d4f7560cf003c33c/raw/mcat-downloads.json) ![Version](https://img.shields.io/crates/v/mcat?style=for-the-badge)
