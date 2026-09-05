@@ -6,7 +6,7 @@ use rasteroid::{Encoder, term_misc};
 use rasteroid::{RasterEncoder, term_misc::SizeDirection};
 use rayon::prelude::*;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use tracing::{debug, info, warn};
 
@@ -156,6 +156,18 @@ fn ext_to_svg(ext: &str) -> &'static str {
     }
 }
 
+struct Entry {
+    path: PathBuf,
+    // the ext for selection
+    ext: String,
+    // the ext for sorting
+    sort_ext: String,
+    filename: String,
+    is_dir: bool,
+    size: u64,
+    time: Option<std::time::SystemTime>,
+}
+
 pub fn lsix(input: impl AsRef<str>, out: &mut impl Write, mut ctx: McatConfig) -> Result<()> {
     let dir_path = Path::new(input.as_ref());
     let walker = WalkBuilder::new(dir_path)
@@ -198,8 +210,9 @@ pub fn lsix(input: impl AsRef<str>, out: &mut impl Write, mut ctx: McatConfig) -
     ctx.img_width = width_formatted;
     ctx.img_height = ctx.ls_height.clone();
 
-    // Collect all valid paths first
-    let mut paths: Vec<_> = walker
+    // Collect all valid entries
+    let needs_meta = matches!(ctx.sort, SortMode::Size | SortMode::Time);
+    let mut paths: Vec<Entry> = walker
         .filter_map(|entry| {
             let entry = entry.ok()?;
             let path = entry.path().to_path_buf();
@@ -211,24 +224,53 @@ pub fn lsix(input: impl AsRef<str>, out: &mut impl Write, mut ctx: McatConfig) -
                 .unwrap_or_default()
                 .to_string_lossy()
                 .into_owned();
-            if path.is_dir() {
-                return Some((path, "IAMADIR".to_owned(), filename));
+            let is_dir = entry.file_type().is_some_and(|t| t.is_dir());
+
+            let meta = if needs_meta {
+                entry.metadata().ok()
+            } else {
+                None
+            };
+            let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
+            let time = meta.as_ref().and_then(|m| m.modified().ok());
+
+            if is_dir {
+                return Some(Entry {
+                    path,
+                    ext: "IAMADIR".to_owned(),
+                    sort_ext: String::new(),
+                    filename,
+                    is_dir,
+                    size,
+                    time,
+                });
             }
-            let ext = path
+
+            let sort_ext = path
                 .extension()
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_lowercase();
-            if ext.is_empty() && filename.contains(".") {
-                return Some((path, filename.replace(".", ""), filename));
-            }
-            Some((path, ext, filename))
+            let ext = if sort_ext.is_empty() && filename.contains(".") {
+                filename.replace(".", "")
+            } else {
+                sort_ext.clone()
+            };
+
+            Some(Entry {
+                path,
+                ext,
+                sort_ext,
+                filename,
+                is_dir,
+                size,
+                time,
+            })
         })
         .collect();
+
     paths.sort_by(|a, b| {
-        let a_is_dir = a.0.is_dir();
-        let b_is_dir = b.0.is_dir();
-        let base_dir_order = b_is_dir.cmp(&a_is_dir);
+        let base_dir_order = b.is_dir.cmp(&a.is_dir);
         let dir_order = if ctx.reverse {
             base_dir_order.reverse()
         } else {
@@ -239,41 +281,20 @@ pub fn lsix(input: impl AsRef<str>, out: &mut impl Write, mut ctx: McatConfig) -
             std::cmp::Ordering::Equal => {
                 let order = match ctx.sort {
                     SortMode::Name => {
-                        let a_str = a.0.to_string_lossy().to_lowercase();
-                        let b_str = b.0.to_string_lossy().to_lowercase();
+                        let a_str = a.path.to_string_lossy().to_lowercase();
+                        let b_str = b.path.to_string_lossy().to_lowercase();
                         a_str.cmp(&b_str)
                     }
-                    SortMode::Size => {
-                        let a_size = a.0.metadata().ok().map(|m| m.len()).unwrap_or(0);
-                        let b_size = b.0.metadata().ok().map(|m| m.len()).unwrap_or(0);
-                        a_size.cmp(&b_size)
-                    }
-                    SortMode::Time => {
-                        let a_time = a.0.metadata().ok().and_then(|m| m.modified().ok());
-                        let b_time = b.0.metadata().ok().and_then(|m| m.modified().ok());
-                        a_time.cmp(&b_time)
-                    }
-                    SortMode::Type => {
-                        let a_ext =
-                            a.0.extension()
-                                .and_then(|e| e.to_str())
-                                .unwrap_or("")
-                                .to_lowercase();
-                        let b_ext =
-                            b.0.extension()
-                                .and_then(|e| e.to_str())
-                                .unwrap_or("")
-                                .to_lowercase();
-
-                        match a_ext.cmp(&b_ext) {
-                            std::cmp::Ordering::Equal => {
-                                let a_str = a.0.to_string_lossy().to_lowercase();
-                                let b_str = b.0.to_string_lossy().to_lowercase();
-                                a_str.cmp(&b_str)
-                            }
-                            ext_order => ext_order,
+                    SortMode::Size => a.size.cmp(&b.size),
+                    SortMode::Time => a.time.cmp(&b.time),
+                    SortMode::Type => match a.sort_ext.cmp(&b.sort_ext) {
+                        std::cmp::Ordering::Equal => {
+                            let a_str = a.path.to_string_lossy().to_lowercase();
+                            let b_str = b.path.to_string_lossy().to_lowercase();
+                            a_str.cmp(&b_str)
                         }
-                    }
+                        ext_order => ext_order,
+                    },
                 };
 
                 if ctx.reverse { order.reverse() } else { order }
@@ -286,8 +307,9 @@ pub fn lsix(input: impl AsRef<str>, out: &mut impl Write, mut ctx: McatConfig) -
     // Process images in parallel
     let images: Vec<_> = paths
         .into_par_iter()
-        .filter_map(|(path, ext, filename)| {
-            let (img, kind) = if path.is_dir() {
+        .filter_map(|entry| {
+            let Entry { path, ext, filename, is_dir, .. } = entry;
+            let (img, kind) = if is_dir {
                 (None, McatKind::PreMarkdown)
             } else {
                 // compressed files rarely are the once we want, and they will be heavy cpu time.
