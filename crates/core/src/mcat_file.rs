@@ -854,8 +854,10 @@ fn is_video(buf: &[u8]) -> bool {
     let Ok(size) = buf[0..4].try_into().map(u32::from_be_bytes) else {
         return false;
     };
-    let end = (size as usize).clamp(16, buf.len()) & !3;
+    let end = (size as usize).clamp(16, buf.len());
     buf[8..end]
-        .chunks_exact(4)
-        .any(|b| b == b"avis" || b == b"msf1")
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .any(|b| matches!(b, b"avis" | b"msf1"))
 }
