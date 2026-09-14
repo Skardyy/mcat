@@ -3,6 +3,7 @@
 - fixed an regression on kitty animation
 - added support for animated avif files in the video route
 - added fallback to multi stream container, choosing a stream with more then 1 fps
+- added more syntax highlighting support for the interactive mode `-I`
 
 ## V0.6.5
 

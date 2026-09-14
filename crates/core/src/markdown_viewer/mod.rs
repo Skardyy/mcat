@@ -110,6 +110,7 @@ pub fn md_to_html(markdown: &str, theme: &Theme, style: bool) -> String {
     let adapter = SyntectAdapterBuilder::new()
         .theme("dark")
         .theme_set(theme_set)
+        .syntax_set(two_face::syntax::extra_newlines())
         .build();
     if style {
         plugins.render.codefence_syntax_highlighter = Some(&adapter);
