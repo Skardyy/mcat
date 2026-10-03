@@ -454,7 +454,7 @@ impl McatFile {
             command.arg("-stream_loop").arg("-1");
         }
         match &self.path {
-            Some(path) => command.input(path.to_string_lossy()),
+            Some(path) => command.input(path),
             None => command.input("pipe:0"),
         };
         command.no_audio();
