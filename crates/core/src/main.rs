@@ -83,15 +83,6 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    if config
-        .wininfo
-        .as_ref()
-        .context("this is likely a bug, wininfo is None")?
-        .is_tmux
-    {
-        rasteroid::set_tmux_passthrough(true);
-    }
-
     // if ls
     if config
         .input

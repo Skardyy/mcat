@@ -455,5 +455,5 @@ fn encode_frames_sep(
 }
 
 pub fn is_kitty_capable(env: &EnvIdentifiers) -> bool {
-    env.term_contains("kitty") || env.term_contains("ghostty")
+    env.is_kitty || env.term_contains("kitty") || env.term_contains("ghostty")
 }

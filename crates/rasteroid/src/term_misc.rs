@@ -369,6 +369,8 @@ fn get_size_windows() -> Option<(u16, u16)> {
 #[derive(Clone)]
 pub struct EnvIdentifiers {
     pub data: HashMap<String, String>,
+    pub is_kitty: bool,
+    pub is_sixel: bool,
 }
 
 impl Default for EnvIdentifiers {
@@ -393,7 +395,18 @@ impl Default for EnvIdentifiers {
 
         result.insert("OS".to_string(), env::consts::OS.to_string());
 
-        let mut env = EnvIdentifiers { data: result };
+        let mut env = EnvIdentifiers {
+            data: result,
+            is_kitty: false,
+            is_sixel: false,
+        };
+        let is_tmux = env.is_tmux();
+        if is_tmux {
+            crate::set_tmux_passthrough(true);
+        }
+        let (is_kitty, is_sixel) = probe_graphics_caps(is_tmux).unwrap_or((false, false));
+        env.is_kitty = is_kitty;
+        env.is_sixel = is_sixel;
         env.check_tmux_term();
         env
     }
@@ -477,4 +490,88 @@ pub fn setup_signal_handler() -> Arc<AtomicBool> {
     }
 
     shutdown
+}
+
+#[cfg(unix)]
+fn probe_graphics_caps(is_tmux: bool) -> std::io::Result<(bool, bool)> {
+    use std::fs::OpenOptions;
+    use std::io::{Read, Write};
+    use std::os::fd::AsRawFd;
+    use std::time::{Duration, Instant};
+
+    let mut tty = OpenOptions::new().read(true).write(true).open("/dev/tty")?;
+    let fd = tty.as_raw_fd();
+
+    let old = unsafe {
+        let mut o: libc::termios = std::mem::zeroed();
+        if libc::tcgetattr(fd, &mut o) != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        let mut raw = o;
+        libc::cfmakeraw(&mut raw);
+        if libc::tcsetattr(fd, libc::TCSANOW, &raw) != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        o
+    };
+
+    let result = (|| -> std::io::Result<(bool, bool)> {
+        let query: &[u8] = if is_tmux {
+            b"\x1bPtmux;\x1b\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\x1b\\\x1b\\\x1bPtmux;\x1b\x1b[c\x1b\\"
+        } else {
+            b"\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\x1b[c"
+        };
+        tty.write_all(query)?;
+        tty.flush()?;
+
+        let mut buf = Vec::with_capacity(128);
+        let deadline = Instant::now() + Duration::from_millis(250);
+        let mut chunk = [0u8; 128];
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                break;
+            }
+            let mut pfd = libc::pollfd {
+                fd,
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            if unsafe { libc::poll(&mut pfd, 1, left.as_millis() as i32) } <= 0 {
+                break;
+            }
+            let n = tty.read(&mut chunk)?;
+            if n == 0 {
+                break;
+            }
+            buf.extend_from_slice(&chunk[..n]);
+            if buf.windows(3).any(|w| w == b"\x1b[?") && buf.contains(&b'c') {
+                break;
+            }
+        }
+
+        let kitty = buf.windows(10).any(|w| w == b"\x1b_Gi=31;OK");
+        let sixel = buf
+            .windows(3)
+            .position(|w| w == b"\x1b[?")
+            .map(|s| &buf[s + 3..])
+            .and_then(|r| r.iter().position(|&b| b == b'c').map(|e| &r[..e]))
+            .map(|p| p.split(|&b| b == b';').any(|x| x == b"4"))
+            .unwrap_or(false);
+        Ok((kitty, sixel))
+    })();
+
+    unsafe {
+        libc::tcsetattr(fd, libc::TCSANOW, &old);
+    }
+    result
+}
+
+#[cfg(windows)]
+fn probe_graphics_caps(_is_tmux: bool) -> std::io::Result<(bool, bool)> {
+    // TODO: open CONIN$ + CONOUT$ via CreateFileW, SetConsoleMode save+raw
+    //       (strip ENABLE_LINE_INPUT|ENABLE_ECHO_INPUT|ENABLE_PROCESSED_INPUT,
+    //       add ENABLE_VIRTUAL_TERMINAL_PROCESSING), WriteFile the query,
+    //       WaitForSingleObject + ReadFile loop with 250ms budget, restore modes.
+    Ok((false, false))
 }

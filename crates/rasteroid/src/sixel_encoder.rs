@@ -30,8 +30,10 @@ pub fn encode_image(
 }
 
 pub fn is_sixel_capable(env: &EnvIdentifiers) -> bool {
-    // has way more support, i just think sixel is bad
-    env.term_contains("foot") || env.has_key("WT_PROFILE_ID") || env.term_contains("sixel-tmux")
+    env.is_sixel
+        || env.term_contains("foot")
+        || env.has_key("WT_PROFILE_ID")
+        || env.term_contains("sixel-tmux")
 }
 
 fn encode_sixel(
