@@ -261,10 +261,51 @@ fn load_slide_images(
     map
 }
 
-fn load_notes(archive: &mut ZipArchive<Cursor<&[u8]>>, slide_index: usize) -> Option<String> {
-    let path = format!("ppt/notesSlides/notesSlide{}.xml", slide_index);
+/// The notes part of a slide: the target of its `notesSlide` relationship. Notes parts are
+/// numbered in the order the notes were written, not by slide, so with notes only on slide 2
+/// they are `notesSlide1.xml`. A slide without a relationships part falls back to its number.
+fn notes_path(
+    archive: &mut ZipArchive<Cursor<&[u8]>>,
+    slide_path: &str,
+    slide_num: usize,
+) -> Option<String> {
+    let file_name = slide_path.split('/').next_back().unwrap_or("");
+    let rels_path = format!("ppt/slides/_rels/{}.rels", file_name);
     let mut xml = String::new();
-    archive.by_name(&path).ok()?.read_to_string(&mut xml).ok()?;
+    match archive.by_name(&rels_path) {
+        Ok(mut f) => {
+            f.read_to_string(&mut xml).ok()?;
+        }
+        Err(_) => return Some(format!("ppt/notesSlides/notesSlide{}.xml", slide_num)),
+    }
+
+    let mut reader = Reader::from_str(&xml);
+    let mut buf = Vec::new();
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(Event::Empty(e) | Event::Start(e)) if e.name().as_ref() == b"Relationship" => {
+                let is_notes = get_attr(&e, b"Type", &reader)
+                    .is_some_and(|kind| kind.ends_with("/notesSlide"));
+                if is_notes && let Some(target) = get_attr(&e, b"Target", &reader) {
+                    return Some(if let Some(rest) = target.strip_prefix("../") {
+                        format!("ppt/{}", rest)
+                    } else if let Some(rest) = target.strip_prefix('/') {
+                        rest.to_string()
+                    } else {
+                        format!("ppt/slides/{}", target)
+                    });
+                }
+            }
+            Ok(Event::Eof) | Err(_) => return None,
+            _ => {}
+        }
+        buf.clear();
+    }
+}
+
+fn load_notes(archive: &mut ZipArchive<Cursor<&[u8]>>, path: &str) -> Option<String> {
+    let mut xml = String::new();
+    archive.by_name(path).ok()?.read_to_string(&mut xml).ok()?;
 
     let mut reader = Reader::from_str(&xml);
     let mut buf = Vec::new();
@@ -633,7 +674,9 @@ pub fn parse_pptx(content: impl AsRef<[u8]>, inline: bool) -> Result<String, Par
         let ctx = PptxContext::new(rels, images, inline);
         let mut slide_md = parse_slide(&xml, ctx)?;
 
-        if let Some(notes) = load_notes(&mut archive, slide_num) {
+        if let Some(notes) = notes_path(&mut archive, path, slide_num)
+            .and_then(|notes_path| load_notes(&mut archive, &notes_path))
+        {
             slide_md.push_str(&format!("\n> {}\n", notes));
         }
 
@@ -677,6 +720,53 @@ mod tests {
             md.contains("Subtitle text on title slide"),
             "subtitle missing"
         );
+    }
+
+    /// Only slide 2 has notes, so they are `notesSlide1.xml`: the slide's relationship, not
+    /// the file number, says which slide they belong to.
+    #[test]
+    fn speaker_notes_follow_the_slide_relationship() {
+        use std::io::Write;
+        use zip::write::{SimpleFileOptions, ZipWriter};
+
+        const SLIDE: &str = r#"<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree><p:sp><p:nvSpPr><p:cNvPr id="2" name="Body"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:txBody><a:bodyPr/><a:p><a:r><a:t>TEXT</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>"#;
+        const RELS: &str = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+        let rels = |extra: &str| {
+            format!(
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{RELS}/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>{extra}</Relationships>"#
+            )
+        };
+        let notes = r#"<p:notes xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree><p:sp><p:nvSpPr><p:cNvPr id="3" name="Notes"/><p:cNvSpPr/><p:nvPr><p:ph type="body" idx="1"/></p:nvPr></p:nvSpPr><p:txBody><a:bodyPr/><a:p><a:r><a:t>Note for slide 2</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:notes>"#;
+
+        let mut bytes = Vec::new();
+        {
+            let mut zip = ZipWriter::new(std::io::Cursor::new(&mut bytes));
+            let options = SimpleFileOptions::default();
+            let notes_rel = format!(
+                r#"<Relationship Id="rId2" Type="{RELS}/notesSlide" Target="../notesSlides/notesSlide1.xml"/>"#
+            );
+            for n in 1..=3 {
+                zip.start_file(format!("ppt/slides/slide{n}.xml"), options)
+                    .unwrap();
+                zip.write_all(SLIDE.replace("TEXT", &format!("Slide {n}")).as_bytes())
+                    .unwrap();
+                zip.start_file(format!("ppt/slides/_rels/slide{n}.xml.rels"), options)
+                    .unwrap();
+                zip.write_all(rels(if n == 2 { &notes_rel } else { "" }).as_bytes())
+                    .unwrap();
+            }
+            zip.start_file("ppt/notesSlides/notesSlide1.xml", options)
+                .unwrap();
+            zip.write_all(notes.as_bytes()).unwrap();
+            zip.finish().unwrap();
+        }
+
+        let md = parse_pptx(&bytes, true).expect("deck should parse");
+        let slides: Vec<&str> = md.split("\n\n---\n\n").collect();
+        assert_eq!(slides.len(), 3, "{md}");
+        assert!(!slides[0].contains("Note for slide 2"), "{md}");
+        assert!(slides[1].contains("Note for slide 2"), "{md}");
+        assert!(!slides[2].contains("Note for slide 2"), "{md}");
     }
 
     #[test]
