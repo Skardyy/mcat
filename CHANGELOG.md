@@ -6,6 +6,7 @@
 - added more syntax highlighting support for the interactive mode `-I`
 - added OSC query for sixel and kitty graphics support
 - added OSC query for the terminal bg, now with auto theme - choosing the best theme according to the terminal bg
+- added `OSC 9;4` support for kitty too (terminal progress bar)
 
 ## V0.6.5
 

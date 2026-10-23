@@ -472,7 +472,9 @@ impl McatConfig {
             "config"
         );
         if !self.silent && stderr().is_tty() {
-            self.bar = if env.term_contains("ghostty") && !wininfo.is_tmux {
+            self.bar = if (env.term_contains("ghostty") || env.term_contains("kitty"))
+                && !wininfo.is_tmux
+            {
                 Some(MultiBar::ghostty())
             } else {
                 Some(MultiBar::indicatif())
