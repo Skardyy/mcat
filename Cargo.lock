@@ -3049,7 +3049,7 @@ dependencies = [
 
 [[package]]
 name = "rasteroid"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "base64 0.23.1",
  "color_quant 2.0.0",
