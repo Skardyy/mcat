@@ -598,7 +598,7 @@ fn probe_graphics_caps(is_tmux: bool) -> std::io::Result<(bool, bool, Option<(u8
 }
 
 #[cfg(windows)]
-pub fn probe_graphics_caps(_is_tmux: bool) -> std::io::Result<(bool, bool, Option<Rgb>)> {
+fn probe_graphics_caps(is_tmux: bool) -> std::io::Result<(bool, bool, Option<(u8, u8, u8)>)> {
     // can't really test on windows, also might just not be really supported on windows anyways..
     Ok((false, false, None))
 }
