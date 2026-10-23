@@ -1,4 +1,4 @@
-## Src
+## V0.6.6
 
 - fixed an regression on kitty animation
 - added support for animated avif files in the video route
