@@ -496,6 +496,7 @@ pub fn setup_signal_handler() -> Arc<AtomicBool> {
 }
 
 #[cfg(unix)]
+#[allow(clippy::type_complexity)]
 fn probe_graphics_caps(is_tmux: bool) -> std::io::Result<(bool, bool, Option<(u8, u8, u8)>)> {
     use std::fs::OpenOptions;
     use std::io::{Read, Write};
@@ -597,10 +598,7 @@ fn probe_graphics_caps(is_tmux: bool) -> std::io::Result<(bool, bool, Option<(u8
 }
 
 #[cfg(windows)]
-fn probe_graphics_caps(_is_tmux: bool) -> std::io::Result<(bool, bool)> {
-    // TODO: open CONIN$ + CONOUT$ via CreateFileW, SetConsoleMode save+raw
-    //       (strip ENABLE_LINE_INPUT|ENABLE_ECHO_INPUT|ENABLE_PROCESSED_INPUT,
-    //       add ENABLE_VIRTUAL_TERMINAL_PROCESSING), WriteFile the query,
-    //       WaitForSingleObject + ReadFile loop with 250ms budget, restore modes.
-    Ok((false, false))
+pub fn probe_graphics_caps(_is_tmux: bool) -> std::io::Result<(bool, bool, Option<Rgb>)> {
+    // can't really test on windows, also might just not be really supported on windows anyways..
+    Ok((false, false, None))
 }
