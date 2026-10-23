@@ -4,6 +4,8 @@
 - added support for animated avif files in the video route
 - added fallback to multi stream container, choosing a stream with more then 1 fps
 - added more syntax highlighting support for the interactive mode `-I`
+- added OSC query for sixel and kitty graphics support
+- added OSC query for the terminal bg, now with auto theme - choosing the best theme according to the terminal bg
 
 ## V0.6.5
 

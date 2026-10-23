@@ -371,6 +371,7 @@ pub struct EnvIdentifiers {
     pub data: HashMap<String, String>,
     pub is_kitty: bool,
     pub is_sixel: bool,
+    pub bg: Option<(u8, u8, u8)>,
 }
 
 impl Default for EnvIdentifiers {
@@ -399,14 +400,16 @@ impl Default for EnvIdentifiers {
             data: result,
             is_kitty: false,
             is_sixel: false,
+            bg: None,
         };
         let is_tmux = env.is_tmux();
         if is_tmux {
             crate::set_tmux_passthrough(true);
         }
-        let (is_kitty, is_sixel) = probe_graphics_caps(is_tmux).unwrap_or((false, false));
+        let (is_kitty, is_sixel, bg) = probe_graphics_caps(is_tmux).unwrap_or((false, false, None));
         env.is_kitty = is_kitty;
         env.is_sixel = is_sixel;
+        env.bg = bg;
         env.check_tmux_term();
         env
     }
@@ -493,7 +496,7 @@ pub fn setup_signal_handler() -> Arc<AtomicBool> {
 }
 
 #[cfg(unix)]
-fn probe_graphics_caps(is_tmux: bool) -> std::io::Result<(bool, bool)> {
+fn probe_graphics_caps(is_tmux: bool) -> std::io::Result<(bool, bool, Option<(u8, u8, u8)>)> {
     use std::fs::OpenOptions;
     use std::io::{Read, Write};
     use std::os::fd::AsRawFd;
@@ -515,16 +518,19 @@ fn probe_graphics_caps(is_tmux: bool) -> std::io::Result<(bool, bool)> {
         o
     };
 
-    let result = (|| -> std::io::Result<(bool, bool)> {
+    #[allow(clippy::type_complexity)]
+    let result = (|| -> std::io::Result<(bool, bool, Option<(u8, u8, u8)>)> {
         let query: &[u8] = if is_tmux {
-            b"\x1bPtmux;\x1b\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\x1b\\\x1b\\\x1bPtmux;\x1b\x1b[c\x1b\\"
+            b"\x1bPtmux;\x1b\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\x1b\\\x1b\\\
+              \x1bPtmux;\x1b\x1b]11;?\x1b\x1b\\\x1b\\\
+              \x1bPtmux;\x1b\x1b[c\x1b\\"
         } else {
-            b"\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\x1b[c"
+            b"\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\x1b]11;?\x1b\\\x1b[c"
         };
         tty.write_all(query)?;
         tty.flush()?;
 
-        let mut buf = Vec::with_capacity(128);
+        let mut buf = Vec::with_capacity(256);
         let deadline = Instant::now() + Duration::from_millis(250);
         let mut chunk = [0u8; 128];
         loop {
@@ -545,7 +551,11 @@ fn probe_graphics_caps(is_tmux: bool) -> std::io::Result<(bool, bool)> {
                 break;
             }
             buf.extend_from_slice(&chunk[..n]);
-            if buf.windows(3).any(|w| w == b"\x1b[?") && buf.contains(&b'c') {
+            if buf
+                .windows(3)
+                .position(|w| w == b"\x1b[?")
+                .is_some_and(|s| buf[s..].contains(&b'c'))
+            {
                 break;
             }
         }
@@ -558,7 +568,26 @@ fn probe_graphics_caps(is_tmux: bool) -> std::io::Result<(bool, bool)> {
             .and_then(|r| r.iter().position(|&b| b == b'c').map(|e| &r[..e]))
             .map(|p| p.split(|&b| b == b';').any(|x| x == b"4"))
             .unwrap_or(false);
-        Ok((kitty, sixel))
+
+        let bg = buf
+            .windows(9)
+            .position(|w| w == b"\x1b]11;rgb:")
+            .map(|s| &buf[s + 9..])
+            .and_then(|r| {
+                let end = r.iter().position(|&b| b == 0x07 || b == 0x1b)?;
+                let ch: Vec<u8> = std::str::from_utf8(&r[..end])
+                    .ok()?
+                    .split('/')
+                    .filter_map(|c| {
+                        let v = u32::from_str_radix(c, 16).ok()? as f64;
+                        let max = 16f64.powi(c.len() as i32) - 1.0;
+                        Some((v / max * 255.0).round() as u8)
+                    })
+                    .collect();
+                (ch.len() == 3).then(|| (ch[0], ch[1], ch[2]))
+            });
+
+        Ok((kitty, sixel, bg))
     })();
 
     unsafe {

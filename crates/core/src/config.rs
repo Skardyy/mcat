@@ -443,6 +443,10 @@ impl McatConfig {
             RasterEncoder::auto_detect(&env)
         };
 
+        if self.theme == Theme::Auto {
+            self.theme = CustomTheme::closest_to_bg(env.bg);
+        }
+
         self.inline_images_in_md = self.force_embed_images
             || (self
                 .output
@@ -494,8 +498,10 @@ fn get_styles() -> Styles {
         .usage(AnsiColor::Magenta.on_default())
 }
 
-#[derive(ValueEnum, Clone, Default, Debug)]
+#[derive(ValueEnum, Clone, Default, Debug, PartialEq, Eq)]
 pub enum Theme {
+    #[default]
+    Auto,
     Catppuccin,
     Nord,
     Monokai,
@@ -508,7 +514,6 @@ pub enum Theme {
     MakuraiDark,
     Ayu,
     AyuMirage,
-    #[default]
     Github,
     Synthwave,
     Material,

@@ -184,7 +184,6 @@ fn report_full(config: &McatConfig) -> Result<()> {
         .as_ref()
         .context("this is likely a bug, wininfo is None")?;
     let tmux = wininfo.is_tmux;
-    let inline = wininfo.needs_inline;
     let os = env.data.get("OS").map(|f| f.as_str()).unwrap_or("Unknown");
     let term = if tmux {
         env.data
@@ -270,7 +269,6 @@ fn report_full(config: &McatConfig) -> Result<()> {
     println!("├────────────────────────────────────────────────────┤");
     println!("│ Others:                                            │");
     println!("│   Tmux:       {:<45} │", format_info(tmux));
-    println!("│   Inline:     {:<45} │", format_info(inline));
     println!("│   OS:         {:<36} │", os);
     println!("│   TERM:       {:<36} │", term);
     println!("│   TERMTYPE:   {:<36} │", tmux_program);
