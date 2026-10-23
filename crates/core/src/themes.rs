@@ -69,6 +69,7 @@ impl From<&str> for ThemeColor {
 impl From<&config::Theme> for CustomTheme {
     fn from(s: &config::Theme) -> Self {
         match s {
+            config::Theme::Auto => CustomTheme::github(),
             config::Theme::Catppuccin => CustomTheme::catppuccin(),
             config::Theme::Nord => CustomTheme::nord(),
             config::Theme::Monokai => CustomTheme::monokai(),
@@ -130,6 +131,53 @@ fn hex_to_rgba(hex: &str) -> Color {
 }
 
 impl CustomTheme {
+    /// - no bg detected      -> Github
+    /// - light bg            -> MakuraiLight
+    /// - dark bg             -> theme whose `background` is closest in color
+    pub fn closest_to_bg(bg: Option<(u8, u8, u8)>) -> config::Theme {
+        let Some((r, g, b)) = bg else {
+            return config::Theme::Github;
+        };
+
+        let luma = 0.299 * r as f32 + 0.587 * g as f32 + 0.114 * b as f32;
+        if luma > 127.5 {
+            return config::Theme::MakuraiLight;
+        }
+
+        let dist = |c: &Color| {
+            let dr = c.r as i32 - r as i32;
+            let dg = c.g as i32 - g as i32;
+            let db = c.b as i32 - b as i32;
+            2 * dr * dr + 4 * dg * dg + 3 * db * db
+        };
+
+        [
+            config::Theme::Catppuccin,
+            config::Theme::Nord,
+            config::Theme::Monokai,
+            config::Theme::Dracula,
+            config::Theme::Gruvbox,
+            config::Theme::OneDark,
+            config::Theme::Solarized,
+            config::Theme::TokyoNight,
+            config::Theme::MakuraiDark,
+            config::Theme::Ayu,
+            config::Theme::AyuMirage,
+            config::Theme::Github,
+            config::Theme::Synthwave,
+            config::Theme::Material,
+            config::Theme::RosePine,
+            config::Theme::Kanagawa,
+            config::Theme::Vscode,
+            config::Theme::Everforest,
+            config::Theme::Autumn,
+            config::Theme::Spring,
+        ]
+        .into_iter()
+        .min_by_key(|t| dist(&CustomTheme::from(t).background.color))
+        .unwrap_or(config::Theme::Github)
+    }
+
     pub fn autumn() -> Self {
         CustomTheme {
             keyword: "#fc6501".into(),

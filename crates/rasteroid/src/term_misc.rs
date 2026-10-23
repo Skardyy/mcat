@@ -369,6 +369,9 @@ fn get_size_windows() -> Option<(u16, u16)> {
 #[derive(Clone)]
 pub struct EnvIdentifiers {
     pub data: HashMap<String, String>,
+    pub is_kitty: bool,
+    pub is_sixel: bool,
+    pub bg: Option<(u8, u8, u8)>,
 }
 
 impl Default for EnvIdentifiers {
@@ -393,7 +396,20 @@ impl Default for EnvIdentifiers {
 
         result.insert("OS".to_string(), env::consts::OS.to_string());
 
-        let mut env = EnvIdentifiers { data: result };
+        let mut env = EnvIdentifiers {
+            data: result,
+            is_kitty: false,
+            is_sixel: false,
+            bg: None,
+        };
+        let is_tmux = env.is_tmux();
+        if is_tmux {
+            crate::set_tmux_passthrough(true);
+        }
+        let (is_kitty, is_sixel, bg) = probe_graphics_caps(is_tmux).unwrap_or((false, false, None));
+        env.is_kitty = is_kitty;
+        env.is_sixel = is_sixel;
+        env.bg = bg;
         env.check_tmux_term();
         env
     }
@@ -477,4 +493,112 @@ pub fn setup_signal_handler() -> Arc<AtomicBool> {
     }
 
     shutdown
+}
+
+#[cfg(unix)]
+#[allow(clippy::type_complexity)]
+fn probe_graphics_caps(is_tmux: bool) -> std::io::Result<(bool, bool, Option<(u8, u8, u8)>)> {
+    use std::fs::OpenOptions;
+    use std::io::{Read, Write};
+    use std::os::fd::AsRawFd;
+    use std::time::{Duration, Instant};
+
+    let mut tty = OpenOptions::new().read(true).write(true).open("/dev/tty")?;
+    let fd = tty.as_raw_fd();
+
+    let old = unsafe {
+        let mut o: libc::termios = std::mem::zeroed();
+        if libc::tcgetattr(fd, &mut o) != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        let mut raw = o;
+        libc::cfmakeraw(&mut raw);
+        if libc::tcsetattr(fd, libc::TCSANOW, &raw) != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        o
+    };
+
+    #[allow(clippy::type_complexity)]
+    let result = (|| -> std::io::Result<(bool, bool, Option<(u8, u8, u8)>)> {
+        let query: &[u8] = if is_tmux {
+            b"\x1bPtmux;\x1b\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\x1b\\\x1b\\\
+              \x1bPtmux;\x1b\x1b]11;?\x1b\x1b\\\x1b\\\
+              \x1bPtmux;\x1b\x1b[c\x1b\\"
+        } else {
+            b"\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\x1b]11;?\x1b\\\x1b[c"
+        };
+        tty.write_all(query)?;
+        tty.flush()?;
+
+        let mut buf = Vec::with_capacity(256);
+        let deadline = Instant::now() + Duration::from_millis(250);
+        let mut chunk = [0u8; 128];
+        loop {
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                break;
+            }
+            let mut pfd = libc::pollfd {
+                fd,
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            if unsafe { libc::poll(&mut pfd, 1, left.as_millis() as i32) } <= 0 {
+                break;
+            }
+            let n = tty.read(&mut chunk)?;
+            if n == 0 {
+                break;
+            }
+            buf.extend_from_slice(&chunk[..n]);
+            if buf
+                .windows(3)
+                .position(|w| w == b"\x1b[?")
+                .is_some_and(|s| buf[s..].contains(&b'c'))
+            {
+                break;
+            }
+        }
+
+        let kitty = buf.windows(10).any(|w| w == b"\x1b_Gi=31;OK");
+        let sixel = buf
+            .windows(3)
+            .position(|w| w == b"\x1b[?")
+            .map(|s| &buf[s + 3..])
+            .and_then(|r| r.iter().position(|&b| b == b'c').map(|e| &r[..e]))
+            .map(|p| p.split(|&b| b == b';').any(|x| x == b"4"))
+            .unwrap_or(false);
+
+        let bg = buf
+            .windows(9)
+            .position(|w| w == b"\x1b]11;rgb:")
+            .map(|s| &buf[s + 9..])
+            .and_then(|r| {
+                let end = r.iter().position(|&b| b == 0x07 || b == 0x1b)?;
+                let ch: Vec<u8> = std::str::from_utf8(&r[..end])
+                    .ok()?
+                    .split('/')
+                    .filter_map(|c| {
+                        let v = u32::from_str_radix(c, 16).ok()? as f64;
+                        let max = 16f64.powi(c.len() as i32) - 1.0;
+                        Some((v / max * 255.0).round() as u8)
+                    })
+                    .collect();
+                (ch.len() == 3).then(|| (ch[0], ch[1], ch[2]))
+            });
+
+        Ok((kitty, sixel, bg))
+    })();
+
+    unsafe {
+        libc::tcsetattr(fd, libc::TCSANOW, &old);
+    }
+    result
+}
+
+#[cfg(windows)]
+pub fn probe_graphics_caps(_is_tmux: bool) -> std::io::Result<(bool, bool, Option<Rgb>)> {
+    // can't really test on windows, also might just not be really supported on windows anyways..
+    Ok((false, false, None))
 }
