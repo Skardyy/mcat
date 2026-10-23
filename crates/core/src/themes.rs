@@ -69,7 +69,7 @@ impl From<&str> for ThemeColor {
 impl From<&config::Theme> for CustomTheme {
     fn from(s: &config::Theme) -> Self {
         match s {
-            config::Theme::Auto => unreachable!(),
+            config::Theme::Auto => CustomTheme::github(),
             config::Theme::Catppuccin => CustomTheme::catppuccin(),
             config::Theme::Nord => CustomTheme::nord(),
             config::Theme::Monokai => CustomTheme::monokai(),
