@@ -507,6 +507,10 @@ fn probe_graphics_caps(is_tmux: bool) -> std::io::Result<(bool, bool, Option<(u8
     let fd = tty.as_raw_fd();
 
     let old = unsafe {
+        // touching the tty from a background process group raises SIGTTOU/SIGTTIN and stops us
+        if libc::tcgetpgrp(fd) != libc::getpgrp() {
+            return Err(std::io::Error::other("not in the foreground process group"));
+        }
         let mut o: libc::termios = std::mem::zeroed();
         if libc::tcgetattr(fd, &mut o) != 0 {
             return Err(std::io::Error::last_os_error());
@@ -539,12 +543,25 @@ fn probe_graphics_caps(is_tmux: bool) -> std::io::Result<(bool, bool, Option<(u8
             if left.is_zero() {
                 break;
             }
-            let mut pfd = libc::pollfd {
-                fd,
-                events: libc::POLLIN,
-                revents: 0,
+            // macOS poll(2) does not support tty devices, so wait with select(2) instead
+            let mut tv = libc::timeval {
+                tv_sec: left.as_secs() as _,
+                tv_usec: left.subsec_micros() as _,
             };
-            if unsafe { libc::poll(&mut pfd, 1, left.as_millis() as i32) } <= 0 {
+            let ready = unsafe {
+                let mut fds: libc::fd_set = std::mem::zeroed();
+                libc::FD_ZERO(&mut fds);
+                libc::FD_SET(fd, &mut fds);
+                libc::select(
+                    fd + 1,
+                    &mut fds,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    &mut tv,
+                ) > 0
+                    && libc::FD_ISSET(fd, &fds)
+            };
+            if !ready {
                 break;
             }
             let n = tty.read(&mut chunk)?;
