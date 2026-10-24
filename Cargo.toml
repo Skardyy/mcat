@@ -4,7 +4,7 @@ members = ["crates/core", "crates/markdownify", "crates/rasteroid"]
 
 [workspace.dependencies]
 markdownify = { path = "crates/markdownify", version = "0.3.9" }
-rasteroid = { path = "crates/rasteroid", version = "0.4.2" }
+rasteroid = { path = "crates/rasteroid", version = "0.4.3" }
 
 anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive", "env"] }

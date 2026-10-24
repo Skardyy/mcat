@@ -1,3 +1,7 @@
+## V0.6.7
+
+- Fix the terminal capability probe hanging on macOS or stopping when run as a background job (#109, @bevanjkay)
+
 ## V0.6.6
 
 - fixed an regression on kitty animation
