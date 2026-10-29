@@ -9,7 +9,7 @@ use base64::{Engine, engine::general_purpose};
 use image::{DynamicImage, GenericImageView};
 
 use crate::{
-    VideoFrame,
+    RasterEncoder, VideoFrame,
     error::RasterError,
     term_misc::{
         self, EnvIdentifiers, Wininfo, image_to_base64, loc_to_terminal, offset_to_terminal,
@@ -127,6 +127,7 @@ pub fn encode_image(
     offset: Option<u16>,
     print_at: Option<(u16, u16)>,
     wininfo: &Wininfo,
+    allow_unicode_placeholder: bool,
 ) -> Result<(), RasterError> {
     let mut png = Vec::new();
     img.write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png)?;
@@ -138,7 +139,7 @@ pub fn encode_image(
         ("i".to_string(), id.to_string()),
     ]);
 
-    if wininfo.is_tmux || wininfo.needs_inline {
+    if allow_unicode_placeholder && (wininfo.is_tmux || wininfo.needs_inline) {
         let (widthpx, heightpx) = img.dimensions();
         let cols =
             wininfo.dim_to_cells(&format!("{widthpx}px"), term_misc::SizeDirection::Width)?;
@@ -454,6 +455,15 @@ fn encode_frames_sep(
     Ok((id, last_index))
 }
 
-pub fn is_kitty_capable(env: &EnvIdentifiers) -> bool {
-    env.is_kitty || env.term_contains("kitty") || env.term_contains("ghostty")
+pub fn is_kitty_capable(env: &EnvIdentifiers) -> Option<RasterEncoder> {
+    let animation = env.term_contains("kitty");
+    let unicode_placeholder = env.term_contains("kitty") || env.term_contains("ghostty");
+    if env.is_kitty || unicode_placeholder {
+        Some(RasterEncoder::Kitty {
+            animation_ext: animation,
+            unicode_placeholder_ext: unicode_placeholder,
+        })
+    } else {
+        None
+    }
 }

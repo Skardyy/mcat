@@ -43,7 +43,7 @@ pub trait Encoder {
 impl Encoder for RasterEncoder {
     fn is_capable(&self, env: &EnvIdentifiers) -> bool {
         match self {
-            RasterEncoder::Kitty => kitty_encoder::is_kitty_capable(env),
+            RasterEncoder::Kitty { .. } => kitty_encoder::is_kitty_capable(env).is_some(),
             RasterEncoder::Iterm => iterm_encoder::is_iterm_capable(env),
             RasterEncoder::Sixel => sixel_encoder::is_sixel_capable(env),
             RasterEncoder::Ascii => true,
@@ -61,7 +61,11 @@ impl Encoder for RasterEncoder {
         let is_tmux = wininfo.is_tmux;
         let self_handle = match self {
             RasterEncoder::Iterm | RasterEncoder::Sixel => true,
-            RasterEncoder::Kitty | RasterEncoder::Ascii => false,
+            RasterEncoder::Kitty {
+                unicode_placeholder_ext,
+                ..
+            } => !*unicode_placeholder_ext,
+            RasterEncoder::Ascii => false,
         } && is_tmux;
         let mut img_cells = 0;
         if self_handle {
@@ -72,9 +76,17 @@ impl Encoder for RasterEncoder {
             ensure_space(out, img_cells as u16)?;
         }
         match self {
-            RasterEncoder::Kitty => {
-                kitty_encoder::encode_image(img, out, offset, print_at, wininfo)
-            }
+            RasterEncoder::Kitty {
+                unicode_placeholder_ext,
+                ..
+            } => kitty_encoder::encode_image(
+                img,
+                out,
+                offset,
+                print_at,
+                wininfo,
+                *unicode_placeholder_ext,
+            ),
             RasterEncoder::Iterm => {
                 iterm_encoder::encode_image(img, out, offset, print_at, wininfo)
             }
@@ -130,7 +142,10 @@ impl Encoder for RasterEncoder {
 /// Supported terminal image protocols.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum RasterEncoder {
-    Kitty,
+    Kitty {
+        animation_ext: bool,
+        unicode_placeholder_ext: bool,
+    },
     Iterm,
     Sixel,
     Ascii,
@@ -138,8 +153,8 @@ pub enum RasterEncoder {
 impl RasterEncoder {
     /// Picks the best protocol for the current terminal. Falls back to Ascii.
     pub fn auto_detect(env: &EnvIdentifiers) -> Self {
-        if kitty_encoder::is_kitty_capable(env) {
-            return Self::Kitty;
+        if let Some(kitty_enc) = kitty_encoder::is_kitty_capable(env) {
+            return kitty_enc;
         }
         if iterm_encoder::is_iterm_capable(env) {
             return Self::Iterm;
