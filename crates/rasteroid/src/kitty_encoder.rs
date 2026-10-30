@@ -292,7 +292,8 @@ pub unsafe fn encode_frames_fast(
     offset: Option<u16>,
     print_at: Option<(u16, u16)>,
 ) -> Result<(), RasterError> {
-    let (id, last_index) = encode_frames_sep(frames, out, true, wininfo, offset, print_at)?;
+    let (id, last_index, frame_bytes) =
+        encode_frames_sep(frames, out, true, wininfo, offset, print_at)?;
 
     // fork a cleanup process that gives the terminal time to consume the shm objects
     let first_shm = format!("/mcat-video-{id}-0");
@@ -308,13 +309,17 @@ pub unsafe fn encode_frames_fast(
             .filter_map(|n| CString::new(n).ok())
             .collect();
 
+        // assumes ~100MB/s, at least 200ms, at most 10s
+        let total_bytes = frame_bytes * (last_index as u64 + 2);
+        let wait_ms = (200 + total_bytes / 100_000).min(10_000);
+
         let pid = unsafe { libc::fork() };
         if pid == 0 {
             unsafe {
                 libc::setsid();
                 let ts = libc::timespec {
-                    tv_sec: 0,
-                    tv_nsec: 200_000_000,
+                    tv_sec: (wait_ms / 1000) as libc::time_t,
+                    tv_nsec: ((wait_ms % 1000) * 1_000_000) as libc::c_long,
                 };
                 libc::nanosleep(&ts, std::ptr::null_mut());
                 for n in &names {
@@ -346,12 +351,13 @@ fn encode_frames_sep(
     wininfo: &Wininfo,
     offset: Option<u16>,
     print_at: Option<(u16, u16)>,
-) -> Result<(u32, usize), RasterError> {
+) -> Result<(u32, usize, u64), RasterError> {
     let (first_img, _) = frames.next().ok_or(RasterError::EmptyVideo)?;
     let width = first_img.width() as u16;
     let height = first_img.height() as u16;
     let first_rgb = first_img.to_rgb8();
     let first_data = first_rgb.as_raw();
+    let frame_bytes = first_data.len() as u64;
 
     let mut pre_timestamp = 0.0;
     let id = rand::random::<u32>();
@@ -453,7 +459,7 @@ fn encode_frames_sep(
     // start the loop
     write!(out, "{prefix}a=a,s=3,v=1,r=1,i={id},z={z}{suffix}")?;
     out.flush()?;
-    Ok((id, last_index))
+    Ok((id, last_index, frame_bytes))
 }
 
 pub fn encode_frames_redraw(
@@ -496,9 +502,9 @@ pub fn encode_frames_redraw(
 }
 
 pub fn is_kitty_capable(env: &EnvIdentifiers) -> Option<RasterEncoder> {
-    let animation = env.term_contains("kitty");
+    let animation = env.term_contains("kitty") || env.term_contains("ghostty");
     let unicode_placeholder = env.term_contains("kitty") || env.term_contains("ghostty");
-    if env.is_kitty || unicode_placeholder {
+    if env.is_kitty || unicode_placeholder || animation {
         Some(RasterEncoder::Kitty {
             animation_ext: animation,
             unicode_placeholder_ext: unicode_placeholder,
