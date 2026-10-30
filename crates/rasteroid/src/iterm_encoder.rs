@@ -50,6 +50,7 @@ pub fn is_iterm_capable(env: &EnvIdentifiers) -> bool {
         || env.term_contains("wezterm")
         || env.term_contains("iterm2")
         || env.term_contains("rio")
+        || env.term_contains("konsole")
         || (env.term_contains("warp") && !env.contains("OS", "windows"))
         || env.has_key("KONSOLE_VERSION")
 }
