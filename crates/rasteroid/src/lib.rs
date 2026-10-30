@@ -63,7 +63,6 @@ impl Encoder for RasterEncoder {
         offset: Option<u16>,
         print_at: Option<(u16, u16)>,
     ) -> Result<(), RasterError> {
-        let is_tmux = wininfo.is_tmux;
         let self_handle = match self {
             RasterEncoder::Iterm | RasterEncoder::Sixel => true,
             RasterEncoder::Kitty {
@@ -71,7 +70,8 @@ impl Encoder for RasterEncoder {
                 ..
             } => !*unicode_placeholder_ext,
             RasterEncoder::Ascii => false,
-        } && is_tmux;
+        } && wininfo.is_tmux
+            && !wininfo.needs_inline;
         let mut img_cells = 0;
         if self_handle {
             img_cells = wininfo.dim_to_cells(
@@ -80,6 +80,7 @@ impl Encoder for RasterEncoder {
             )?;
             ensure_space(out, img_cells as u16)?;
         }
+
         match self {
             RasterEncoder::Kitty {
                 unicode_placeholder_ext,
@@ -101,6 +102,7 @@ impl Encoder for RasterEncoder {
             }
             RasterEncoder::Ascii => ascii_encoder::encode_image(img, out, offset, print_at),
         }?;
+
         if self_handle {
             write!(out, "\x1B[{img_cells}B")?;
         }
