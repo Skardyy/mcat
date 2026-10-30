@@ -113,7 +113,10 @@ impl Encoder for RasterEncoder {
         match self {
             // macos max shm obj is like 32 i think, if we'll try this on macos, the app will be
             // killed and the shm objs leaked..
-            RasterEncoder::Kitty => {
+            RasterEncoder::Kitty {
+                animation_ext: true,
+                ..
+            } => {
                 #[cfg(target_os = "linux")]
                 if crossterm::tty::IsTty::is_tty(&std::io::stdout()) {
                     return unsafe {
@@ -121,6 +124,9 @@ impl Encoder for RasterEncoder {
                     };
                 }
                 kitty_encoder::encode_frames(frames, out, wininfo, offset, print_at)
+            }
+            RasterEncoder::Kitty { .. } => {
+                todo!()
             }
             // iterm gif rendering might be abit smarter, just requires to convert the frames into
             // gif, which takes time, time that now frames are rendered..

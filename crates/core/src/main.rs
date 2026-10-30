@@ -16,6 +16,7 @@ use clap_complete::{Generator, generate};
 use config::McatConfig;
 use crossterm::tty::IsTty;
 use dirs::home_dir;
+use rasteroid::RasterEncoder;
 use scrapy::MediaScrapeOptions;
 use std::io::Write;
 use std::{
@@ -252,10 +253,33 @@ fn report_full(config: &McatConfig) -> Result<()> {
     // terminal capabilities
     println!("├────────────────────────────────────────────────────┤");
     println!("│ Terminal Graphics Support:                         │");
-    println!("│   Kitty:    {:<47} │", format_capability(kitty));
-    println!("│   iTerm2:   {:<47} │", format_capability(iterm));
-    println!("│   Sixel:    {:<47} │", format_capability(sixel));
-    println!("│   ASCII:    {:<47} │", format_capability(ascii));
+    println!(
+        "│   Kitty:        {:<43} │",
+        format_capability(kitty.is_some())
+    );
+    println!(
+        "│   ├─ Unicode:   {:<43} │",
+        format_capability(matches!(
+            kitty,
+            Some(RasterEncoder::Kitty {
+                unicode_placeholder_ext: true,
+                ..
+            })
+        ))
+    );
+    println!(
+        "│   └─ Animation: {:<43} │",
+        format_capability(matches!(
+            kitty,
+            Some(RasterEncoder::Kitty {
+                animation_ext: true,
+                ..
+            })
+        ))
+    );
+    println!("│   iTerm2:       {:<43} │", format_capability(iterm));
+    println!("│   Sixel:        {:<43} │", format_capability(sixel));
+    println!("│   ASCII:        {:<43} │", format_capability(ascii));
 
     // terminal dimensions
     println!("├────────────────────────────────────────────────────┤");

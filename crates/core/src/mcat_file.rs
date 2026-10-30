@@ -449,7 +449,13 @@ impl McatFile {
         )?;
 
         command.hwaccel("auto");
-        if enc != RasterEncoder::Kitty {
+        if matches!(
+            enc,
+            RasterEncoder::Kitty {
+                animation_ext: true,
+                ..
+            }
+        ) {
             // kitty doesn't need loop, rasteroid impl
             command.arg("-stream_loop").arg("-1");
         }

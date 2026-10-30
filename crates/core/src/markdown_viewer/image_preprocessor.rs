@@ -94,7 +94,11 @@ impl ImagePreprocessor {
             &conf.md_image
         } else {
             match *encoder {
-                RasterEncoder::Kitty => &MdImageMode::All,
+                RasterEncoder::Kitty {
+                    unicode_placeholder_ext: true,
+                    ..
+                } => &MdImageMode::All,
+                RasterEncoder::Kitty { .. } => &MdImageMode::Small,
                 RasterEncoder::Iterm => &MdImageMode::Small,
                 RasterEncoder::Sixel => &MdImageMode::Small,
                 RasterEncoder::Ascii => &MdImageMode::None,
@@ -240,7 +244,10 @@ fn create_placeholder(
     let bg_color = 16 + ((id / 216) % 216);
 
     let (width, height) = match inline_encoder {
-        RasterEncoder::Kitty => {
+        RasterEncoder::Kitty {
+            unicode_placeholder_ext: true,
+            ..
+        } => {
             let placeholder = "\u{10EEEE}";
             let first_line = img.lines().next().unwrap_or("");
             let width = first_line.matches(placeholder).count();
