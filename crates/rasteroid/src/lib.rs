@@ -117,8 +117,7 @@ impl Encoder for RasterEncoder {
         print_at: Option<(u16, u16)>,
     ) -> Result<(), RasterError> {
         match self {
-            // macos max shm obj is like 32 i think, if we'll try this on macos, the app will be
-            // killed and the shm objs leaked..
+            // macos used to fail on this, can't reproduce, will allow macos
             RasterEncoder::Kitty {
                 animation_ext: true,
                 ..
