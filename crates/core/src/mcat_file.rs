@@ -449,20 +449,36 @@ impl McatFile {
         )?;
 
         command.hwaccel("auto");
-        if !matches!(
+        let needs_loop = !matches!(
             enc,
             RasterEncoder::Kitty {
                 animation_ext: true,
                 ..
             }
-        ) {
-            // kitty doesn't need loop, rasteroid impl
+        );
+        if needs_loop {
+            // kitty with the animation ext loops by itself, rasteroid impl
             command.arg("-stream_loop").arg("-1");
         }
+
+        // -stream_loop has to seek back to the start, so make sure there is a file for it to loop
+        // when needed
+        let mut tmp: Option<NamedTempFile> = None;
         match &self.path {
-            Some(path) => command.input(path),
-            None => command.input("pipe:0"),
-        };
+            Some(path) => {
+                command.input(path);
+            }
+            None if needs_loop => {
+                let mut f = NamedTempFile::new()?;
+                f.write_all(&self.bytes)?;
+                f.flush()?;
+                command.input(f.path());
+                tmp = Some(f);
+            }
+            None => {
+                command.input("pipe:0");
+            }
+        }
         command.no_audio();
         if let Some(idx) = map {
             command.arg("-map").arg(format!("0:{idx}"));
@@ -471,7 +487,7 @@ impl McatFile {
 
         let mut child = command.spawn()?;
 
-        if self.path.is_none() {
+        if self.path.is_none() && tmp.is_none() {
             let stdin = child.take_stdin().context("failed to get ffmpeg stdin")?;
             let bytes = self.bytes.clone();
             std::thread::spawn(move || {
@@ -515,7 +531,9 @@ impl McatFile {
         let (width, height) = (out.width, out.height);
         debug!(width, height, fps = out.fps, "reading frames");
 
-        let frames = iter.filter_frames().map(|f| {
+        let frames = iter.filter_frames().map(move |f| {
+            // the temp file must outlive ffmpeg
+            let _keep = &tmp;
             let rgb = image::RgbImage::from_raw(f.width, f.height, f.data).unwrap_or_default();
             (image::DynamicImage::ImageRgb8(rgb), f.timestamp)
         });
