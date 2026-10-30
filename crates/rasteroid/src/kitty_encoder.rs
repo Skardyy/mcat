@@ -301,19 +301,27 @@ pub unsafe fn encode_frames_fast(
         .open()
         .is_ok()
     {
+        use std::ffi::CString;
+
+        let names: Vec<CString> = std::iter::once(format!("/mcat-video-{id}-thumb"))
+            .chain((0..=last_index).map(|i| format!("/mcat-video-{id}-{i}")))
+            .filter_map(|n| CString::new(n).ok())
+            .collect();
+
         let pid = unsafe { libc::fork() };
         if pid == 0 {
-            unsafe { libc::setsid() };
-            std::thread::sleep(std::time::Duration::from_millis(200));
-            for name in std::iter::once(format!("/mcat-video-{id}-thumb"))
-                .chain((0..=last_index).map(|i| format!("/mcat-video-{id}-{i}")))
-            {
-                if let Ok(mut shmem) = shared_memory_fork::ShmemConf::new().os_id(&name).open() {
-                    shmem.set_owner(true);
-                    drop(shmem);
+            unsafe {
+                libc::setsid();
+                let ts = libc::timespec {
+                    tv_sec: 0,
+                    tv_nsec: 200_000_000,
+                };
+                libc::nanosleep(&ts, std::ptr::null_mut());
+                for n in &names {
+                    libc::shm_unlink(n.as_ptr());
                 }
+                libc::_exit(0);
             }
-            std::process::exit(0);
         }
     }
 
