@@ -130,9 +130,17 @@ impl Encoder for RasterEncoder {
                 }
                 kitty_encoder::encode_frames(frames, out, wininfo, offset, print_at)
             }
-            RasterEncoder::Kitty { .. } => {
-                kitty_encoder::encode_frames_redraw(frames, out, wininfo, offset, print_at)
-            }
+            RasterEncoder::Kitty {
+                unicode_placeholder_ext,
+                ..
+            } => kitty_encoder::encode_frames_redraw(
+                frames,
+                out,
+                wininfo,
+                offset,
+                print_at,
+                *unicode_placeholder_ext,
+            ),
             // iterm gif rendering might be abit smarter, just requires to convert the frames into
             // gif, which takes time, time that now frames are rendered..
             RasterEncoder::Iterm => {

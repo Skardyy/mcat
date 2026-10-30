@@ -462,6 +462,7 @@ pub fn encode_frames_redraw(
     wininfo: &Wininfo,
     offset: Option<u16>,
     print_at: Option<(u16, u16)>,
+    allow_unicode_placeholder: bool,
 ) -> Result<(), RasterError> {
     let (prefix, suffix) = if wininfo.is_tmux {
         ("\x1bPtmux;\x1b\x1b_G", "\x1b\x1b\\\x1b\\")
@@ -472,7 +473,15 @@ pub fn encode_frames_redraw(
     let mut prev_id: Option<u32> = None;
     crate::redraw_frames(frames, out, |img, buf| {
         let id = rand::random::<u32>();
-        encode_image(img, buf, offset, print_at, wininfo, false, Some(id))?;
+        encode_image(
+            img,
+            buf,
+            offset,
+            print_at,
+            wininfo,
+            allow_unicode_placeholder,
+            Some(id),
+        )?;
         if let Some(prev) = prev_id {
             // d=I: delete the previous frame's placements and free its data
             write!(buf, "{prefix}a=d,d=I,i={prev},q=2{suffix}")?;
