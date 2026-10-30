@@ -9,14 +9,14 @@ use base64::{Engine, engine::general_purpose};
 use image::{DynamicImage, GenericImageView};
 
 use crate::{
-    VideoFrame,
+    RasterEncoder, VideoFrame,
     error::RasterError,
     term_misc::{
         self, EnvIdentifiers, Wininfo, image_to_base64, loc_to_terminal, offset_to_terminal,
     },
 };
 
-#[cfg(target_os = "linux")]
+#[cfg(all(unix, not(target_os = "android")))]
 fn transmit_shm(
     data: &[u8],
     mut out: impl Write,
@@ -127,18 +127,20 @@ pub fn encode_image(
     offset: Option<u16>,
     print_at: Option<(u16, u16)>,
     wininfo: &Wininfo,
+    allow_unicode_placeholder: bool,
+    id: Option<u32>,
 ) -> Result<(), RasterError> {
     let mut png = Vec::new();
     img.write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png)?;
 
-    let id = rand::random::<u32>();
+    let id = id.unwrap_or_else(rand::random::<u32>);
     let mut opts = HashMap::from([
         ("f".to_string(), "100".to_string()),
         ("a".to_string(), "T".to_string()),
         ("i".to_string(), id.to_string()),
     ]);
 
-    if wininfo.is_tmux || wininfo.needs_inline {
+    if allow_unicode_placeholder && (wininfo.is_tmux || wininfo.needs_inline) {
         let (widthpx, heightpx) = img.dimensions();
         let cols =
             wininfo.dim_to_cells(&format!("{widthpx}px"), term_misc::SizeDirection::Width)?;
@@ -259,7 +261,7 @@ fn process_frame(
     shm_name: &str,
     tmux: bool,
 ) -> Result<(), RasterError> {
-    #[cfg(target_os = "linux")]
+    #[cfg(all(unix, not(target_os = "android")))]
     if use_shm {
         transmit_shm(data, out, first_opts, shm_name, tmux)?;
         return Ok(());
@@ -282,7 +284,7 @@ fn process_frame(
 /// terminals such as kitty clear the shared memory after consuming, but it won't be certain on
 /// every terminal. also saving the video for future use will include having memory spent on this
 /// and not storage.
-#[cfg(target_os = "linux")]
+#[cfg(all(unix, not(target_os = "android")))]
 pub unsafe fn encode_frames_fast(
     frames: &mut dyn Iterator<Item = VideoFrame>,
     out: &mut impl Write,
@@ -290,28 +292,41 @@ pub unsafe fn encode_frames_fast(
     offset: Option<u16>,
     print_at: Option<(u16, u16)>,
 ) -> Result<(), RasterError> {
-    let (id, last_index) = encode_frames_sep(frames, out, true, wininfo, offset, print_at)?;
+    let (id, last_index, frame_bytes) =
+        encode_frames_sep(frames, out, true, wininfo, offset, print_at)?;
 
     // fork a cleanup process that gives the terminal time to consume the shm objects
-    let first_shm = format!("mcat-video-{id}-0");
+    let first_shm = format!("/mcat-video-{id}-0");
     if shared_memory_fork::ShmemConf::new()
         .os_id(&first_shm)
         .open()
         .is_ok()
     {
+        use std::ffi::CString;
+
+        let names: Vec<CString> = std::iter::once(format!("/mcat-video-{id}-thumb"))
+            .chain((0..=last_index).map(|i| format!("/mcat-video-{id}-{i}")))
+            .filter_map(|n| CString::new(n).ok())
+            .collect();
+
+        // assumes ~100MB/s, at least 200ms, at most 10s
+        let total_bytes = frame_bytes * (last_index as u64 + 2);
+        let wait_ms = (200 + total_bytes / 100_000).min(10_000);
+
         let pid = unsafe { libc::fork() };
         if pid == 0 {
-            unsafe { libc::setsid() };
-            std::thread::sleep(std::time::Duration::from_millis(200));
-            for name in std::iter::once(format!("mcat-video-{id}-thumb"))
-                .chain((0..=last_index).map(|i| format!("mcat-video-{id}-{i}")))
-            {
-                if let Ok(mut shmem) = shared_memory_fork::ShmemConf::new().os_id(&name).open() {
-                    shmem.set_owner(true);
-                    drop(shmem);
+            unsafe {
+                libc::setsid();
+                let ts = libc::timespec {
+                    tv_sec: (wait_ms / 1000) as libc::time_t,
+                    tv_nsec: ((wait_ms % 1000) * 1_000_000) as libc::c_long,
+                };
+                libc::nanosleep(&ts, std::ptr::null_mut());
+                for n in &names {
+                    libc::shm_unlink(n.as_ptr());
                 }
+                libc::_exit(0);
             }
-            std::process::exit(0);
         }
     }
 
@@ -336,34 +351,25 @@ fn encode_frames_sep(
     wininfo: &Wininfo,
     offset: Option<u16>,
     print_at: Option<(u16, u16)>,
-) -> Result<(u32, usize), RasterError> {
+) -> Result<(u32, usize, u64), RasterError> {
     let (first_img, _) = frames.next().ok_or(RasterError::EmptyVideo)?;
     let width = first_img.width() as u16;
     let height = first_img.height() as u16;
     let first_rgb = first_img.to_rgb8();
     let first_data = first_rgb.as_raw();
+    let frame_bytes = first_data.len() as u64;
 
     let mut pre_timestamp = 0.0;
     let id = rand::random::<u32>();
-    let shm_name = format!("mcat-video-{id}-");
+    let shm_name = format!("/mcat-video-{id}-");
 
     let tmux = wininfo.is_tmux;
-    let inline = wininfo.needs_inline || tmux;
     let prefix = if tmux {
         "\x1bPtmux;\x1b\x1b_G"
     } else {
         "\x1b_G"
     };
     let suffix = if tmux { "\x1b\x1b\\\x1b\\" } else { "\x1b\\" };
-
-    // if not inline, its going to be a single row, we can just print it at the start and be done
-    if !inline {
-        let printat = term_misc::loc_to_terminal(print_at);
-        out.write_all(printat.as_bytes())?;
-
-        let offset = term_misc::offset_to_terminal(offset);
-        out.write_all(offset.as_bytes())?;
-    }
 
     let i = id.to_string();
     let s = width.to_string();
@@ -376,7 +382,7 @@ fn encode_frames_sep(
         ("s".to_string(), s),
         ("v".to_string(), v),
     ]);
-    let (rows, cols) = if inline {
+    let (rows, cols) = {
         let cols = wininfo.dim_to_cells(&format!("{width}px"), term_misc::SizeDirection::Width)?;
         let rows =
             wininfo.dim_to_cells(&format!("{height}px"), term_misc::SizeDirection::Height)?;
@@ -384,8 +390,6 @@ fn encode_frames_sep(
         opts.insert("r".to_string(), rows.to_string());
         opts.insert("c".to_string(), cols.to_string());
         (rows, cols)
-    } else {
-        (0, 0)
     };
 
     // adding the root image
@@ -398,6 +402,12 @@ fn encode_frames_sep(
         &format!("{shm_name}thumb"),
         tmux,
     )?;
+
+    let placement = create_unicode_placeholder(cols, rows, id, offset, print_at)?;
+    out.write_all(placement.as_bytes())?;
+    if print_at.is_none() {
+        out.write_all(b"\n")?;
+    }
 
     // starting the animation
     let z = 100;
@@ -446,14 +456,60 @@ fn encode_frames_sep(
         }
     }
 
-    if inline {
-        let placement = create_unicode_placeholder(cols, rows, id, offset, print_at)?;
-        out.write_all(placement.as_bytes())?;
-    }
+    // start the loop
     write!(out, "{prefix}a=a,s=3,v=1,r=1,i={id},z={z}{suffix}")?;
-    Ok((id, last_index))
+    out.flush()?;
+    Ok((id, last_index, frame_bytes))
 }
 
-pub fn is_kitty_capable(env: &EnvIdentifiers) -> bool {
-    env.is_kitty || env.term_contains("kitty") || env.term_contains("ghostty")
+pub fn encode_frames_redraw(
+    frames: &mut dyn Iterator<Item = VideoFrame>,
+    out: &mut impl Write,
+    wininfo: &Wininfo,
+    offset: Option<u16>,
+    print_at: Option<(u16, u16)>,
+    allow_unicode_placeholder: bool,
+) -> Result<(), RasterError> {
+    let (prefix, suffix) = if wininfo.is_tmux {
+        ("\x1bPtmux;\x1b\x1b_G", "\x1b\x1b\\\x1b\\")
+    } else {
+        ("\x1b_G", "\x1b\\")
+    };
+
+    let mut prev_id: Option<u32> = None;
+    crate::redraw_frames(frames, out, |img, buf| {
+        let id = rand::random::<u32>();
+        encode_image(
+            img,
+            buf,
+            offset,
+            print_at,
+            wininfo,
+            allow_unicode_placeholder,
+            Some(id),
+        )?;
+        if let Some(prev) = prev_id {
+            // d=I: delete the previous frame's placements and free its data
+            write!(buf, "{prefix}a=d,d=I,i={prev},q=2{suffix}")?;
+        }
+        prev_id = Some(id);
+
+        Ok(wininfo.dim_to_cells(
+            &format!("{}px", img.height()),
+            term_misc::SizeDirection::Height,
+        )? as u16)
+    })
+}
+
+pub fn is_kitty_capable(env: &EnvIdentifiers) -> Option<RasterEncoder> {
+    let animation = env.term_contains("kitty") || env.term_contains("ghostty");
+    let unicode_placeholder = env.term_contains("kitty") || env.term_contains("ghostty");
+    if env.is_kitty || unicode_placeholder || animation {
+        Some(RasterEncoder::Kitty {
+            animation_ext: animation,
+            unicode_placeholder_ext: unicode_placeholder,
+        })
+    } else {
+        None
+    }
 }

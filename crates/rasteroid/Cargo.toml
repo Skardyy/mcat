@@ -28,7 +28,7 @@ ffmpeg-sidecar.workspace = true
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
 
-[target.'cfg(target_os = "linux")'.dependencies]
+[target.'cfg(all(unix, not(target_os = "android")))'.dependencies]
 shared_memory_fork.workspace = true
 
 [target."cfg(windows)".dependencies]

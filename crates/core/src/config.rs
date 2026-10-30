@@ -432,7 +432,10 @@ impl McatConfig {
         let sc = Some(self.sc.as_ref());
         let wininfo = Wininfo::new(spx, sc, Some(self.scalex), Some(self.scaley), &env)?;
         let encoder = if self.kitty {
-            RasterEncoder::Kitty
+            rasteroid::kitty_encoder::is_kitty_capable(&env).unwrap_or(RasterEncoder::Kitty {
+                animation_ext: false,
+                unicode_placeholder_ext: false,
+            })
         } else if self.iterm {
             RasterEncoder::Iterm
         } else if self.sixel {

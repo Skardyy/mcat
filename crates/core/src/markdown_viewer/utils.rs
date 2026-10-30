@@ -836,7 +836,10 @@ mod tests {
         let arena = comrak::Arena::new();
         let root = comrak::parse_document(&arena, "", &comrak::Options::default());
         let mut conf = McatConfig::default();
-        conf.encoder = Some(RasterEncoder::Kitty);
+        conf.encoder = Some(RasterEncoder::Kitty {
+            animation_ext: false,
+            unicode_placeholder_ext: false,
+        });
         conf.wininfo = Some(Wininfo {
             sc_width: 50,
             sc_height: 20,

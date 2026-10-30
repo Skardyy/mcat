@@ -248,7 +248,10 @@ fn interact_with_image(
 
     let height = wininfo.sc_height - 4;
     let should_disable_raw_mode = match encoder {
-        RasterEncoder::Kitty => wininfo.is_tmux,
+        RasterEncoder::Kitty {
+            unicode_placeholder_ext,
+            ..
+        } => wininfo.is_tmux && *unicode_placeholder_ext,
         RasterEncoder::Ascii => true,
         RasterEncoder::Iterm | RasterEncoder::Sixel => false,
     };

@@ -1,3 +1,14 @@
+## V0.6.8
+
+- improved image/video encoder logic, now splitted kitty features to do different things according to the depth of support to the kitty protocol rather then just supported binary
+- improved tmux support
+- imporved the image encoder selection to prefer iterm or sixel over kitty when in tmux and the terminal doesn't support kitty unicode placeholder ext, works better
+- added kitty animation support for when the terminal supports kitty but not the animation ext
+- added kitty animation support for macos and bsd too, previously was just locked to linux, still only works on kitty terminal
+- fixed an issue where video from url/stdin won't be looped
+- fixed kitty animation failing on wrong shm name
+- fixed an issue where images in markdown won't appear in tmux
+
 ## V0.6.7
 
 - Fix the terminal capability probe hanging on macOS or stopping when run as a background job (#109, @bevanjkay)
