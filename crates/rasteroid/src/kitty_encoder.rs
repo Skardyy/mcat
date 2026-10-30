@@ -16,7 +16,7 @@ use crate::{
     },
 };
 
-#[cfg(target_os = "linux")]
+#[cfg(all(unix, not(target_os = "android")))]
 fn transmit_shm(
     data: &[u8],
     mut out: impl Write,
@@ -261,7 +261,7 @@ fn process_frame(
     shm_name: &str,
     tmux: bool,
 ) -> Result<(), RasterError> {
-    #[cfg(target_os = "linux")]
+    #[cfg(all(unix, not(target_os = "android")))]
     if use_shm {
         transmit_shm(data, out, first_opts, shm_name, tmux)?;
         return Ok(());
@@ -284,7 +284,7 @@ fn process_frame(
 /// terminals such as kitty clear the shared memory after consuming, but it won't be certain on
 /// every terminal. also saving the video for future use will include having memory spent on this
 /// and not storage.
-#[cfg(target_os = "linux")]
+#[cfg(all(unix, not(target_os = "android")))]
 pub unsafe fn encode_frames_fast(
     frames: &mut dyn Iterator<Item = VideoFrame>,
     out: &mut impl Write,
@@ -295,7 +295,7 @@ pub unsafe fn encode_frames_fast(
     let (id, last_index) = encode_frames_sep(frames, out, true, wininfo, offset, print_at)?;
 
     // fork a cleanup process that gives the terminal time to consume the shm objects
-    let first_shm = format!("mcat-video-{id}-0");
+    let first_shm = format!("/mcat-video-{id}-0");
     if shared_memory_fork::ShmemConf::new()
         .os_id(&first_shm)
         .open()
@@ -305,8 +305,8 @@ pub unsafe fn encode_frames_fast(
         if pid == 0 {
             unsafe { libc::setsid() };
             std::thread::sleep(std::time::Duration::from_millis(200));
-            for name in std::iter::once(format!("mcat-video-{id}-thumb"))
-                .chain((0..=last_index).map(|i| format!("mcat-video-{id}-{i}")))
+            for name in std::iter::once(format!("/mcat-video-{id}-thumb"))
+                .chain((0..=last_index).map(|i| format!("/mcat-video-{id}-{i}")))
             {
                 if let Ok(mut shmem) = shared_memory_fork::ShmemConf::new().os_id(&name).open() {
                     shmem.set_owner(true);
@@ -347,7 +347,7 @@ fn encode_frames_sep(
 
     let mut pre_timestamp = 0.0;
     let id = rand::random::<u32>();
-    let shm_name = format!("mcat-video-{id}-");
+    let shm_name = format!("/mcat-video-{id}-");
 
     let tmux = wininfo.is_tmux;
     let inline = wininfo.needs_inline || tmux;

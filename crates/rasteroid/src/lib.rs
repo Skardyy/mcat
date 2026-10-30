@@ -123,7 +123,7 @@ impl Encoder for RasterEncoder {
                 animation_ext: true,
                 ..
             } => {
-                #[cfg(target_os = "linux")]
+                #[cfg(all(unix, not(target_os = "android")))]
                 if crossterm::tty::IsTty::is_tty(&std::io::stdout()) {
                     return unsafe {
                         kitty_encoder::encode_frames_fast(frames, out, wininfo, offset, print_at)
