@@ -511,12 +511,19 @@ fn probe_graphics_caps(is_tmux: bool) -> std::io::Result<(bool, bool, Option<(u8
         if libc::tcgetpgrp(fd) != libc::getpgrp() {
             return Err(std::io::Error::other("not in the foreground process group"));
         }
+
+        // lock on the tty, having 2 mcats probing at the same time will make both stuck
+        libc::flock(fd, libc::LOCK_EX);
         let mut o: libc::termios = std::mem::zeroed();
         if libc::tcgetattr(fd, &mut o) != 0 {
             return Err(std::io::Error::last_os_error());
         }
         let mut raw = o;
-        libc::cfmakeraw(&mut raw);
+        // disable only canon and echo mode
+        raw.c_lflag &= !(libc::ICANON | libc::ECHO | libc::ISIG);
+        // stop buffering, might be default for most anyways, just in case..
+        raw.c_cc[libc::VMIN] = 1;
+        raw.c_cc[libc::VTIME] = 0;
         if libc::tcsetattr(fd, libc::TCSANOW, &raw) != 0 {
             return Err(std::io::Error::last_os_error());
         }
