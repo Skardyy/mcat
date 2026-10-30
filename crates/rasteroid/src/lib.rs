@@ -172,8 +172,21 @@ pub enum RasterEncoder {
 impl RasterEncoder {
     /// Picks the best protocol for the current terminal. Falls back to Ascii.
     pub fn auto_detect(env: &EnvIdentifiers) -> Self {
-        if let Some(kitty_enc) = kitty_encoder::is_kitty_capable(env) {
-            return kitty_enc;
+        let kitty = kitty_encoder::is_kitty_capable(env);
+        let weak_kitty = env.is_tmux()
+            && matches!(
+                kitty,
+                Some(Self::Kitty {
+                    unicode_placeholder_ext: false,
+                    ..
+                })
+            );
+
+        // kitty, normal
+        if let Some(k) = kitty
+            && !weak_kitty
+        {
+            return k;
         }
         if iterm_encoder::is_iterm_capable(env) {
             return Self::Iterm;
@@ -181,7 +194,11 @@ impl RasterEncoder {
         if sixel_encoder::is_sixel_capable(env) {
             return Self::Sixel;
         }
-
+        // kitty without unicode ext and in tmux
+        // iterm and sixel seems to work better in this case
+        if let Some(k) = kitty {
+            return k;
+        }
         Self::Ascii
     }
 }
