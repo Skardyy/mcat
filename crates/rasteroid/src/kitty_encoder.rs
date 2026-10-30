@@ -350,22 +350,12 @@ fn encode_frames_sep(
     let shm_name = format!("/mcat-video-{id}-");
 
     let tmux = wininfo.is_tmux;
-    let inline = wininfo.needs_inline || tmux;
     let prefix = if tmux {
         "\x1bPtmux;\x1b\x1b_G"
     } else {
         "\x1b_G"
     };
     let suffix = if tmux { "\x1b\x1b\\\x1b\\" } else { "\x1b\\" };
-
-    // if not inline, its going to be a single row, we can just print it at the start and be done
-    if !inline {
-        let printat = term_misc::loc_to_terminal(print_at);
-        out.write_all(printat.as_bytes())?;
-
-        let offset = term_misc::offset_to_terminal(offset);
-        out.write_all(offset.as_bytes())?;
-    }
 
     let i = id.to_string();
     let s = width.to_string();
@@ -378,7 +368,7 @@ fn encode_frames_sep(
         ("s".to_string(), s),
         ("v".to_string(), v),
     ]);
-    let (rows, cols) = if inline {
+    let (rows, cols) = {
         let cols = wininfo.dim_to_cells(&format!("{width}px"), term_misc::SizeDirection::Width)?;
         let rows =
             wininfo.dim_to_cells(&format!("{height}px"), term_misc::SizeDirection::Height)?;
@@ -386,8 +376,6 @@ fn encode_frames_sep(
         opts.insert("r".to_string(), rows.to_string());
         opts.insert("c".to_string(), cols.to_string());
         (rows, cols)
-    } else {
-        (0, 0)
     };
 
     // adding the root image
@@ -400,6 +388,12 @@ fn encode_frames_sep(
         &format!("{shm_name}thumb"),
         tmux,
     )?;
+
+    let placement = create_unicode_placeholder(cols, rows, id, offset, print_at)?;
+    out.write_all(placement.as_bytes())?;
+    if print_at.is_none() {
+        out.write_all(b"\n")?;
+    }
 
     // starting the animation
     let z = 100;
@@ -448,11 +442,9 @@ fn encode_frames_sep(
         }
     }
 
-    if inline {
-        let placement = create_unicode_placeholder(cols, rows, id, offset, print_at)?;
-        out.write_all(placement.as_bytes())?;
-    }
+    // start the loop
     write!(out, "{prefix}a=a,s=3,v=1,r=1,i={id},z={z}{suffix}")?;
+    out.flush()?;
     Ok((id, last_index))
 }
 
