@@ -128,11 +128,12 @@ pub fn encode_image(
     print_at: Option<(u16, u16)>,
     wininfo: &Wininfo,
     allow_unicode_placeholder: bool,
+    id: Option<u32>,
 ) -> Result<(), RasterError> {
     let mut png = Vec::new();
     img.write_to(&mut Cursor::new(&mut png), image::ImageFormat::Png)?;
 
-    let id = rand::random::<u32>();
+    let id = id.unwrap_or_else(rand::random::<u32>);
     let mut opts = HashMap::from([
         ("f".to_string(), "100".to_string()),
         ("a".to_string(), "T".to_string()),
@@ -453,6 +454,36 @@ fn encode_frames_sep(
     }
     write!(out, "{prefix}a=a,s=3,v=1,r=1,i={id},z={z}{suffix}")?;
     Ok((id, last_index))
+}
+
+pub fn encode_frames_redraw(
+    frames: &mut dyn Iterator<Item = VideoFrame>,
+    out: &mut impl Write,
+    wininfo: &Wininfo,
+    offset: Option<u16>,
+    print_at: Option<(u16, u16)>,
+) -> Result<(), RasterError> {
+    let (prefix, suffix) = if wininfo.is_tmux {
+        ("\x1bPtmux;\x1b\x1b_G", "\x1b\x1b\\\x1b\\")
+    } else {
+        ("\x1b_G", "\x1b\\")
+    };
+
+    let mut prev_id: Option<u32> = None;
+    crate::redraw_frames(frames, out, |img, buf| {
+        let id = rand::random::<u32>();
+        encode_image(img, buf, offset, print_at, wininfo, false, Some(id))?;
+        if let Some(prev) = prev_id {
+            // d=I: delete the previous frame's placements and free its data
+            write!(buf, "{prefix}a=d,d=I,i={prev},q=2{suffix}")?;
+        }
+        prev_id = Some(id);
+
+        Ok(wininfo.dim_to_cells(
+            &format!("{}px", img.height()),
+            term_misc::SizeDirection::Height,
+        )? as u16)
+    })
 }
 
 pub fn is_kitty_capable(env: &EnvIdentifiers) -> Option<RasterEncoder> {

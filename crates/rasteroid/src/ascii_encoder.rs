@@ -4,12 +4,9 @@ use crate::{
     VideoFrame,
     error::RasterError,
     image_extended::InlineImage,
-    term_misc::{self, Wininfo, ensure_space},
+    term_misc::{self, Wininfo},
 };
-use std::{
-    io::{BufRead, Write},
-    time::Duration,
-};
+use std::io::{BufRead, Write};
 
 pub fn encode_image(
     img: &DynamicImage,
@@ -128,57 +125,9 @@ pub fn encode_frames(
     offset: Option<u16>,
     print_at: Option<(u16, u16)>,
 ) -> Result<(), RasterError> {
-    let mut last_timestamp = None;
-    let mut frame_outputs = Vec::new();
-    let mut start = true;
-
-    for (img, timestamp) in frames {
-        let target_delay = match (timestamp, last_timestamp) {
-            (ts, Some(last)) if ts > last => Duration::from_secs_f32(ts - last),
-            _ => Duration::from_millis(33), // ~30fps
-        };
-        last_timestamp = Some(timestamp);
-
+    crate::redraw_frames(frames, &mut out, |img, buf| {
         let resized = img.resize_plus(wininfo, Some("80%"), Some("40%"), true, false)?;
-        let mut buffer = Vec::new();
-
-        encode_image(&resized, &mut buffer, offset, print_at)?;
-
-        clear_write_frame(&mut out, &buffer, start)?;
-        start = false;
-
-        out.flush()?;
-
-        frame_outputs.push((buffer, target_delay));
-        std::thread::sleep(target_delay);
-    }
-
-    if frame_outputs.is_empty() {
-        return Ok(());
-    }
-
-    loop {
-        for (output, delay) in &frame_outputs {
-            clear_write_frame(&mut out, output, false)?;
-            out.flush()?;
-            std::thread::sleep(*delay);
-        }
-    }
-}
-
-fn clear_write_frame(mut out: impl Write, val: &[u8], start: bool) -> Result<(), RasterError> {
-    let mut buf = Vec::new();
-    if start {
-        let image_height = val.lines().count();
-        ensure_space(&mut buf, image_height as u16)?;
-        buf.extend_from_slice(b"\x1b[s");
-    } else {
-        buf.extend_from_slice(b"\x1b[u");
-        buf.extend_from_slice(b"\x1b[s");
-    }
-    buf.extend_from_slice(val);
-
-    out.write_all(&buf)?;
-
-    Ok(())
+        encode_image(&resized, buf, offset, print_at)?;
+        Ok(buf.as_slice().lines().count() as u16)
+    })
 }

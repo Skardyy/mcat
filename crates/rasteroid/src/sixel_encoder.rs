@@ -6,7 +6,7 @@ use crate::{
 use color_quant::NeuQuant;
 use image::{DynamicImage, ImageBuffer, Rgb};
 use rayon::prelude::*;
-use std::{io::Write, sync::atomic::Ordering, time::Duration};
+use std::io::Write;
 
 const SIXEL_MIN: u8 = 0x3f;
 
@@ -178,67 +178,13 @@ pub fn encode_frames(
     offset: Option<u16>,
     print_at: Option<(u16, u16)>,
 ) -> Result<(), RasterError> {
-    // floor on the effective frame rate, so a machine that can't keep up
-    // degrades to a lower rate instead of dropping every frame
-    const MIN_INTERVAL: Duration = Duration::from_millis(100);
-
-    let shutdown = term_misc::setup_signal_handler();
-    let (first_img, _) = frames.next().ok_or(RasterError::EmptyVideo)?;
-
-    let reserved_rows = wininfo.dim_to_cells(
-        &format!("{}px", first_img.height()),
-        term_misc::SizeDirection::Height,
-    )? as u16;
-
-    let mut first_buf = Vec::new();
-    encode_image(&first_img, &mut first_buf, offset, print_at, wininfo)?;
-    term_misc::ensure_space(out, reserved_rows)?;
-    write!(out, "\x1b[s")?;
-    out.write_all(&first_buf)?;
-    out.flush()?;
-    drop(first_buf);
-
-    // frame 0 is on screen now; every later frame is scheduled against this
-    let start = std::time::Instant::now();
-    let mut last_shown = start;
-
-    for (img, timestamp) in frames {
-        if shutdown.load(Ordering::SeqCst) {
-            park_cursor_below(out, reserved_rows)?;
-            return Ok(());
-        }
-
-        let target = start + Duration::from_secs_f32(timestamp.max(0.0));
-        let now = std::time::Instant::now();
-
-        // already overdue, and we've shown something recently enough
-        if now > target && now.duration_since(last_shown) < MIN_INTERVAL {
-            continue;
-        }
-
-        let mut buf = Vec::new();
-        encode_image(&img, &mut buf, offset, print_at, wininfo)?;
-
-        // sleep only the time left until this frame is due, not the full delay.
-        // encoding already consumed part of the budget.
-        if let Some(left) = target.checked_duration_since(std::time::Instant::now()) {
-            std::thread::sleep(left);
-        }
-
-        write!(out, "\x1b[u")?;
-        out.write_all(&buf)?;
-        out.flush()?;
-        last_shown = std::time::Instant::now();
-    }
-
-    park_cursor_below(out, reserved_rows)?;
-    Ok(())
-}
-
-fn park_cursor_below(out: &mut impl Write, rows: u16) -> Result<(), RasterError> {
-    write!(out, "\x1b[u\x1b[{rows}B\r")?;
-    out.flush()?;
-    Ok(())
+    crate::redraw_frames(frames, out, |img, buf| {
+        encode_image(img, buf, offset, print_at, wininfo)?;
+        Ok(wininfo.dim_to_cells(
+            &format!("{}px", img.height()),
+            term_misc::SizeDirection::Height,
+        )? as u16)
+    })
 }
 
 fn samplefac_for(pixel_count: usize) -> i32 {

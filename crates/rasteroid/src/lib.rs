@@ -1,12 +1,17 @@
 use std::{
     io::{self, Write},
     process::Command,
+    sync::atomic::Ordering,
+    time::{Duration, Instant},
 };
 
 use image::DynamicImage;
 use term_misc::{EnvIdentifiers, ensure_space};
 
-use crate::{error::RasterError, term_misc::Wininfo};
+use crate::{
+    error::RasterError,
+    term_misc::{Wininfo, setup_signal_handler},
+};
 
 pub mod ascii_encoder;
 pub mod error;
@@ -86,6 +91,7 @@ impl Encoder for RasterEncoder {
                 print_at,
                 wininfo,
                 *unicode_placeholder_ext,
+                None,
             ),
             RasterEncoder::Iterm => {
                 iterm_encoder::encode_image(img, out, offset, print_at, wininfo)
@@ -126,7 +132,7 @@ impl Encoder for RasterEncoder {
                 kitty_encoder::encode_frames(frames, out, wininfo, offset, print_at)
             }
             RasterEncoder::Kitty { .. } => {
-                todo!()
+                kitty_encoder::encode_frames_redraw(frames, out, wininfo, offset, print_at)
             }
             // iterm gif rendering might be abit smarter, just requires to convert the frames into
             // gif, which takes time, time that now frames are rendered..
@@ -202,3 +208,79 @@ fn get_tmux_terminal_name() -> Result<(String, String), io::Error> {
 
 /// A video frame: the image and its timestamp in seconds.
 pub type VideoFrame = (DynamicImage, f32);
+
+fn park_cursor_below(out: &mut impl Write, rows: u16) -> Result<(), RasterError> {
+    write!(out, "\x1b[u\x1b[{rows}B\r")?;
+    out.flush()?;
+    Ok(())
+}
+
+/// Plays video by redrawing a still image in place for every frame, for protocols with no
+/// native animation (iTerm2, sixel, kitty without the animation extension).
+fn redraw_frames(
+    frames: &mut dyn Iterator<Item = VideoFrame>,
+    out: &mut impl Write,
+    mut encode: impl FnMut(&DynamicImage, &mut Vec<u8>) -> Result<u16, RasterError>,
+) -> Result<(), RasterError> {
+    // floor on the effective frame rate, so a machine that can't keep up
+    // degrades to a lower rate instead of dropping every frame
+    const MIN_INTERVAL: Duration = Duration::from_millis(100);
+
+    let shutdown = setup_signal_handler();
+    let mut first = true;
+    let mut reserved_rows: u16 = 0;
+    let mut start = Instant::now();
+    let mut last_shown = start;
+
+    for (img, timestamp) in frames {
+        if shutdown.load(Ordering::SeqCst) {
+            park_cursor_below(out, reserved_rows)?;
+            return Ok(());
+        }
+
+        if first {
+            let mut buf = Vec::new();
+            reserved_rows = encode(&img, &mut buf)?;
+
+            ensure_space(out, reserved_rows)?;
+            write!(out, "\x1b[s")?;
+            out.write_all(&buf)?;
+            out.flush()?;
+
+            // frame 0 is on screen now; every later frame is scheduled against this
+            start = Instant::now();
+            last_shown = start;
+            first = false;
+            continue;
+        }
+
+        let target = start + Duration::from_secs_f32(timestamp.max(0.0));
+        let now = Instant::now();
+
+        // already overdue, and we've shown something recently enough
+        if now > target && now.duration_since(last_shown) < MIN_INTERVAL {
+            continue;
+        }
+
+        let mut buf = Vec::new();
+        encode(&img, &mut buf)?;
+
+        // sleep only the time left until this frame is due, not the full delay.
+        // encoding already consumed part of the budget.
+        if let Some(left) = target.checked_duration_since(Instant::now()) {
+            std::thread::sleep(left);
+        }
+
+        write!(out, "\x1b[u")?;
+        out.write_all(&buf)?;
+        out.flush()?;
+        last_shown = Instant::now();
+    }
+
+    if first {
+        return Err(RasterError::EmptyVideo);
+    }
+
+    park_cursor_below(out, reserved_rows)?;
+    Ok(())
+}

@@ -449,7 +449,7 @@ impl McatFile {
         )?;
 
         command.hwaccel("auto");
-        if matches!(
+        if !matches!(
             enc,
             RasterEncoder::Kitty {
                 animation_ext: true,
