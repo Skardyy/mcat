@@ -73,6 +73,15 @@ scoop install mcat
 
 </details>
 
+<details>
+<summary>Conda (conda-forge)</summary>
+
+```sh
+conda install -c conda-forge mcat
+```
+
+</details>
+
 ## How it works
 
 <img alt="mcat-pipeline-graph" width="700" src="https://github.com/user-attachments/assets/4ec04541-39d8-4cd0-b05d-0a5813be61aa">
