@@ -12,49 +12,57 @@ jobs:
     steps:
       - name: Fetch and Calculate Total Downloads
         id: calculate
+        shell: bash
         run: |
+          set -eo pipefail
+
           # Function to parse shields.io formatted numbers
           parse_number() {
             local input="$1"
             # Remove "/year", "/month", "/day" suffixes
             input=$(echo "$input" | sed 's/\/[a-z]*$//')
-            
+
             # Handle k (thousands)
             if [[ $input =~ ^([0-9.]+)k$ ]]; then
-              number="${BASH_REMATCH[1]}"
-              result=$(echo "$number * 1000" | bc)
-              echo ${result%.*}  # Remove decimal part
+              echo "$(echo "${BASH_REMATCH[1]} * 1000" | bc | cut -d. -f1)"
             # Handle M (millions)
             elif [[ $input =~ ^([0-9.]+)M$ ]]; then
-              number="${BASH_REMATCH[1]}"
-              result=$(echo "$number * 1000000" | bc)
-              echo ${result%.*}
+              echo "$(echo "${BASH_REMATCH[1]} * 1000000" | bc | cut -d. -f1)"
             # Plain number
-            else
+            elif [[ $input =~ ^[0-9]+$ ]]; then
               echo "$input"
+            else
+              echo "Failed to parse '$input'" >&2
+              exit 1
             fi
           }
 
           # Fetch GitHub downloads
-          GITHUB_JSON=$(curl -s "https://img.shields.io/github/downloads/skardyy/mcat/total.json")
+          GITHUB_JSON=$(curl -sf "https://img.shields.io/github/downloads/skardyy/mcat/total.json")
           GITHUB_RAW=$(echo "$GITHUB_JSON" | jq -r '.message')
           GITHUB_COUNT=$(parse_number "$GITHUB_RAW")
           echo "GitHub: $GITHUB_RAW -> $GITHUB_COUNT"
 
           # Fetch Homebrew installs
-          HOMEBREW_JSON=$(curl -s "https://img.shields.io/homebrew/installs/dy/mcat.json")
+          HOMEBREW_JSON=$(curl -sf "https://img.shields.io/homebrew/installs/dy/mcat.json")
           HOMEBREW_RAW=$(echo "$HOMEBREW_JSON" | jq -r '.message')
           HOMEBREW_COUNT=$(parse_number "$HOMEBREW_RAW")
           echo "Homebrew: $HOMEBREW_RAW -> $HOMEBREW_COUNT"
 
           # Fetch Crates.io downloads
-          CRATES_JSON=$(curl -s "https://img.shields.io/crates/d/mcat.json")
+          CRATES_JSON=$(curl -sf "https://img.shields.io/crates/d/mcat.json")
           CRATES_RAW=$(echo "$CRATES_JSON" | jq -r '.message')
           CRATES_COUNT=$(parse_number "$CRATES_RAW")
           echo "Crates.io: $CRATES_RAW -> $CRATES_COUNT"
 
+          # Fetch Conda-forge downloads
+          CONDA_JSON=$(curl -sf "https://img.shields.io/conda/dn/conda-forge/mcat.json")
+          CONDA_RAW=$(echo "$CONDA_JSON" | jq -r '.message')
+          CONDA_COUNT=$(parse_number "$CONDA_RAW")
+          echo "Conda: $CONDA_RAW -> $CONDA_COUNT"
+
           # Calculate total
-          TOTAL=$((GITHUB_COUNT + HOMEBREW_COUNT + CRATES_COUNT))
+          TOTAL=$((GITHUB_COUNT + HOMEBREW_COUNT + CRATES_COUNT + CONDA_COUNT))
           echo "Total: $TOTAL"
 
           # Round the number
