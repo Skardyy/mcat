@@ -310,7 +310,7 @@ pub fn parse_docx(content: impl AsRef<[u8]>, inline: bool) -> Result<String, Par
         let mut file = archive
             .by_index(i)
             .map_err(|e| ParsingError::ArchiveError(e.to_string()))?;
-        if file.name() == "word/document.xml" {
+        if matches!(file.name().as_deref(), Ok("word/document.xml")) {
             file.read_to_string(&mut xml_content)?;
             break;
         }

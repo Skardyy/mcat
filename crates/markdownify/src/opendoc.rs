@@ -192,7 +192,10 @@ fn load_images(archive: &mut ZipArchive<Cursor<&[u8]>>) -> HashMap<String, (Stri
     use base64::{Engine as _, engine::general_purpose::STANDARD};
     let mut map = HashMap::new();
     let names: Vec<String> = (0..archive.len())
-        .filter_map(|i| archive.by_index(i).ok().map(|f| f.name().to_string()))
+        .filter_map(|i| {
+            let file = archive.by_index(i).ok()?;
+            file.name().ok().map(|v| v.into_owned())
+        })
         .collect();
     for name in names {
         let media_type = if name.ends_with(".png") {
@@ -299,7 +302,7 @@ pub fn parse_opendoc(content: impl AsRef<[u8]>, inline: bool) -> Result<String, 
         let mut file = archive
             .by_index(i)
             .map_err(|e| ParsingError::ArchiveError(e.to_string()))?;
-        if file.name() == "content.xml" {
+        if matches!(file.name().as_deref(), Ok("content.xml")) {
             file.read_to_string(&mut xml_content)?;
             break;
         }

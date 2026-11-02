@@ -321,10 +321,8 @@ fn load_notes(archive: &mut ZipArchive<Cursor<&[u8]>>, path: &str) -> Option<Str
                 }
                 _ => {}
             },
-            Ok(Event::Empty(e)) => {
-                if e.name().as_ref() == b"p:ph" {
-                    ph_is_body = get_attr(&e, b"type", &reader).as_deref() == Some("body");
-                }
+            Ok(Event::Empty(e)) if e.name().as_ref() == b"p:ph" => {
+                ph_is_body = get_attr(&e, b"type", &reader).as_deref() == Some("body");
             }
             Ok(Event::Text(e)) => {
                 if in_notes_body
@@ -377,12 +375,10 @@ fn load_notes(archive: &mut ZipArchive<Cursor<&[u8]>>, path: &str) -> Option<Str
 fn collect_slide_paths(archive: &mut ZipArchive<Cursor<&[u8]>>) -> Vec<String> {
     let mut paths: Vec<String> = (0..archive.len())
         .filter_map(|i| {
-            let name = archive.by_index(i).ok()?.name().to_string();
-            if name.starts_with("ppt/slides/slide") && name.ends_with(".xml") {
-                Some(name)
-            } else {
-                None
-            }
+            let file = archive.by_index(i).ok()?;
+            let name = file.name().ok()?;
+            (name.starts_with("ppt/slides/slide") && name.ends_with(".xml"))
+                .then(|| name.into_owned())
         })
         .collect();
     paths.sort_by_key(|p| {
@@ -462,31 +458,27 @@ fn parse_slide(xml: &str, mut ctx: PptxContext) -> Result<String, ParsingError> 
                 b"p:txBody" => {
                     ctx.in_tx_body = true;
                 }
-                b"a:pPr" => {
-                    if ctx.in_tx_body && !ctx.para.ppr_seen {
-                        ctx.in_para_pr = true;
-                        ctx.para.ppr_seen = true;
-                        let mar_l = get_attr(&e, b"marL", &reader)
-                            .and_then(|v| v.parse::<u32>().ok())
-                            .unwrap_or(0);
-                        if mar_l > 0 {
-                            ctx.para.is_bullet = true;
-                            ctx.para.level = mar_l_to_level(mar_l);
-                        }
+                b"a:pPr" if ctx.in_tx_body && !ctx.para.ppr_seen => {
+                    ctx.in_para_pr = true;
+                    ctx.para.ppr_seen = true;
+                    let mar_l = get_attr(&e, b"marL", &reader)
+                        .and_then(|v| v.parse::<u32>().ok())
+                        .unwrap_or(0);
+                    if mar_l > 0 {
+                        ctx.para.is_bullet = true;
+                        ctx.para.level = mar_l_to_level(mar_l);
                     }
                 }
-                b"a:rPr" => {
-                    if ctx.in_tx_body {
-                        ctx.in_run_pr = true;
-                        ctx.run.bold = get_attr(&e, b"b", &reader).as_deref() == Some("1");
-                        ctx.run.italic = get_attr(&e, b"i", &reader).as_deref() == Some("1");
-                        ctx.run.strike = matches!(
-                            get_attr(&e, b"strike", &reader).as_deref(),
-                            Some("sngStrike") | Some("dblStrike")
-                        );
-                        ctx.run.underline = matches!(get_attr(&e, b"u", &reader).as_deref(),
+                b"a:rPr" if ctx.in_tx_body => {
+                    ctx.in_run_pr = true;
+                    ctx.run.bold = get_attr(&e, b"b", &reader).as_deref() == Some("1");
+                    ctx.run.italic = get_attr(&e, b"i", &reader).as_deref() == Some("1");
+                    ctx.run.strike = matches!(
+                        get_attr(&e, b"strike", &reader).as_deref(),
+                        Some("sngStrike") | Some("dblStrike")
+                    );
+                    ctx.run.underline = matches!(get_attr(&e, b"u", &reader).as_deref(),
                                                 Some(u) if u != "none");
-                    }
                 }
                 b"a:hlinkClick" => {
                     ctx.active_hlink_rid = get_attr(&e, b"r:id", &reader);
@@ -496,16 +488,12 @@ fn parse_slide(xml: &str, mut ctx: PptxContext) -> Result<String, ParsingError> 
                     ctx.in_table = true;
                     ctx.table_rows.clear();
                 }
-                b"a:tr" => {
-                    if ctx.in_table {
-                        ctx.current_row.clear();
-                    }
+                b"a:tr" if ctx.in_table => {
+                    ctx.current_row.clear();
                 }
-                b"a:tc" => {
-                    if ctx.in_table {
-                        ctx.in_cell = true;
-                        ctx.cell_text.clear();
-                    }
+                b"a:tc" if ctx.in_table => {
+                    ctx.in_cell = true;
+                    ctx.cell_text.clear();
                 }
                 b"a:blip" => {
                     if let Some(rid) = get_attr(&e, b"r:embed", &reader) {
@@ -527,11 +515,9 @@ fn parse_slide(xml: &str, mut ctx: PptxContext) -> Result<String, ParsingError> 
                 b"a:buChar" | b"a:buAutoNum" => {
                     ctx.para.is_bullet = true;
                 }
-                b"a:buNone" => {
-                    if ctx.in_para_pr {
-                        ctx.para.is_bullet = false;
-                        ctx.para.level = 0;
-                    }
+                b"a:buNone" if ctx.in_para_pr => {
+                    ctx.para.is_bullet = false;
+                    ctx.para.level = 0;
                 }
                 b"a:hlinkClick" => {
                     ctx.active_hlink_rid = get_attr(&e, b"r:id", &reader);
@@ -607,19 +593,15 @@ fn parse_slide(xml: &str, mut ctx: PptxContext) -> Result<String, ParsingError> 
                     ctx.active_hlink_rid = None;
                     ctx.run = RunStyle::default();
                 }
-                b"a:p" => {
-                    if ctx.in_tx_body {
-                        ctx.flush_para();
-                    }
+                b"a:p" if ctx.in_tx_body => {
+                    ctx.flush_para();
                 }
                 b"a:tbl" => {
                     ctx.flush_table();
                     ctx.in_table = false;
                 }
-                b"a:tr" => {
-                    if ctx.in_table {
-                        ctx.table_rows.push(std::mem::take(&mut ctx.current_row));
-                    }
+                b"a:tr" if ctx.in_table => {
+                    ctx.table_rows.push(std::mem::take(&mut ctx.current_row));
                 }
                 b"a:tc" if ctx.in_table => {
                     ctx.current_row.push(ctx.cell_text.trim().to_string());

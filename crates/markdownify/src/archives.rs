@@ -24,10 +24,17 @@ pub fn parse_zip(
             continue;
         }
 
-        let name = entry.name().to_string();
+        let name = entry
+            .name()
+            .map_err(|e| ParsingError::ArchiveError(e.to_string()))?;
         if should_skip_file(&name) {
             continue;
         }
+        let ext = Path::new(&*name)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_lowercase());
+        let name = name.into_owned();
 
         let mut contents = Vec::new();
         entry
@@ -36,10 +43,7 @@ pub fn parse_zip(
 
         let mut input = MarkdownifyInput::from_bytes(contents, name.clone())?;
         input.allow_inline_images(allow_inline_images);
-        input.ext = Path::new(&name)
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(|e| e.to_lowercase());
+        input.ext = ext;
         let text = input.convert()?;
         tree.add_file(name, text);
     }
