@@ -68,7 +68,7 @@ lzma-rust2 = { version = "0.18.1", default-features = false, features = [
 quick-xml = "0.41.0"
 tar = "0.4.46"
 thiserror = "2.0.21"
-zip = { version = "8.6.0", default-features = false, features = [
+zip = { version = "9.0.5", default-features = false, features = [
   "deflate-flate2",
 ] }
 

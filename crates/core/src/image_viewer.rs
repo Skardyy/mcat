@@ -139,11 +139,9 @@ pub fn run_interactive_viewer(
                         code: KeyCode::Char('n'),
                         modifiers: KeyModifiers::NONE,
                         ..
-                    } => {
-                        if current_image + 1 < max_images {
-                            clicked_correct_key = true;
-                            current_image += 1;
-                        }
+                    } if current_image + 1 < max_images => {
+                        clicked_correct_key = true;
+                        current_image += 1;
                     }
 
                     // previous image
@@ -151,11 +149,9 @@ pub fn run_interactive_viewer(
                         code: KeyCode::Char('p'),
                         modifiers: KeyModifiers::NONE,
                         ..
-                    } => {
-                        if current_image != 0 {
-                            clicked_correct_key = true;
-                            current_image -= 1;
-                        }
+                    } if current_image != 0 => {
+                        clicked_correct_key = true;
+                        current_image -= 1;
                     }
 
                     //left
@@ -167,10 +163,8 @@ pub fn run_interactive_viewer(
                         code: KeyCode::Char('h'),
                         modifiers: KeyModifiers::NONE,
                         ..
-                    } => {
-                        if viewport.adjust_pan(-50, 0) {
-                            clicked_correct_key = true;
-                        }
+                    } if viewport.adjust_pan(-50, 0) => {
+                        clicked_correct_key = true;
                     }
 
                     // right
@@ -183,10 +177,8 @@ pub fn run_interactive_viewer(
                         code: KeyCode::Char('l'),
                         modifiers: KeyModifiers::NONE,
                         ..
-                    } => {
-                        if viewport.adjust_pan(50, 0) {
-                            clicked_correct_key = true;
-                        }
+                    } if viewport.adjust_pan(50, 0) => {
+                        clicked_correct_key = true;
                     }
 
                     // up
@@ -199,10 +191,8 @@ pub fn run_interactive_viewer(
                         code: KeyCode::Char('k'),
                         modifiers: KeyModifiers::NONE,
                         ..
-                    } => {
-                        if viewport.adjust_pan(0, -50) {
-                            clicked_correct_key = true;
-                        }
+                    } if viewport.adjust_pan(0, -50) => {
+                        clicked_correct_key = true;
                     }
 
                     // down
@@ -215,10 +205,8 @@ pub fn run_interactive_viewer(
                         code: KeyCode::Char('j'),
                         modifiers: KeyModifiers::NONE,
                         ..
-                    } => {
-                        if viewport.adjust_pan(0, 50) {
-                            clicked_correct_key = true;
-                        }
+                    } if viewport.adjust_pan(0, 50) => {
+                        clicked_correct_key = true;
                     }
 
                     // stronger up
@@ -226,10 +214,8 @@ pub fn run_interactive_viewer(
                         code: KeyCode::Char('u'),
                         modifiers: KeyModifiers::CONTROL,
                         ..
-                    } => {
-                        if viewport.adjust_pan(0, -200) {
-                            clicked_correct_key = true;
-                        }
+                    } if viewport.adjust_pan(0, -200) => {
+                        clicked_correct_key = true;
                     }
 
                     // stronger down
@@ -237,10 +223,8 @@ pub fn run_interactive_viewer(
                         code: KeyCode::Char('d'),
                         modifiers: KeyModifiers::CONTROL,
                         ..
-                    } => {
-                        if viewport.adjust_pan(0, 200) {
-                            clicked_correct_key = true;
-                        }
+                    } if viewport.adjust_pan(0, 200) => {
+                        clicked_correct_key = true;
                     }
 
                     // Zoom (+, - or =)
