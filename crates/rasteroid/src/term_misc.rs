@@ -495,6 +495,12 @@ pub fn setup_signal_handler() -> Arc<AtomicBool> {
     shutdown
 }
 
+fn is_ssh() -> bool {
+    env::var_os("SSH_CONNECTION").is_some()
+        || env::var_os("SSH_TTY").is_some()
+        || env::var_os("SSH_CLIENT").is_some()
+}
+
 #[cfg(unix)]
 #[allow(clippy::type_complexity)]
 fn probe_graphics_caps(is_tmux: bool) -> std::io::Result<(bool, bool, Option<(u8, u8, u8)>)> {
@@ -505,6 +511,7 @@ fn probe_graphics_caps(is_tmux: bool) -> std::io::Result<(bool, bool, Option<(u8
 
     let mut tty = OpenOptions::new().read(true).write(true).open("/dev/tty")?;
     let fd = tty.as_raw_fd();
+    let mut got_reply = false;
 
     let old = unsafe {
         // touching the tty from a background process group raises SIGTTOU/SIGTTIN and stops us
@@ -543,7 +550,8 @@ fn probe_graphics_caps(is_tmux: bool) -> std::io::Result<(bool, bool, Option<(u8
         tty.flush()?;
 
         let mut buf = Vec::with_capacity(256);
-        let deadline = Instant::now() + Duration::from_millis(250);
+        let timeout_ms = if is_ssh() { 1500 } else { 250 };
+        let deadline = Instant::now() + Duration::from_millis(timeout_ms);
         let mut chunk = [0u8; 128];
         loop {
             let left = deadline.saturating_duration_since(Instant::now());
@@ -581,6 +589,7 @@ fn probe_graphics_caps(is_tmux: bool) -> std::io::Result<(bool, bool, Option<(u8
                 .position(|w| w == b"\x1b[?")
                 .is_some_and(|s| buf[s..].contains(&b'c'))
             {
+                got_reply = true;
                 break;
             }
         }
@@ -616,6 +625,9 @@ fn probe_graphics_caps(is_tmux: bool) -> std::io::Result<(bool, bool, Option<(u8
     })();
 
     unsafe {
+        if !got_reply {
+            libc::tcflush(fd, libc::TCIFLUSH);
+        }
         libc::tcsetattr(fd, libc::TCSANOW, &old);
     }
     result
