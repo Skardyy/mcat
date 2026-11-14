@@ -58,7 +58,7 @@ two-face = "0.5.2"
 unicode-width = "0.2.2"
 which = "8.0.6"
 
-calamine = "0.36.1"
+calamine = "0.38"
 csv = "1.4.0"
 flate2 = "1.1.10"
 lzma-rust2 = { version = "0.18.1", default-features = false, features = [
