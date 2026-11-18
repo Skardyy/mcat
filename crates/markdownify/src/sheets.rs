@@ -1,6 +1,6 @@
 use std::io::{BufRead, Cursor};
 
-use calamine::Reader;
+use calamine::{Data, Reader};
 
 use crate::error::ParsingError;
 
@@ -49,12 +49,9 @@ pub fn parse_sheets(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
         if let Ok(range) = workbook.worksheet_range(&sheet_name) {
             let mut rows = range.rows();
             if let Some(header_row) = rows.next() {
-                let headers = header_row
-                    .iter()
-                    .map(|cell| cell.to_string())
-                    .collect::<Vec<_>>();
+                let headers = header_row.iter().map(cell_text).collect::<Vec<_>>();
                 let body = rows
-                    .map(|r| r.iter().map(|cell| cell.to_string()).collect::<Vec<_>>())
+                    .map(|r| r.iter().map(cell_text).collect::<Vec<_>>())
                     .collect::<Vec<_>>();
 
                 output += &format!("## {}\n\n", sheet_name);
@@ -65,6 +62,22 @@ pub fn parse_sheets(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
     }
 
     Ok(output)
+}
+
+/// A cell as the spreadsheet shows it. Excel stores dates as serial numbers,
+/// which `Data`'s `Display` prints as is (2024-03-15 is 45366).
+fn cell_text(cell: &Data) -> String {
+    match cell {
+        Data::DateTime(dt) if dt.is_datetime() => {
+            let (y, mo, d, h, mi, s, _) = dt.to_ymd_hms_milli();
+            if (h, mi, s) == (0, 0, 0) {
+                format!("{y:04}-{mo:02}-{d:02}")
+            } else {
+                format!("{y:04}-{mo:02}-{d:02} {h:02}:{mi:02}:{s:02}")
+            }
+        }
+        _ => cell.to_string(),
+    }
 }
 
 pub fn parse_csv(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
@@ -93,4 +106,18 @@ pub fn parse_csv(content: impl AsRef<[u8]>) -> Result<String, ParsingError> {
         .map_err(|e| ParsingError::ParsingError(e.to_string()))?;
 
     Ok(to_markdown_table(&headers, &rows))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cell_text;
+    use calamine::{Data, ExcelDateTime, ExcelDateTimeType};
+
+    #[test]
+    fn dates_are_written_as_dates() {
+        let date = |v| Data::DateTime(ExcelDateTime::new(v, ExcelDateTimeType::DateTime, false));
+        assert_eq!(cell_text(&date(45366.0)), "2024-03-15");
+        assert_eq!(cell_text(&date(45367.395833333336)), "2024-03-16 09:30:00");
+        assert_eq!(cell_text(&Data::Float(45366.0)), "45366");
+    }
 }
