@@ -40,6 +40,9 @@ struct DocxContext {
     numbering: HashMap<(String, String), bool>,
     inline: bool,
     in_drawing: bool,
+    /// Inside `<w:t>`: the only element whose text is document text (not
+    /// `<w:delText>`, `<w:instrText>` or whitespace between elements).
+    in_t: bool,
 }
 
 impl DocxContext {
@@ -65,6 +68,7 @@ impl DocxContext {
             numbering,
             inline,
             in_drawing: false,
+            in_t: false,
         }
     }
 
@@ -337,6 +341,9 @@ pub fn parse_docx(content: impl AsRef<[u8]>, inline: bool) -> Result<String, Par
                 b"w:drawing" => {
                     ctx.in_drawing = true;
                 }
+                b"w:t" => {
+                    ctx.in_t = true;
+                }
                 _ => {}
             },
 
@@ -416,7 +423,7 @@ pub fn parse_docx(content: impl AsRef<[u8]>, inline: bool) -> Result<String, Par
             },
 
             Ok(Event::Text(e)) => {
-                if ctx.in_drawing {
+                if ctx.in_drawing || !ctx.in_t {
                     continue;
                 }
                 let raw = parse_text(&*e)?;
@@ -424,7 +431,7 @@ pub fn parse_docx(content: impl AsRef<[u8]>, inline: bool) -> Result<String, Par
             }
 
             Ok(Event::GeneralRef(e)) => {
-                if ctx.in_drawing {
+                if ctx.in_drawing || !ctx.in_t {
                     continue;
                 }
                 let name = parse_text(&*e)?;
@@ -512,6 +519,9 @@ pub fn parse_docx(content: impl AsRef<[u8]>, inline: bool) -> Result<String, Par
                 b"w:drawing" => {
                     ctx.in_drawing = false;
                 }
+                b"w:t" => {
+                    ctx.in_t = false;
+                }
                 _ => {}
             },
 
@@ -538,6 +548,49 @@ mod tests {
 
     fn parse() -> String {
         parse_docx(FIXTURE, true).expect("fixture should parse without error")
+    }
+
+    fn docx_with_body(body: &str) -> Vec<u8> {
+        use std::io::Write;
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        zip.start_file(
+            "word/document.xml",
+            zip::write::SimpleFileOptions::default(),
+        )
+        .unwrap();
+        write!(
+            zip,
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n\
+             <w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">\
+             <w:body>{body}</w:body></w:document>"
+        )
+        .unwrap();
+        zip.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn only_document_text_is_kept() {
+        let md = parse_docx(
+            docx_with_body(
+                "<w:p><w:pPr><w:pStyle w:val=\"Title\"/></w:pPr><w:r><w:t>Report</w:t></w:r></w:p>\
+                 <w:p><w:r><w:t xml:space=\"preserve\">Page </w:t></w:r>\
+                 <w:r><w:fldChar w:fldCharType=\"begin\"/></w:r>\
+                 <w:r><w:instrText xml:space=\"preserve\"> PAGE \\* MERGEFORMAT </w:instrText></w:r>\
+                 <w:r><w:fldChar w:fldCharType=\"separate\"/></w:r><w:r><w:t>3</w:t></w:r>\
+                 <w:r><w:fldChar w:fldCharType=\"end\"/></w:r></w:p>\
+                 <w:p><w:r><w:t xml:space=\"preserve\">Price is </w:t></w:r>\
+                 <w:del><w:r><w:delText>$100</w:delText></w:r></w:del>\
+                 <w:ins><w:r><w:t>$200</w:t></w:r></w:ins><w:r><w:t>.</w:t></w:r></w:p>",
+            ),
+            true,
+        )
+        .unwrap();
+        assert!(md.contains("# Report"), "title lost its heading: {md:?}");
+        assert!(md.contains("Page 3"), "field code in output: {md:?}");
+        assert!(
+            md.contains("Price is $200."),
+            "deleted text in output: {md:?}"
+        );
     }
 
     #[test]
