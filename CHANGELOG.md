@@ -1,4 +1,4 @@
-## V0.6.9 - SRC
+## V0.6.9
 
 - fix(markdownify): print xlsx dates as dates, (#118, @jayhemnani9910)
 - fix(markdownify): read docx text only from w:t, (#117, @jayhemnani9910)
