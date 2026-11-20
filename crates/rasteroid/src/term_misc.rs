@@ -406,7 +406,9 @@ impl Default for EnvIdentifiers {
         if is_tmux {
             crate::set_tmux_passthrough(true);
         }
-        let (is_kitty, is_sixel, bg) = probe_graphics_caps(is_tmux).unwrap_or((false, false, None));
+        let is_kitty_env = crate::kitty_encoder::is_kitty_capable(&env).is_some();
+        let (is_kitty, is_sixel, bg) =
+            probe_graphics_caps(is_tmux, is_kitty_env).unwrap_or((is_kitty_env, false, None));
         env.is_kitty = is_kitty;
         env.is_sixel = is_sixel;
         env.bg = bg;
@@ -495,9 +497,18 @@ pub fn setup_signal_handler() -> Arc<AtomicBool> {
     shutdown
 }
 
+fn is_ssh() -> bool {
+    env::var_os("SSH_CONNECTION").is_some()
+        || env::var_os("SSH_TTY").is_some()
+        || env::var_os("SSH_CLIENT").is_some()
+}
+
 #[cfg(unix)]
 #[allow(clippy::type_complexity)]
-fn probe_graphics_caps(is_tmux: bool) -> std::io::Result<(bool, bool, Option<(u8, u8, u8)>)> {
+fn probe_graphics_caps(
+    is_tmux: bool,
+    skip_kitty_query: bool,
+) -> std::io::Result<(bool, bool, Option<(u8, u8, u8)>)> {
     use std::fs::OpenOptions;
     use std::io::{Read, Write};
     use std::os::fd::AsRawFd;
@@ -532,18 +543,34 @@ fn probe_graphics_caps(is_tmux: bool) -> std::io::Result<(bool, bool, Option<(u8
 
     #[allow(clippy::type_complexity)]
     let result = (|| -> std::io::Result<(bool, bool, Option<(u8, u8, u8)>)> {
-        let query: &[u8] = if is_tmux {
-            b"\x1bPtmux;\x1b\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\x1b\\\x1b\\\
-              \x1bPtmux;\x1b\x1b]11;?\x1b\x1b\\\x1b\\\
-              \x1bPtmux;\x1b\x1b[c\x1b\\"
+        let kitty: &[u8] = if is_tmux {
+            b"\x1bPtmux;\x1b\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\x1b\\\x1b\\"
         } else {
-            b"\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\\x1b]11;?\x1b\\\x1b[c"
+            b"\x1b_Gi=31,s=1,v=1,a=q,t=d,f=24;AAAA\x1b\\"
         };
-        tty.write_all(query)?;
+        let bg: &[u8] = if is_tmux {
+            b"\x1bPtmux;\x1b\x1b]11;?\x1b\x1b\\\x1b\\"
+        } else {
+            b"\x1b]11;?\x1b\\"
+        };
+        let da1: &[u8] = if is_tmux {
+            b"\x1bPtmux;\x1b\x1b[c\x1b\\"
+        } else {
+            b"\x1b[c"
+        };
+
+        let mut query: Vec<u8> = Vec::new();
+        if !skip_kitty_query {
+            query.extend_from_slice(kitty);
+        }
+        query.extend_from_slice(bg);
+        query.extend_from_slice(da1);
+        tty.write_all(&query)?;
         tty.flush()?;
 
         let mut buf = Vec::with_capacity(256);
-        let deadline = Instant::now() + Duration::from_millis(250);
+        let timeout_ms = if is_ssh() { 1000 } else { 250 };
+        let deadline = Instant::now() + Duration::from_millis(timeout_ms);
         let mut chunk = [0u8; 128];
         loop {
             let left = deadline.saturating_duration_since(Instant::now());
@@ -585,7 +612,7 @@ fn probe_graphics_caps(is_tmux: bool) -> std::io::Result<(bool, bool, Option<(u8
             }
         }
 
-        let kitty = buf.windows(10).any(|w| w == b"\x1b_Gi=31;OK");
+        let kitty = skip_kitty_query || buf.windows(10).any(|w| w == b"\x1b_Gi=31;OK");
         let sixel = buf
             .windows(3)
             .position(|w| w == b"\x1b[?")
@@ -616,14 +643,17 @@ fn probe_graphics_caps(is_tmux: bool) -> std::io::Result<(bool, bool, Option<(u8
     })();
 
     unsafe {
-        libc::tcsetattr(fd, libc::TCSANOW, &old);
+        libc::tcsetattr(fd, libc::TCSAFLUSH, &old);
     }
     result
 }
 
 #[cfg(windows)]
 #[allow(clippy::type_complexity)]
-fn probe_graphics_caps(_is_tmux: bool) -> std::io::Result<(bool, bool, Option<(u8, u8, u8)>)> {
+fn probe_graphics_caps(
+    _is_tmux: bool,
+    _skip_kitty_query: bool,
+) -> std::io::Result<(bool, bool, Option<(u8, u8, u8)>)> {
     // can't really test on windows, also might just not be really supported on windows anyways..
     Ok((false, false, None))
 }
