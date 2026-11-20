@@ -1,3 +1,8 @@
+## V0.6.9 - SRC
+
+- fix(markdownify): print xlsx dates as dates, (#118, @jayhemnani9910)
+- fix(markdownify): read docx text only from w:t, (#117, @jayhemnani9910)
+
 ## V0.6.8
 
 - improved image/video encoder logic, now splitted kitty features to do different things according to the depth of support to the kitty protocol rather then just supported binary
