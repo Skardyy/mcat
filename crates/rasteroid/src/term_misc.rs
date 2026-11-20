@@ -516,7 +516,6 @@ fn probe_graphics_caps(
 
     let mut tty = OpenOptions::new().read(true).write(true).open("/dev/tty")?;
     let fd = tty.as_raw_fd();
-    let mut got_reply = false;
 
     let old = unsafe {
         // touching the tty from a background process group raises SIGTTOU/SIGTTIN and stops us
@@ -609,7 +608,6 @@ fn probe_graphics_caps(
                 .position(|w| w == b"\x1b[?")
                 .is_some_and(|s| buf[s..].contains(&b'c'))
             {
-                got_reply = true;
                 break;
             }
         }
@@ -645,12 +643,7 @@ fn probe_graphics_caps(
     })();
 
     unsafe {
-        // on timeout keep the echo off
-        let mut restore = old;
-        if !got_reply {
-            restore.c_lflag &= !libc::ECHO;
-        }
-        libc::tcsetattr(fd, libc::TCSANOW, &restore);
+        libc::tcsetattr(fd, libc::TCSAFLUSH, &old);
     }
     result
 }
