@@ -35,10 +35,7 @@ pub fn cat(files: Vec<McatFile>, out: &mut impl Write, config: &McatConfig) -> R
 
     // if we don't have tty to print to, nor the user asked for a special format, we just merge the content like a
     // normal cat command
-    if !is_tty
-        && config.output.is_none()
-        && matches!(config.color, ColorMode::Never | ColorMode::Auto)
-    {
+    if !config.renders() {
         for f in &files {
             out.write_all(&f.bytes)?;
         }

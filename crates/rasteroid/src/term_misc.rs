@@ -376,6 +376,16 @@ pub struct EnvIdentifiers {
 
 impl Default for EnvIdentifiers {
     fn default() -> Self {
+        Self::with_probe(true)
+    }
+}
+
+impl EnvIdentifiers {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_probe(probe: bool) -> Self {
         let keys = vec![
             "TERM",
             "TERM_PROGRAM",
@@ -407,19 +417,16 @@ impl Default for EnvIdentifiers {
             crate::set_tmux_passthrough(true);
         }
         let is_kitty_env = crate::kitty_encoder::is_kitty_capable(&env).is_some();
-        let (is_kitty, is_sixel, bg) =
-            probe_graphics_caps(is_tmux, is_kitty_env).unwrap_or((is_kitty_env, false, None));
+        let (is_kitty, is_sixel, bg) = if probe {
+            probe_graphics_caps(is_tmux, is_kitty_env).unwrap_or((is_kitty_env, false, None))
+        } else {
+            (is_kitty_env, false, None)
+        };
         env.is_kitty = is_kitty;
         env.is_sixel = is_sixel;
         env.bg = bg;
         env.check_tmux_term();
         env
-    }
-}
-
-impl EnvIdentifiers {
-    pub fn new() -> Self {
-        Self::default()
     }
 
     pub fn check_tmux_term(&mut self) {

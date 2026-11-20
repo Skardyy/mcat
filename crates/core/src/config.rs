@@ -77,6 +77,10 @@ pub struct McatConfig {
     #[arg(long, help_heading = "Core Options")]
     pub report: bool,
 
+    /// Don't query the terminal for its capabilities (graphics protocol, background color)
+    #[arg(long, help_heading = "Core Options", env = "MCAT_NO_PROBE")]
+    pub no_probe: bool,
+
     /// Extension hint for stdin input (e.g. csv, json, md)
     #[arg(
         short = 'e',
@@ -427,7 +431,11 @@ pub struct McatConfig {
 
 impl McatConfig {
     pub fn finalize(&mut self) -> anyhow::Result<()> {
-        let env = term_misc::EnvIdentifiers::new();
+        // `--report` and `ls` run before catter and print terminal info, so they still need the probe
+        let wants_terminal = self.renders()
+            || self.report
+            || self.input.first().is_some_and(|v| v.to_lowercase() == "ls");
+        let env = term_misc::EnvIdentifiers::with_probe(wants_terminal && !self.no_probe);
         let spx = Some(self.spx.as_ref());
         let sc = Some(self.sc.as_ref());
         let wininfo = Wininfo::new(spx, sc, Some(self.scalex), Some(self.scaley), &env)?;
@@ -492,6 +500,11 @@ impl McatConfig {
             .ok();
 
         Ok(())
+    }
+
+    // whatever we can even render something for the user
+    pub fn renders(&self) -> bool {
+        std::io::stdout().is_tty() || self.output.is_some() || self.color == ColorMode::Always
     }
 }
 
