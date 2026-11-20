@@ -2,6 +2,7 @@
 
 - fix(markdownify): print xlsx dates as dates, (#118, @jayhemnani9910)
 - fix(markdownify): read docx text only from w:t, (#117, @jayhemnani9910)
+- fix(rasteroid): stop mcat from leaking terminal control sequences when probe timeout, (#119, #114)
 
 ## V0.6.8
 
